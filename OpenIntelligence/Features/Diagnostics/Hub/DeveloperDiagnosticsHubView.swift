@@ -199,19 +199,6 @@ struct DeveloperDiagnosticsHubView: View {
             } header: {
                 Text("Diagnostics")
             }
-
-            // Visualization
-            Section {
-                NavigationLink {
-                    AdaptiveVisualizationsView()
-                        .environmentObject(ragService)
-                        .environmentObject(ragService.containerService)
-                } label: {
-                    Label("Knowledge Atlas", systemImage: "globe.americas")
-                }
-            } header: {
-                Text("Visualization")
-            }
         }
         .navigationTitle("Developer")
         #if os(iOS)

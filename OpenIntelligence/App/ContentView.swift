@@ -83,7 +83,7 @@ struct ContentView: View {
     }
 
     enum Tab {
-        case chat, documents, visualizations, database, settings
+        case chat, documents, database, settings
     }
 
     private var shouldShowChecklistLauncher: Bool {
@@ -401,8 +401,7 @@ struct ContentView: View {
             NavigationStack {
                 DocumentLibraryView(
                     ragService: ragService,
-                    containerService: containerService,
-                    onViewVisualizations: { selectedTab = .visualizations }
+                    containerService: containerService
                 )
                 .safeAreaInset(edge: .top, spacing: 0) { if !screenshotMode.isEnabled { LaunchSaleBanner() } }
             }
@@ -410,16 +409,6 @@ struct ContentView: View {
                 Label("Documents", systemImage: "doc.text.magnifyingglass")
             }
             .tag(Tab.documents)
-
-            NavigationStack {
-                AdaptiveVisualizationsView()
-                    .environmentObject(ragService)
-                    .environmentObject(containerService)
-            }
-            .tabItem {
-                Label("Atlas", systemImage: "globe.americas")
-            }
-            .tag(Tab.visualizations)
 
             NavigationStack {
                 DatabaseDashboardView()
@@ -712,7 +701,7 @@ private struct ScreenshotMode {
                 switch t {
                 case "chat": return .chat
                 case "documents", "docs": return .documents
-                case "visualizations", "telemetry", "atlas": return .visualizations
+                case "visualizations", "telemetry", "atlas": return .database
                 case "database", "db", "sqlite", "fts5": return .database
                 case "settings": return .settings
                 default: return nil
