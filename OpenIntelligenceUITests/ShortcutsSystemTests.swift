@@ -16,7 +16,7 @@ import AppIntentsTesting
 import XCTest
 
 final class ShortcutsSystemTests: XCTestCase {
-    private static let bundleIdentifier = "Gunndamental.OpenIntelligence"
+    private static let bundleIdentifier = "com.openintelligence.app"
     private static let notePrefix = "UITest quillberry"
     private static let answer = "The quillberry deposit for the test flat is 4,321 dollars."
 

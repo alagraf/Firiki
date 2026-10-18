@@ -103,7 +103,14 @@ PATH_EXEMPT_PREFIXES = ("BenchmarkRuns/",)
 # a fresh clone never has them, so until 2026-09-24 the checker failed on every
 # clean checkout and a gate that is red on day one gets ignored. Each entry here is
 # gitignored; keep it that way when adding one.
-MACHINE_LOCAL_PREFIXES = (".claude/settings.local.json", ".claude/.state/", "Benchmarks/run/")
+MACHINE_LOCAL_PREFIXES = (
+    ".claude/settings.local.json",
+    ".claude/.state/",
+    "Benchmarks/run/",
+    ".agents/skills/",
+    ".codex/hooks.json",
+    ".codex/hooks/",
+)
 MACHINE_LOCAL_PARTS = ("/.build",)
 
 # A line asserting a *current* shipped version. Deliberately narrow: historical

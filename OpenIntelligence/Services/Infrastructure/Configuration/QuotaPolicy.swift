@@ -5,14 +5,15 @@ enum QuotaPolicy {
     static let unlimitedDocumentLimit: Int = .max
 
     /// Base document allowance for each tier prior to add-on credits.
-    static let freeDocumentLimit: Int = 5
+    static let freeDocumentLimit: Int = 1_000
     static let proDocumentLimit: Int = 1_000  // Hard cap per QuotaPolicy
     static let lifetimeDocumentLimit: Int = unlimitedDocumentLimit
 
     /// Base workspace (container) allowance.
+    static let unlimitedLibraryLimit: Int = .max
     static let freeLibraryLimit: Int = 1
     static let proLibraryLimit: Int = 10
-    static let lifetimeLibraryLimit: Int = 20
+    static let lifetimeLibraryLimit: Int = unlimitedLibraryLimit
 
     /// Number of extra documents granted per consumable add-on.
     static let addOnDocumentIncrement: Int = 10
@@ -38,6 +39,14 @@ enum QuotaPolicy {
 
     static func documentLimitDisplayText(_ limit: Int) -> String {
         isUnlimitedDocumentLimit(limit) ? "Unlimited" : "\(limit)"
+    }
+
+    static func isUnlimitedLibraryLimit(_ limit: Int) -> Bool {
+        limit == unlimitedLibraryLimit
+    }
+
+    static func libraryLimitDisplayText(_ limit: Int) -> String {
+        isUnlimitedLibraryLimit(limit) ? "Unlimited" : "\(limit)"
     }
 
     /// Returns the allowed container/library count for a given workspace tier.

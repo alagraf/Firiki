@@ -183,7 +183,7 @@ final class BackgroundTaskService: Sendable {
     /// "submitted" through four imports, so leaving the app left them the half minute of the
     /// fallback below and nothing else.
     static var continuedIngestionIdentifierStem: String {
-        "\(Bundle.main.bundleIdentifier ?? "Gunndamental.OpenIntelligence").document-ingestion."
+        "\(Bundle.main.bundleIdentifier ?? "com.openintelligence.app").document-ingestion."
     }
 
     private static func continuedIngestionRequestIdentifier() -> String {
@@ -228,7 +228,7 @@ final class BackgroundTaskService: Sendable {
     /// under the fixed name "com.openintelligence.rag-query", the shape the import's task had when
     /// it was seen accepted and never started on an iPhone on 2026-10-09.
     static var continuedQueryIdentifierStem: String {
-        "\(Bundle.main.bundleIdentifier ?? "Gunndamental.OpenIntelligence").rag-query."
+        "\(Bundle.main.bundleIdentifier ?? "com.openintelligence.app").rag-query."
     }
 
     private static func continuedQueryRequestIdentifier() -> String {

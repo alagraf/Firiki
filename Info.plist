@@ -50,8 +50,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>NSServices</key>
 	<array>
 		<dict>
@@ -126,10 +124,6 @@
 			<string>Adds the selected files to the open library in OpenIntelligence.</string>
 		</dict>
 	</array>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
-	<true/>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>com.openintelligence.chat</string>

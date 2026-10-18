@@ -7,7 +7,7 @@ import XCTest
 /// The line exists because a Release build wrote nothing about routing to Console.app until
 /// 2026-09-14, so there was no way to observe from outside the app whether an answer came from the
 /// device or from Private Cloud Compute. Its shape is tested here because the shape is the
-/// contract: a reader filters Console for `subsystem == "Gunndamental.OpenIntelligence" AND
+/// contract: a reader filters Console for `subsystem == "com.openintelligence.app" AND
 /// category == "routing"` and greps for these tokens, and a rename would silently break that
 /// without failing any build.
 ///
@@ -106,7 +106,7 @@ final class RouteLogLineTests: XCTestCase {
     // MARK: - The predicate is a contract
 
     func testSubsystemAndCategory_areTheDocumentedPredicate() {
-        XCTAssertEqual(RouteLog.subsystem, "Gunndamental.OpenIntelligence")
+        XCTAssertEqual(RouteLog.subsystem, "com.openintelligence.app")
         XCTAssertEqual(RouteLog.category, "routing")
     }
 }

@@ -211,7 +211,7 @@ It is weakest on questions your library says nothing about. When the evidence is
 ### Lifetime
 - Maximum mode with no daily cap
 - Unlimited documents
-- Up to 20 libraries
+- Unlimited libraries
 - One payment, no renewal
 
 The model is the same in every plan: Apple Intelligence on your device, Deep Think, and Private Cloud Compute after you approve what is sent. The plans differ in how much you can keep and how often you can run Maximum.

@@ -70,7 +70,7 @@ struct PlanUpgradeSheet: View {
             features: [
                 "Maximum mode with no daily cap",
                 "Unlimited documents",
-                "20 libraries",
+                "Unlimited libraries",
                 "Never expires",
             ]
         ),

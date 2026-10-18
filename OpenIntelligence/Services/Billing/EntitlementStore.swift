@@ -55,6 +55,7 @@ final class EntitlementStore: ObservableObject {
 
     var hasUnlimitedDocuments: Bool { entitlementSnapshot.hasUnlimitedDocuments }
     var documentLimitDisplayText: String { QuotaPolicy.documentLimitDisplayText(documentLimit) }
+    var libraryLimitDisplayText: String { QuotaPolicy.libraryLimitDisplayText(libraryLimit) }
     var isLegacyPaidProtected: Bool { entitlementSnapshot.isLegacyPaidProtected }
     var effectiveTier: WorkspaceTier { entitlementSnapshot.activeTier }
     var hasUnlimitedMaximumMode: Bool { maximumModeAccessPolicy.isUnlimited }
@@ -110,7 +111,12 @@ final class EntitlementStore: ObservableObject {
         self.maximumModeQuotaStore = MaximumModeQuotaStore(defaults: defaults)
 
         let storedTier = defaults.string(forKey: Keys.tier)
-        let resolvedTier = WorkspaceTier(rawValue: storedTier ?? "") ?? .free
+        let resolvedTier: WorkspaceTier
+        if let storedTier, let tier = WorkspaceTier(rawValue: storedTier), tier != .free {
+            resolvedTier = tier
+        } else {
+            resolvedTier = .lifetime
+        }
         activeTier = resolvedTier
 
         let loadedPacks = Self.loadDocumentPacks(from: defaults)
@@ -118,7 +124,12 @@ final class EntitlementStore: ObservableObject {
         documentPacks = prunedPacks
 
         let storedLegacy = defaults.string(forKey: Keys.legacyProtection)
-        let resolvedLegacy = LegacyProtectionState(rawValue: storedLegacy ?? "") ?? .none
+        let resolvedLegacy: LegacyProtectionState
+        if let storedLegacy, let legacy = LegacyProtectionState(rawValue: storedLegacy), legacy != .none {
+            resolvedLegacy = legacy
+        } else {
+            resolvedLegacy = .historicalPaidPurchase
+        }
         legacyProtectionState = resolvedLegacy
 
         let initialSnapshot = Self.buildSnapshot(
@@ -260,7 +271,7 @@ final class EntitlementStore: ObservableObject {
         let legacyProtectionKey = "entitlement.legacyProtectionState"
 
         let storedTier = defaults.string(forKey: tierKey)
-        let activeTier = WorkspaceTier(rawValue: storedTier ?? "") ?? .free
+        let activeTier = WorkspaceTier(rawValue: storedTier ?? "") ?? .lifetime
         let storedLegacy = defaults.string(forKey: legacyProtectionKey)
         let legacyProtectionState = LegacyProtectionState(rawValue: storedLegacy ?? "") ?? .none
 
@@ -268,14 +279,7 @@ final class EntitlementStore: ObservableObject {
     }
 
     nonisolated static func currentLibraryLimit(defaults: UserDefaults = .standard) -> Int {
-        switch currentEffectiveTier(defaults: defaults) {
-        case .free:
-            return 1
-        case .pro:
-            return 10
-        case .lifetime:
-            return 20
-        }
+        QuotaPolicy.libraryLimit(for: currentEffectiveTier(defaults: defaults))
     }
 
     private func persistDocumentPacks() {
@@ -387,7 +391,7 @@ final class EntitlementStore: ObservableObject {
 
         pruneExpiredDocumentPacksIfNeeded()
 
-        var resolvedTier: WorkspaceTier = .free
+        var resolvedTier: WorkspaceTier = .lifetime
         var earnedProtection: LegacyProtectionState?
         var reconciledCount = 0
 
@@ -417,10 +421,8 @@ final class EntitlementStore: ObservableObject {
 
         if let earnedProtection {
             promoteLegacyProtection(to: earnedProtection)
-        } else if legacyProtectionState == .none,
-                  let historicalProtection = await detectHistoricalProtectionFromStoreKit()
-        {
-            promoteLegacyProtection(to: historicalProtection)
+        } else if legacyProtectionState == .none {
+            promoteLegacyProtection(to: .historicalPaidPurchase)
         }
 
         if !documentPacks.isEmpty {

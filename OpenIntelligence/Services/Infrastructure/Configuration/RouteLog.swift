@@ -89,7 +89,7 @@ enum RouteLog {
     /// filtering Console.app will reach for first. The two older `OSLog` subsystems in this app
     /// (`OpenIntelligence` for the RAGEngine signposts, `com.openintelligence` for the evidence
     /// store) predate this and are left alone; a routing predicate should not have to know them.
-    static let subsystem = "Gunndamental.OpenIntelligence"
+    static let subsystem = "com.openintelligence.app"
     static let category = "routing"
 
     private static let logger = Logger(subsystem: subsystem, category: category)

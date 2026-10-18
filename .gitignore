@@ -289,3 +289,4 @@ default.profraw
 
 # Release screenshot masters live outside git
 5.1 Screenshots/
+.git.nosync

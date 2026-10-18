@@ -737,7 +737,7 @@ struct SettingsView: View {
                 )
                 quotaItem(
                     icon: "folder",
-                    value: "\(entitlementStore.libraryLimit)",
+                    value: entitlementStore.libraryLimitDisplayText,
                     label: "Libraries"
                 )
             }
@@ -822,7 +822,7 @@ Text(label)
                     .clipShape(Capsule())
             }
 
-            Text("Thanks for backing OpenIntelligence early. Lifetime keeps unlimited documents and 20 libraries unlocked with no recurring subscription.")
+            Text("Thanks for backing OpenIntelligence early. Lifetime keeps unlimited documents and libraries unlocked with no recurring subscription.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
