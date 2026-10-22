@@ -6,7 +6,8 @@ Apple Intelligence. It is the reference for the thesis's implementation chapter 
 updated with every further change.
 
 - **Repository:** `OpenIntelligence-main/` (thesis folder)
-- **Working branch:** `legal-jurisdiction-caveat` (branched from `main` at `c73c6d5`)
+- **Branch:** `main`. Changes 2.5 and 2.6 were developed on `legal-jurisdiction-caveat` and
+  fast-forwarded into `main` on 2026-10-22.
 - **Last updated:** 2026-10-22
 
 ## 1. Baseline
@@ -214,8 +215,12 @@ observation; see section 4.
 **Files:** `RAGService.swift`, `JurisdictionService.swift`, `JurisdictionServiceTests.swift`
 (3 new tests), `CHANGELOG.md`
 
-**Verification:** `JurisdictionServiceTests` (13 tests) and the Safety suites, 28 of 28 passed on
-the iOS 27 simulator; smoke build succeeded. **Not yet re-checked on a device.**
+**Verification:**
+- `JurisdictionServiceTests` (13 tests) and the Safety suites, 28 of 28 passed on the iOS 27
+  simulator; smoke build succeeded.
+- **On real hardware (2026-10-22):** the user confirmed the caveat appears in the macOS app on an
+  M3 MacBook Pro, with Apple Intelligence writing the answers. The mode and the exact question
+  weren't recorded.
 
 ## 3. How to inspect the changes
 
@@ -233,10 +238,9 @@ git diff e61cbb4 legal-jurisdiction-caveat -- OpenIntelligence
 
 ## 4. Open items and known limitations
 
-- **Device check pending:** the Greek caveat on a written answer, especially in Deep Think and
-  Maximum, still needs checking on a device with Apple Intelligence. In the simulator the Greek
-  caveat is covered by unit tests only, because pasting Greek text into the simulator arrived
-  garbled.
+- **iPhone check pending:** the caveat has been seen working on macOS (M3 MacBook Pro), but not yet
+  on an iPhone. For a complete record, check a Greek question in each mode (Standard, Deep Think,
+  Maximum); Deep Think and Maximum lookups are the path fixed in 2.6.
 - **Jurisdiction is recognised from text patterns only.** A chunk with no citation, court or gazette
   signal is "unknown". Court authority (for example Areios Pagos plenary decisions versus
   lower courts) and whether a provision was in force on the date of the facts aren't handled yet;
