@@ -18276,7 +18276,13 @@ class RAGService: ObservableObject {
         // Clean up the response text (normalize whitespace, preserve markdown formatting)
         let cleanedResponse = cleanupResponseText(response.generatedResponse)
         let stabilizedResponse = trimIncompleteResponseTail(cleanedResponse)
-        let repairedResponse = repairMalformedURLs(stabilizedResponse)
+        let urlRepairedResponse = repairMalformedURLs(stabilizedResponse)
+        // Evidence from another legal order is used, never refused, and the answer says so. Every
+        // answer path ends here, so this is the one place the caveat covers all of them.
+        let jurisdictionCaveat = JurisdictionService.assess(query: query, chunks: response.retrievedChunks).caveat
+        let repairedResponse = jurisdictionCaveat.map {
+            JurisdictionService.applyingCaveat($0, to: urlRepairedResponse)
+        } ?? urlRepairedResponse
         let finalizedStructuredAnswer = response.structuredAnswer?.updatingAnswer(repairedResponse)
         let fallbackReasoningTrace = await MainActor.run {
             self.thinkingEvents.compactReasoningTrace()

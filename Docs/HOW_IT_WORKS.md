@@ -461,7 +461,7 @@ A locked answer skips the source-only check (`:17293`). The scoring rules, and w
 | `F` | Quote Faithfulness | Catches an abbreviation being expanded using a different document that happened to be in the same context. |
 | `G` | Generation Quality | Structural soundness of the output itself. |
 | `H` | Answer Completeness | Multi-step and comparison answers where each step is individually plausible but the chain is not supported end to end. |
-| `I` | Domain Isolation | Rejects evidence drawn from unrelated subject areas before an answer is written. Relaxed when everything came from one document, since that is not mixing. |
+| `I` | Jurisdiction | Advisory, never refuses. Recognises which legal order each piece of evidence belongs to (Greek, EU, ECHR, or a foreign one such as Cypriot law) from citation patterns, courts and gazettes. When evidence comes from a legal order the question's courts are not bound by, the answer is kept and opens with a caveat saying so. Evidence with no recognisable signal never triggers a caveat. Replaced the medical Domain Isolation check (in vitro / in vivo) in the legal fork. |
 
 Thresholds rise with mode: 0.50 in Standard, 0.60 in Deep Think, 0.80 in Maximum. Failing a critical check produces a grounded abstention rather than a hedged answer.
 

@@ -23,55 +23,9 @@ struct SourceOnlyClaimDraft: Sendable, Codable {
 
 @available(iOS 26.0, *)
 @Generable
-struct SourceOnlyDomainBlockDraft: Sendable, Codable {
-    @Guide(description: "One of: IN VITRO, IN VIVO, CLINICAL, IN SILICO, IN VITRO CONTROL, IN VIVO CONTROL, CLINICAL CONTROL.")
-    let domain: String
-
-    @Guide(description: "Exact subject description from source, such as Neuro-2a cells, Sprague-Dawley rats, or Phase II participants.")
-    let subject: String
-
-    @Guide(description: "Exact sample size from source, or NULL when not stated.")
-    let sampleSize: String
-
-    @Guide(description: "Exact intervention from source, or NULL when not stated.")
-    let intervention: String
-
-    @Guide(description: "Exact route of administration from source, or NULL_UNSUPPORTED when not explicitly stated.")
-    let route: String
-
-    @Guide(description: "Exact dose from source, or NULL_UNSUPPORTED when not explicitly stated.")
-    let dose: String
-
-    @Guide(description: "Exact duration from source, or NULL_UNSUPPORTED when not explicitly stated.")
-    let duration: String
-
-    @Guide(description: "Exact onset or treatment start timing from source, or NULL_UNSUPPORTED when not explicitly stated.")
-    let onset: String
-
-    @Guide(description: "Exact primary endpoint or metric from source, or NULL when not stated.")
-    let primaryEndpoint: String
-
-    @Guide(description: "One of: parallel, crossover, NULL.")
-    let controlType: String
-
-    @Guide(description: "Evidence label like E1 or E2.")
-    let evidenceLabel: String
-
-    @Guide(description: "Chunk identifier copied from the evidence block.")
-    let chunkId: String
-
-    @Guide(description: "Verbatim quote copied from the supporting evidence block.")
-    let verbatimQuote: String
-}
-
-@available(iOS 26.0, *)
-@Generable
 struct SourceOnlyAnswerDraft: Sendable, Codable {
     @Guide(description: "A terse draft answer derived only from the candidate answer and evidence. Do not add new facts.")
     let draftAnswer: String
-
-    @Guide(description: "Structured domain blocks extracted from the evidence before any synthesis. Include one block per distinct experimental setup.", .maximumCount(10))
-    let domainBlocks: [SourceOnlyDomainBlockDraft]
 
     @Guide(description: "Atomic claims extracted from the candidate answer. Prefer coverage over filtering so unsupported claims can be verified downstream.", .maximumCount(8))
     let claims: [SourceOnlyClaimDraft]
@@ -158,11 +112,6 @@ struct SourceOnlyAnswerOutcome: Sendable {
     let candidateCoverage: Double
 }
 
-private enum SourceOnlyVerificationMode: Sendable {
-    case generalEvidenceGrounded
-    case strictScientificDomain
-}
-
 @available(iOS 26.0, *)
 @MainActor
 final class SourceOnlyAnswerService {
@@ -195,57 +144,11 @@ final class SourceOnlyAnswerService {
     ) async -> SourceOnlyAnswerOutcome? {
         guard isAvailable, !retrievedChunks.isEmpty else { return nil }
 
-        let domainAssessment = DomainIsolationService.assess(
-            query: query,
-            chunks: retrievedChunks,
-            answerIntent: answerIntent
-        )
-        let verificationMode: SourceOnlyVerificationMode = domainAssessment.strictModeEnabled
-            ? .strictScientificDomain
-            : .generalEvidenceGrounded
-        let domainFilteredChunks = verificationMode == .strictScientificDomain
-            ? domainAssessment.classifiedChunks
-                .filter { $0.classification.domain.family == domainAssessment.allowedDomain }
-                .map(\.chunk)
-            : retrievedChunks
+        // The medical domain-isolation pre-check (in vitro / in vivo / clinical) that used to sit
+        // here was removed for the legal fork. It abstained before verification and replaced the
+        // drafted answer with "DOMAIN ISOLATION BREACH". Jurisdiction mismatches are reported as a
+        // caveat instead (`JurisdictionService`, applied in `RAGService.finalizeResponse`).
 
-        if verificationMode == .strictScientificDomain && domainAssessment.shouldAbstain {
-            let reason = domainAssessment.reason ?? "Domain isolation blocked mixed-domain evidence."
-            let abstentionText = buildAbstentionText(reason: reason)
-            let evidenceRecords = buildEvidenceRecords(from: domainFilteredChunks.isEmpty ? Array(retrievedChunks.prefix(3)) : domainFilteredChunks)
-            let structuredAnswer = buildStructuredAnswer(
-                finalAnswer: abstentionText,
-                answerIntent: answerIntent,
-                evidenceRecords: evidenceRecords,
-                supportedClaims: [],
-                unsupportedClaims: [],
-                missingFacets: [reason],
-                verificationResult: verificationResult,
-                shouldAbstain: true,
-                topScore: retrievedChunks.first?.similarityScore ?? 0
-            )
-
-            let warnings = domainAssessment.rejectedChunks.prefix(4).map { rejected in
-                let source = rejected.chunk.sourceDocument.isEmpty ? "retrieved chunk" : rejected.chunk.sourceDocument
-                return "Domain isolation rejected \(source) as \(rejected.classification.domain.rawValue)"
-            }
-
-            return SourceOnlyAnswerOutcome(
-                finalAnswer: abstentionText,
-                structuredAnswer: structuredAnswer,
-                supportedClaims: [],
-                unsupportedClaims: [],
-                shouldAbstain: true,
-                abstentionReason: reason,
-                fidelityScore: 0,
-                warnings: [domainAssessment.details] + warnings,
-                candidateCoverage: 1
-            )
-        }
-
-        let queryDomain = verificationMode == .strictScientificDomain
-            ? domainAssessment.allowedDomain.rawValue
-            : "GENERAL / NOT_APPLICABLE"
         // Budget the prompt before building it, because this session has no other protection.
         //
         // A device capture on 2026-08-18 recorded `Draft generation failed: The session's
@@ -273,7 +176,7 @@ final class SourceOnlyAnswerService {
         // prompt, hence the schema allowance below. The on-device ratio is used regardless of
         // where this is allowed to run, so the budget is not loosest exactly when the device is
         // the destination.
-        let instructionsText = buildExtractionInstructions(for: verificationMode)
+        let instructionsText = buildExtractionInstructions()
         let contextSize = FoundationModelTokenBudget.contextSize(isAppleFMOnDevice: true)
         let reserved = FoundationModelTokenBudget.estimateTokens(for: instructionsText, isAppleFMOnDevice: true)
             + FoundationModelTokenBudget.estimateTokens(for: query, isAppleFMOnDevice: true)
@@ -285,20 +188,19 @@ final class SourceOnlyAnswerService {
         // Size each snippet so the whole evidence set fits its share of the budget. Bounded below
         // so a record still carries a usable quotation, and above by the original 420 so this can
         // only ever shorten a snippet relative to the previous behaviour, never lengthen it.
-        let recordCount = min(Self.maxEvidenceRecords, domainFilteredChunks.count)
+        let recordCount = min(Self.maxEvidenceRecords, retrievedChunks.count)
         let evidenceCharBudget = Double(promptBudget) * Self.evidenceBudgetShare
             * FoundationModelTokenBudget.onDeviceCharsPerToken
 
         // `renderEvidencePrompt` wraps every snippet in XML and adds the source
-        // name, the page and a 36-character chunk UUID, plus three more domain
-        // elements in strict mode. Sizing the snippet against the budget alone
+        // name, the page and a 36-character chunk UUID. Sizing the snippet against the budget alone
         // therefore overshoots by the entire wrapper, which is what kept the drop
         // loop firing on every full-evidence run instead of as an exception — the
         // same class of miscalculation the 2026-08-19 note above records once
         // already. Measure the wrapper rather than guessing it, so it stays correct
         // if the rendering changes.
-        let probeRecords = buildEvidenceRecords(from: domainFilteredChunks, snippetLimit: Self.maxSnippetChars)
-        let probeText = renderEvidencePrompt(probeRecords, verificationMode: verificationMode)
+        let probeRecords = buildEvidenceRecords(from: retrievedChunks, snippetLimit: Self.maxSnippetChars)
+        let probeText = renderEvidencePrompt(probeRecords)
         let wrapperChars = max(0, probeText.count - probeRecords.reduce(0) { $0 + $1.snippet.count })
         let snippetCharBudget = max(0, Int(evidenceCharBudget) - wrapperChars)
 
@@ -306,7 +208,7 @@ final class SourceOnlyAnswerService {
             ? max(Self.minSnippetChars, min(Self.maxSnippetChars, snippetCharBudget / recordCount))
             : Self.maxSnippetChars
 
-        let evidenceRecords = buildEvidenceRecords(from: domainFilteredChunks, snippetLimit: snippetLimit)
+        let evidenceRecords = buildEvidenceRecords(from: retrievedChunks, snippetLimit: snippetLimit)
         guard !evidenceRecords.isEmpty else { return nil }
 
         // Enforce the share the constant already declares. This loop previously
@@ -318,13 +220,13 @@ final class SourceOnlyAnswerService {
         // Bounding here guarantees the candidate keeps its 30%.
         let evidenceTokenCeiling = max(1, Int(Double(promptBudget) * Self.evidenceBudgetShare))
         var budgetedRecords = evidenceRecords
-        var evidencePromptText = renderEvidencePrompt(budgetedRecords, verificationMode: verificationMode)
+        var evidencePromptText = renderEvidencePrompt(budgetedRecords)
         var droppedRecords = 0
         while budgetedRecords.count > 1,
               FoundationModelTokenBudget.estimateTokens(for: evidencePromptText, isAppleFMOnDevice: true) > evidenceTokenCeiling {
             budgetedRecords.removeLast()
             droppedRecords += 1
-            evidencePromptText = renderEvidencePrompt(budgetedRecords, verificationMode: verificationMode)
+            evidencePromptText = renderEvidencePrompt(budgetedRecords)
         }
 
         let evidenceTokens = FoundationModelTokenBudget.estimateTokens(for: evidencePromptText, isAppleFMOnDevice: true)
@@ -347,11 +249,9 @@ final class SourceOnlyAnswerService {
 
         let extractionPrompt = buildExtractionPrompt(
             query: query,
-            queryDomain: queryDomain,
             candidateAnswer: budgetedCandidate,
             answerIntent: answerIntent,
-            evidencePrompt: evidencePromptText,
-            verificationMode: verificationMode
+            evidencePrompt: evidencePromptText
         )
 
         // `model:` is required. Omitting it yields a session that produces no output: an Instruments
@@ -363,7 +263,7 @@ final class SourceOnlyAnswerService {
         let extractionSession = LanguageModelSession(
             model: SystemLanguageModel.default,
             instructions: Instructions(sanitizeForLanguageDetection(
-                buildExtractionInstructions(for: verificationMode)
+                buildExtractionInstructions()
             ))
         )
 
@@ -393,8 +293,7 @@ final class SourceOnlyAnswerService {
                 if #available(iOS 27.0, macOS 27.0, *) {
                     Log.info(
                         "[SourceOnly] Draft used \(extractionSession.usage.output.totalTokenCount) of "
-                            + "\(Self.draftTokenLimit) output tokens: \(draft.claims.count) claim(s), "
-                            + "\(draft.domainBlocks.count) domain block(s)",
+                            + "\(Self.draftTokenLimit) output tokens: \(draft.claims.count) claim(s)",
                         category: .llm
                     )
                 }
@@ -404,7 +303,7 @@ final class SourceOnlyAnswerService {
             return nil
         }
 
-        guard !draft.claims.isEmpty || !draft.domainBlocks.isEmpty else {
+        guard !draft.claims.isEmpty else {
             Log.warning("[SourceOnly] Draft contained no claims", category: .llm)
             return nil
         }
@@ -418,10 +317,8 @@ final class SourceOnlyAnswerService {
         // the same records.
         let reviewPrompt = buildReviewPrompt(
             query: query,
-            queryDomain: queryDomain,
             draft: draft,
-            evidencePrompt: evidencePromptText,
-            verificationMode: verificationMode
+            evidencePrompt: evidencePromptText
         )
         // `model:` is required. Omitting it yields a session that produces no output: an Instruments
         // capture on 2026-08-15 recorded two such calls returning 0 tokens over 6.5 and 7.1
@@ -432,7 +329,7 @@ final class SourceOnlyAnswerService {
         let reviewSession = LanguageModelSession(
             model: SystemLanguageModel.default,
             instructions: Instructions(sanitizeForLanguageDetection(
-                buildReviewInstructions(for: verificationMode)
+                buildReviewInstructions()
             ))
         )
 
@@ -459,9 +356,7 @@ final class SourceOnlyAnswerService {
             mergeClaimDraft(
                 $0,
                 review: reviewAggregation.byClaimId[normalizeClaimIdentifier($0.claimId)],
-                evidenceRecords: evidenceRecords,
-                domainBlocks: draft.domainBlocks,
-                strictDomainMode: verificationMode == .strictScientificDomain
+                evidenceRecords: evidenceRecords
             )
         }
 
@@ -521,12 +416,6 @@ final class SourceOnlyAnswerService {
         warnings.append(contentsOf: unsupportedClaims.prefix(4).map { claim in
             "Source-only filter dropped claim \(claim.claimId): \(claim.claimText)"
         })
-        if verificationMode == .strictScientificDomain && !domainAssessment.rejectedChunks.isEmpty {
-            warnings.append("Domain isolation kept \(Int((domainAssessment.allowedCoverage * 100).rounded()))% of retrieval weight inside \(domainAssessment.allowedDomain.rawValue)")
-        }
-        if verificationMode == .strictScientificDomain {
-            warnings.append("Cross-domain risk: \(domainAssessment.crossDomainRisk)")
-        }
 
         return SourceOnlyAnswerOutcome(
             finalAnswer: finalAnswer,
@@ -541,96 +430,42 @@ final class SourceOnlyAnswerService {
         )
     }
 
-    private func buildExtractionInstructions(for mode: SourceOnlyVerificationMode) -> String {
-        switch mode {
-        case .generalEvidenceGrounded:
-            return """
-            You are OpenIntelligence in EVIDENCE-GROUNDED VERIFICATION MODE.
-            Your top priority is factual accuracy and faithfulness to the provided evidence.
-            Use ONLY the provided evidence chunks. Never use outside knowledge.
-            Extract atomic claims from the candidate answer, but keep only what the evidence directly supports or what can be stated as a conservative paraphrase.
-            If a fact is not directly established, leave it unsupported instead of guessing.
-            Keep unsupported claims in the draft so they can be rejected later.
-            Rules:
-            1. Use ONLY the provided evidence chunks.
-            2. Do not treat semantic similarity as proof.
-            3. Do not merge nearby but different entities, mechanisms, steps, or values.
-            4. Copy numbers, units, codes, dates, and names exactly.
-            5. If a claim is unsupported, set evidenceLabels to [] and evidenceQuote to an empty string.
-            6. Mark a claim critical when omitting it would materially fail to answer the user's question.
-            7. Domain blocks are optional in this mode. Return an empty array when no scientific experimental setup needs to be captured.
-            """
-        case .strictScientificDomain:
-            return """
-            You are OpenIntelligence operating in STRICT DOMAIN ISOLATION MODE.
-            Your top priority is factual accuracy and faithfulness to the provided evidence.
-            Use ONLY the provided evidence chunks. Never use outside knowledge.
-            Every extracted field must be directly supported by evidence or set to NULL / NULL_UNSUPPORTED.
-            Do not treat semantic similarity as proof. Do not merge nearby but different entities, domains, or interventions.
-            If a field is not explicitly supported, leave it unsupported instead of guessing.
-            First classify evidence by experimental domain, emit domain blocks, then extract only source-backed claims.
-            Rules:
-            1. Use ONLY the provided evidence chunks.
-            2. Treat cross-domain blending as a fatal error.
-            3. If the query domain is IN VIVO, do not use IN VITRO, CLINICAL, or IN SILICO evidence for support.
-            4. Emit one domain block for each distinct experimental setup before any synthesis.
-            5. Use NULL or NULL_UNSUPPORTED exactly when source does not specify a field.
-            6. Keep unsupported claims in the output so they can be rejected later.
-            7. If a claim is unsupported, set evidenceLabels to [] and evidenceQuote to an empty string.
-            8. Copy numbers, units, product names, and entities exactly.
-            9. Never map incubation time to animal dosing duration.
-            10. Never map mg/mL cell culture values to mg/kg animal dosing.
-            11. Mark a claim critical when omitting it would materially fail to answer the user.
-            12. Default all control cohorts to parallel unless the source explicitly says crossover, sequential treatment, or washout.
-            13. If the source says injected without a route specifier, route must be NULL_UNSUPPORTED.
-            14. Allowed route values are: incubation, culture media, intraperitoneal (IP), intravenous (IV), oral (PO), oral tablet, IV infusion, subcutaneous, topical, NULL_UNSUPPORTED.
-            """
-        }
+    private func buildExtractionInstructions() -> String {
+        """
+        You are OpenIntelligence in EVIDENCE-GROUNDED VERIFICATION MODE.
+        Your top priority is factual accuracy and faithfulness to the provided evidence.
+        Use ONLY the provided evidence chunks. Never use outside knowledge.
+        Extract atomic claims from the candidate answer, but keep only what the evidence directly supports or what can be stated as a conservative paraphrase.
+        If a fact is not directly established, leave it unsupported instead of guessing.
+        Keep unsupported claims in the draft so they can be rejected later.
+        Rules:
+        1. Use ONLY the provided evidence chunks.
+        2. Do not treat semantic similarity as proof.
+        3. Do not merge nearby but different entities, mechanisms, steps, or values.
+        4. Copy numbers, units, codes, dates, and names exactly.
+        5. If a claim is unsupported, set evidenceLabels to [] and evidenceQuote to an empty string.
+        6. Mark a claim critical when omitting it would materially fail to answer the user's question.
+        """
     }
 
-    private func buildReviewInstructions(for mode: SourceOnlyVerificationMode) -> String {
-        switch mode {
-        case .generalEvidenceGrounded:
-            return """
-            You are OpenIntelligence in EVIDENCE-GROUNDED VERIFICATION MODE.
-            Your job is to verify claims conservatively against the provided evidence only.
-            Never repair a claim with background knowledge, assumptions, or implied facts.
-            If a claim is only partially supported, prefer ambiguous or unsupported over supported.
-            For each claim, return one verdict: supported, contradicted, ambiguous, or unsupported.
-            Rules:
-            1. Use ONLY the provided evidence chunks.
-            2. Supported means directly grounded in one or more chunks.
-            3. Contradicted means the evidence says the opposite.
-            4. Ambiguous means the evidence is partial, indirect, or too broad.
-            5. Unsupported means the evidence does not establish the claim.
-            6. If a number, unit, code, or date in the claim is absent from cited evidence, the claim cannot be supported.
-            7. Do not repair or rewrite claims.
-            8. Return exactly one review object for each input claimId. Copy each claimId exactly once and do not invent new IDs.
-            9. Prefer exact evidence labels and verbatim quotes.
-            """
-        case .strictScientificDomain:
-            return """
-            You are OpenIntelligence operating in STRICT DOMAIN ISOLATION MODE.
-            Your job is to verify claims conservatively against the provided evidence only.
-            Never repair a claim with background knowledge, assumptions, or implied facts.
-            If a claim is only partially supported, prefer ambiguous or unsupported over supported.
-            For each claim, return one verdict: supported, contradicted, ambiguous, or unsupported.
-            Rules:
-            1. Use ONLY the provided evidence chunks.
-            2. Do not let evidence from one experimental domain support a claim about another.
-            3. Supported means directly grounded in one or more chunks from the matching experimental domain.
-            4. Contradicted means the evidence says the opposite.
-            5. Ambiguous means the evidence is partial, indirect, or too broad.
-            6. Unsupported means the evidence does not establish the claim.
-            7. If a number or unit in the claim is absent from cited evidence, the claim cannot be supported.
-            8. Do not repair or rewrite claims.
-            9. Return exactly one review object for each input claimId. Copy each claimId exactly once and do not invent new IDs.
-            10. Prefer exact evidence labels and verbatim quotes.
-            11. If route, dose, duration, or onset are NULL_UNSUPPORTED in the domain block, any claim asserting that field must be unsupported.
-            12. Treat claims that imply previously treated controls as unsupported when the domain block control type is parallel or NULL.
-            13. Treat route assertions as unsupported when the source only says injected without specifying IP, IV, PO, subcutaneous, or topical.
-            """
-        }
+    private func buildReviewInstructions() -> String {
+        """
+        You are OpenIntelligence in EVIDENCE-GROUNDED VERIFICATION MODE.
+        Your job is to verify claims conservatively against the provided evidence only.
+        Never repair a claim with background knowledge, assumptions, or implied facts.
+        If a claim is only partially supported, prefer ambiguous or unsupported over supported.
+        For each claim, return one verdict: supported, contradicted, ambiguous, or unsupported.
+        Rules:
+        1. Use ONLY the provided evidence chunks.
+        2. Supported means directly grounded in one or more chunks.
+        3. Contradicted means the evidence says the opposite.
+        4. Ambiguous means the evidence is partial, indirect, or too broad.
+        5. Unsupported means the evidence does not establish the claim.
+        6. If a number, unit, code, or date in the claim is absent from cited evidence, the claim cannot be supported.
+        7. Do not repair or rewrite claims.
+        8. Return exactly one review object for each input claimId. Copy each claimId exactly once and do not invent new IDs.
+        9. Prefer exact evidence labels and verbatim quotes.
+        """
     }
 
     private func buildEvidenceRecords(
@@ -644,7 +479,6 @@ final class SourceOnlyAnswerService {
             return EvidenceRecord(
                 label: "E\(index + 1)",
                 chunk: chunk,
-                classification: DomainIsolationService.classifyChunk(chunk),
                 snippet: snippet
             )
         }
@@ -684,54 +518,30 @@ final class SourceOnlyAnswerService {
         return head
     }
 
-    private func renderEvidencePrompt(
-        _ evidenceRecords: [EvidenceRecord],
-        verificationMode: SourceOnlyVerificationMode
-    ) -> String {
+    private func renderEvidencePrompt(_ evidenceRecords: [EvidenceRecord]) -> String {
         evidenceRecords.map { record in
             let pageText = record.chunk.pageNumber ?? record.chunk.chunk.metadata.pageNumber
             let page = pageText.map(String.init) ?? "nil"
-            switch verificationMode {
-            case .generalEvidenceGrounded:
-                return """
-                <evidence id="\(record.label)">
-                <source>\(record.chunk.sourceDocument)</source>
-                <page>\(page)</page>
-                <chunk_id>\(record.chunk.chunk.id.uuidString)</chunk_id>
-                <text>\(record.snippet)</text>
-                </evidence>
-                """
-            case .strictScientificDomain:
-                return """
-                <evidence id="\(record.label)">
-                <experimental_domain>\(record.classification.domain.rawValue)</experimental_domain>
-                <experimental_domain_family>\(record.classification.domain.family.rawValue)</experimental_domain_family>
-                <control_cohort>\(record.classification.domain.isControl ? "true" : "false")</control_cohort>
-                <source>\(record.chunk.sourceDocument)</source>
-                <page>\(page)</page>
-                <chunk_id>\(record.chunk.chunk.id.uuidString)</chunk_id>
-                <text>\(record.snippet)</text>
-                </evidence>
-                """
-            }
+            return """
+            <evidence id="\(record.label)">
+            <source>\(record.chunk.sourceDocument)</source>
+            <page>\(page)</page>
+            <chunk_id>\(record.chunk.chunk.id.uuidString)</chunk_id>
+            <text>\(record.snippet)</text>
+            </evidence>
+            """
         }.joined(separator: "\n\n")
     }
 
     private func buildExtractionPrompt(
         query: String,
-        queryDomain: String,
         candidateAnswer: String,
         answerIntent: AnswerIntent,
-        evidencePrompt: String,
-        verificationMode: SourceOnlyVerificationMode
+        evidencePrompt: String
     ) -> String {
-        let modeLabel = verificationMode == .strictScientificDomain
-            ? "STRICT_SCIENTIFIC_DOMAIN"
-            : "GENERAL_EVIDENCE_GROUNDED"
-        return """
-        <verification_mode>\(modeLabel)</verification_mode>
+        """
+        <verification_mode>GENERAL_EVIDENCE_GROUNDED</verification_mode>
         <query>\(query)</query>
-        <query_domain>\(queryDomain)</query_domain>
         <answer_intent>\(answerIntent.rawValue)</answer_intent>
         <candidate_answer>\(candidateAnswer)</candidate_answer>
         <evidence_set>
@@ -742,19 +552,13 @@ final class SourceOnlyAnswerService {
 
     private func buildReviewPrompt(
         query: String,
-        queryDomain: String,
         draft: SourceOnlyAnswerDraft,
-        evidencePrompt: String,
-        verificationMode: SourceOnlyVerificationMode
+        evidencePrompt: String
     ) -> String {
         let claimsJSON = (try? encodeJSON(draft.claims)) ?? "[]"
-        let modeLabel = verificationMode == .strictScientificDomain
-            ? "STRICT_SCIENTIFIC_DOMAIN"
-            : "GENERAL_EVIDENCE_GROUNDED"
         return """
-        <verification_mode>\(modeLabel)</verification_mode>
+        <verification_mode>GENERAL_EVIDENCE_GROUNDED</verification_mode>
         <query>\(query)</query>
-        <query_domain>\(queryDomain)</query_domain>
         <claims>\(claimsJSON)</claims>
         <evidence_set>
         \(evidencePrompt)
@@ -819,9 +623,7 @@ final class SourceOnlyAnswerService {
     private func mergeClaimDraft(
         _ draft: SourceOnlyClaimDraft,
         review: SourceOnlyClaimReview?,
-        evidenceRecords: [EvidenceRecord],
-        domainBlocks: [SourceOnlyDomainBlockDraft],
-        strictDomainMode: Bool
+        evidenceRecords: [EvidenceRecord]
     ) -> SourceOnlyVerifiedClaim {
         let mappedEvidence = Dictionary(uniqueKeysWithValues: evidenceRecords.map { ($0.label, $0) })
         let rawLabels = review?.evidenceLabels.isEmpty == false ? review?.evidenceLabels ?? [] : draft.evidenceLabels
@@ -879,30 +681,6 @@ final class SourceOnlyAnswerService {
         let exactClaimHasHardAnchor = !numericTokens.isEmpty
             || !quote.isEmpty
             || claimContainsSpecificationCue(draft.claimText)
-
-        let relevantBlocks = domainBlocks.filter { validLabels.contains($0.evidenceLabel) }
-        if strictDomainMode, !relevantBlocks.isEmpty {
-            if claimMentionsRoute(draft.claimText), relevantBlocks.allSatisfy({ normalize($0.route) == "null_unsupported" }) {
-                verdict = .unsupported
-                fidelity = min(fidelity, 0.2)
-                notes.append("Route of administration is NULL_UNSUPPORTED in domain blocks.")
-            }
-            if claimMentionsDuration(draft.claimText), relevantBlocks.allSatisfy({ normalize($0.duration) == "null_unsupported" }) {
-                verdict = .unsupported
-                fidelity = min(fidelity, 0.2)
-                notes.append("Duration is NULL_UNSUPPORTED in domain blocks.")
-            }
-            if claimMentionsDose(draft.claimText), relevantBlocks.allSatisfy({ normalize($0.dose) == "null_unsupported" }) {
-                verdict = .unsupported
-                fidelity = min(fidelity, 0.2)
-                notes.append("Dose is NULL_UNSUPPORTED in domain blocks.")
-            }
-            if claimMisstatesParallelControl(draft.claimText, domainBlocks: relevantBlocks) {
-                verdict = .unsupported
-                fidelity = min(fidelity, 0.1)
-                notes.append("Claim conflicts with default parallel control interpretation.")
-            }
-        }
 
         let anchorOverlap = lexicalOverlap(claim: draft.claimText, evidenceTexts: citedTexts)
         if anchorOverlap < 0.14 && verdict == .supported {
@@ -1053,37 +831,6 @@ final class SourceOnlyAnswerService {
         }
 
         return true
-    }
-
-    private func buildAbstentionText(reason: String) -> String {
-        if reason.lowercased().contains("domain isolation") {
-            return "DOMAIN ISOLATION BREACH: Cannot answer reliably. \(reason)"
-        }
-        return "I couldn't verify a source-grounded answer from the retrieved evidence. \(reason)"
-    }
-
-    private func claimMentionsRoute(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        let routeTerms = ["intraperitoneal", "ip", "intravenous", "iv", "oral", "po", "subcutaneous", "incubation", "culture media", "topical", "injected"]
-        return routeTerms.contains { lower.contains($0) }
-    }
-
-    private func claimMentionsDuration(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        let durationTerms = ["hour", "hours", "day", "days", "week", "weeks", "month", "months", "duration", "continuous"]
-        return durationTerms.contains { lower.contains($0) }
-    }
-
-    private func claimMentionsDose(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        let doseTerms = ["mg/kg", "mg/day", "mg/ml", "ug/ml", "bid", "dose", "dosing"]
-        return doseTerms.contains { lower.contains($0) }
-    }
-
-    private func claimMisstatesParallelControl(_ text: String, domainBlocks: [SourceOnlyDomainBlockDraft]) -> Bool {
-        let lower = text.lowercased()
-        guard lower.contains("previously treated") || lower.contains("after vehicle") else { return false }
-        return domainBlocks.contains { normalize($0.controlType) == "parallel" || normalize($0.controlType) == "null" }
     }
 
     private func buildStructuredAnswer(
@@ -1304,7 +1051,6 @@ final class SourceOnlyAnswerService {
 private struct EvidenceRecord: Sendable {
     let label: String
     let chunk: RetrievedChunk
-    let classification: DomainIsolationService.Classification
     let snippet: String
 }
 

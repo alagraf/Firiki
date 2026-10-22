@@ -4,6 +4,9 @@
 
 ## 5.7 <!-- unreleased -->
 
+### Changed
+- **[Orchestration]** **Medical domain isolation replaced by an advisory jurisdiction caveat (legal fork).** `DomainIsolationService` (in vitro / in vivo / clinical / in silico) is deleted. It abstained inside `SourceOnlyAnswerService` before verification, and for state-lookup and exact-value questions that abstention replaced the drafted answer with "DOMAIN ISOLATION BREACH". `SourceOnlyAnswerService` now always runs the evidence-grounded mode: the strict scientific mode, its prompts, the `SourceOnlyDomainBlockDraft` schema and the route, dose, duration and control-cohort checks are removed, which also frees draft output tokens. New `JurisdictionService` classifies retrieved chunks at query time (Greek, EU, ECHR, CY, DE, FR, IT, UK, US, or unknown) from citation, court and gazette patterns; nothing is stored. The target is Greek law unless the question names another. `RAGService.finalizeResponse` prefixes a caveat, in Greek for a Greek question, when evidence comes from a legal order the target's courts are not bound by. Gate I is now `VerificationGate.jurisdiction`, advisory (always passes), reporting the caveat in its details. `[evidence_level: code_verified, confidence: high; evidence_source: JurisdictionService.swift, SourceOnlyAnswerService.swift, VerificationGateService.swift, RAGService.swift, AnswerIntelligenceView.swift, JurisdictionServiceTests.swift; not device-verified]`
+
 ### Removed
 - **[UI]** **Atlas tab and visualization entry points.** Removed the Atlas tab from `ContentView` (reducing primary tab navigation to Chat, Documents, Database, and Settings) and removed the Knowledge Atlas link from `DeveloperDiagnosticsHubView`. `[evidence_level: test_verified, confidence: exact; evidence_source: ContentView.swift, DeveloperDiagnosticsHubView.swift; macOS smoke build succeeded; EntitlementProtectionTests 8 passed on iOS Simulator]`
 

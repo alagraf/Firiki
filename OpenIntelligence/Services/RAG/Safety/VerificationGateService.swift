@@ -10,7 +10,7 @@
 //  Gate C: Numeric Sanity - numbers in response must match source
 //  Gate D: Contradiction Sweep - detect conflicting evidence
 //  Gate H: Answer Completeness - detect under-supported multi-hop or comparison answers
-//  Gate I: Domain Isolation - reject mixed-domain evidence before synthesis
+//  Gate I: Jurisdiction - advisory; reports evidence from another legal order as a caveat
 //
 
 import Foundation
@@ -69,7 +69,7 @@ enum VerificationGate: String, CaseIterable, Sendable {
     case quoteFaithfulness = "Gate F: Quote Faithfulness"
     case generationQuality = "Gate G: Generation Quality"
     case answerCompleteness = "Gate H: Answer Completeness"
-    case domainIsolation = "Gate I: Domain Isolation"
+    case jurisdiction = "Gate I: Jurisdiction"
 }
 
 // MARK: - Verification Configuration
@@ -994,23 +994,26 @@ actor VerificationGateService {
         )
     }
 
+    /// Advisory: never fails. Evidence from another legal order is still used, and the answer
+    /// carries the caveat (applied in `RAGService.finalizeResponse`). Confidence is the share of
+    /// recognised evidence that the target jurisdiction's courts are bound by.
     private func runGateI(
         query: String,
         chunks: [RetrievedChunk],
         answerIntent: AnswerIntent?
     ) -> RAGVerificationResult.GateResult {
-        let assessment = DomainIsolationService.assess(query: query, chunks: chunks, answerIntent: answerIntent)
-        let confidence = assessment.allowedCoverage
+        let assessment = JurisdictionService.assess(query: query, chunks: chunks)
 
-        if assessment.shouldAbstain {
-            Log.warning("[VerificationGates] Gate I FAILED: \(assessment.reason ?? assessment.details)", category: .pipeline)
+        if let caveat = assessment.caveat {
+            Log.info("[VerificationGates] Gate I jurisdiction caveat: \(caveat)", category: .pipeline)
         }
 
         return RAGVerificationResult.GateResult(
-            gate: .domainIsolation,
-            passed: !assessment.shouldAbstain,
-            confidence: confidence,
-            details: assessment.reason ?? assessment.details
+            gate: .jurisdiction,
+            passed: true,
+            confidence: assessment.compatibleShare,
+            details: assessment.caveat
+                ?? "No jurisdiction mismatch (target \(assessment.target.rawValue))"
         )
     }
 
@@ -1657,10 +1660,6 @@ extension VerificationGateService {
 
         if failedGates.contains(.semanticGrounding) {
             return "My response doesn't appear to be well-supported by the source documents. The answer to your question may not be present in the available materials. Please try rephrasing or check the documents directly."
-        }
-
-        if failedGates.contains(.domainIsolation) {
-            return "The retrieved evidence crossed incompatible domains, so I refused to blend it into one answer. Please narrow the question or retrieve more domain-specific material."
         }
 
         if failedGates.contains(.quoteFaithfulness) {
