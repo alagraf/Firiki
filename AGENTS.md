@@ -60,10 +60,11 @@ The fork's identity, which must survive every change and every sync with the ori
 
 - Run `scripts/check_icloud_conflicts.sh` first if a build fails for no clear reason. The repository
   is in iCloud-synced `~/Documents`, which can create duplicate `Foo 2.swift` files.
-- Smoke build (the script's default simulator isn't installed, so name it):
+- Smoke build (defaults to the iPhone 18 Pro simulator; set `OPENINTELLIGENCE_SIMULATOR_DESTINATION`
+  to use another):
 
   ```bash
-  OPENINTELLIGENCE_SIMULATOR_DESTINATION="platform=iOS Simulator,name=iPhone 18 Pro" bash scripts/build_simulator_smoke.sh
+  bash scripts/build_simulator_smoke.sh
   ```
 
 - Tests, using a `-derivedDataPath` outside `~/Documents`, with `-only-testing:` to run a subset:
