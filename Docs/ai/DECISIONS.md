@@ -715,6 +715,17 @@ templates, bank rebuild) stands; it restores this path, it does not change its n
 button on the sample workspace still shuffles the curated list; that is the one place the set is
 not deterministic, left as is at "let's put this to rest".
 
+**Corrected 2026-10-20, for 5.7.** This set seldom reached the screen. `ChatScreen` had its own list
+of four, older than this decision (6dc093c, 2026-05-12), shown first whenever the architecture and
+Private Cloud Compute guides were both there under their own names, so this set showed only when one
+of them was there as a numbered copy alone, and the refresh button above changed nothing under the
+older list. 5.7 removes that list and shows this one for a library made only of samples, limited to
+the samples it holds. That follows from the decision: such a library with a guide deleted went to
+the generator, which this decision rules out for the samples. Two of its questions named headings
+the rewritten guides no longer had and were replaced by two of the four the screen had shown, a third
+of those now leads the list, and every question names a heading its guide has
+(`SampleQuestionHeadingsTests`). The set is still written by hand and the same on every device.
+
 ## 2026-09-23 - Standard checks an answer against its sources only when the verification gates flag it
 
 **Context.** `SourceOnlyAnswerService.verifyAndRender` is a second check on extractive answers: a
@@ -1660,6 +1671,10 @@ managed signing adds a capability the App ID lacks was not established, and a fa
 (2) Version "1" to avoid guard objects' memory cost. Not chosen: the values Xcode sets are "2", and the memory cost
 on a large library is to be measured on a device instead.
 
+**Update 2026-10-17.** Back in as recorded: the owner signed in to Xcode, and an iPhone build and a Mac build with
+`-allowProvisioningUpdates` signed with the five entitlements and the two build settings, which registered the
+capability on the App ID. The app group for the "Your Library" widget went in the same commit.
+
 **Consequences.** Until then the row stays open. When it goes in: measure an import of the 88 MB JSON Lines file on
 the iPhone before and after (memory and passages per second), because guard objects and the hardened heap can raise
 memory use, and the app's largest imports already run near the phone's limit; then decide on hardware memory
@@ -1725,3 +1740,311 @@ similarity. The protected file is unchanged, so rows written through 5.6 stay in
 
 **Alternatives.** Delete stale rows: needs the protected file, not named. Keep the similarity lookup and check its
 rows: its results carry no library state that `RAGService` can check.
+
+## 2026-10-14 - Deep Think and Maximum run the verification gates as a label, and do not abstain on them
+
+**Context.** Every answer mode was listed as verifying (`RAGQualityMode.usesVerificationGates` is true for all
+three, and Settings lists Verify for each), while Deep Think and Maximum returned before the gates ran, so their
+answers read Not Checked unless the source-only check ran. The App Store description says the app checks its
+answers. Standard abstains when its gates fail below its threshold.
+
+**Decision.** From 5.7 a Deep Think or Maximum answer that the source-only check did not check runs the same
+`VerificationGateService.verify` and confidence policy as Standard (`RAGService.verifyAgenticAnswer`), and its
+status string reads `verified:NN%` or `unverified:<gates>`, so the badge shows Verified or Unverified and the
+failed gates are listed as warnings. The answer stays as written: the result is not passed into the structured
+answer, because a structured answer rebuilt from a failed check can turn into a refusal, and these answers take
+minutes of the person's time.
+
+**Alternatives.** Abstain on a failed check, as Standard does: rejected for these modes, where a refusal after
+minutes reads as the app failing, and the badge already says the check failed. Run the source-only check on every
+answer instead: it rewrites the answer, which is a larger change than labelling it.
+
+## 2026-10-14 - The background inference entitlement waits for Xcode or the developer portal to offer it
+
+**Context.** Apple documents `com.apple.developer.background-tasks.continued-processing.inference` (developer.apple.com,
+read 2026-10-14: required for any Neural Engine access while the app is in the background, iOS and macOS 27). It
+was added to `OpenIntelligence.entitlements` at the owner's word, and the iPhone build with
+`-allowProvisioningUpdates` refused it: "Entitlement ... not found and could not be included in profile. This
+likely is not a valid entitlement and should be removed from your entitlements file." The iOS 27.0 SDK's
+BackgroundTasks headers name only the `.gpu` key, Xcode 27.0's capability list has Background GPU Access and
+nothing for inference, and the App ID's capabilities read through the App Store Connect API are In-App Purchase,
+Background GPU Access, Private Cloud Compute and iCloud.
+
+**Decision.** The key is not in the entitlements. Background imports keep asking for the GPU, which the App ID
+has. The key goes in when Xcode's Signing & Capabilities or the developer portal lists it, or when Apple grants it
+on request.
+
+**Alternatives.** Keep the key in the file: every build fails signing, the Xcode Cloud archive included.
+
+## 2026-10-15 - Fifteen roadmap rows that waited on a decision, settled or handed back
+
+**Context.** The roadmap reconciliation of 2026-10-14 found fifteen open rows that could not move without a
+decision. The owner asked on 2026-10-14 that they be decided by best practice, with the reasons recorded here. A
+decision that needs his money, his choice of languages or a protected file he has not named is handed back, not
+taken.
+
+**Decided.**
+- *Minimum OS stays iOS and macOS 26* (row "27 SDK deprecations"). Raising it to 27 would clear five deprecated
+  `BGTaskScheduler.submit` calls and drop every iPhone and Mac still on 26; the calls work on 27. Revisit when the
+  App Store's own figures show most of the app's users on 27.
+- *Library sync stays file-based* (row "CKSyncEngine / SwiftData"). 5.7 fixed the measured causes of conflict copies
+  (only changed files are sent, one coordinated replace per file, `WorkspaceSyncService`). A move to CloudKit
+  records is a new App ID service and a migration of every synced library; it is reconsidered only if conflict
+  copies keep growing on devices running 5.7.
+- *The 86 MB model stays a plain git file* (row "86 MB model in git"; `EmbeddingModel.bundle/main.mlirb`, 90,352,203
+  bytes). Git LFS on a public repository spends the owner's LFS bandwidth on every download of the file, Xcode
+  Cloud's included, and a free account includes 10 GiB (docs.github.com, Git LFS billing, read 2026-10-15);
+  rewriting history to move the file breaks every commit id quoted in the docs and the roadmap. No re-export is
+  planned; if one is, the model is fetched at build time instead.
+- *Additive-then-swap re-embedding is required before any release that moves existing libraries to another model by
+  itself* (row "Additive-then-swap migration"). Until then, the only provider change is one the person starts in
+  Library Settings, which asks "Rebuild embeddings now?" first. Stays Future Backlog.
+- *No trigram keyword index* (row "FTS5 weights and trigram index"). It needs `SQLiteFullTextService.swift`'s
+  schema, which is protected and not named for 5.7, and the row's own measurement was 104 to 263 percent more
+  database on disk. The weights half is done.
+- *No voting board* (row "Voting board"). Shared votes need a server, CloudKit's public database or an outside
+  service, and a local-first app sends nothing out unless the person asks. The feature-request email stays.
+- *Apple Notes is covered by Shortcuts* (row "Apple Notes integration"). There is no public Notes API: a DTS
+  engineer answered "No" in developer.apple.com/forums/thread/813810 (January 2026, read 2026-10-15) and pointed to
+  App Intents in a shortcut; the supported route is the app's own actions in a shortcut with Notes' actions, and
+  5.7's "Add to Library" takes a note's text. The row closes when such a shortcut runs on a device.
+- *The custom pipeline row is covered by Library Settings* (row "Custom RAG Pipeline Configuration"). Advanced
+  Controls has minimum similarity, the vector and keyword weights, MMR's λ (which acts from 5.7), minimum confident
+  passages and explicit citations, with four presets. No further control is added without a measurement that it
+  helps. *(Correction 2026-10-20: no one can see Advanced Controls. `ContainerSettingsSheet` draws them only when
+  `SettingsStore.developerRAGTuningEnabled` is true, and `SettingsStore` forces that false at launch and on every
+  change ("Developer tuning is deprecated - always disabled"); the same flag turns on the ungrounded fallback. Whether
+  to show the controls again, apart from that fallback, is the owner's call, and the row stays open until then.
+  `[evidence_level: code_verified, measured (robot run in the iOS 27.0 Simulator), confidence: high]`)* *(Decided 2026-10-20, the owner: "if it can be added, then we add it; if it needs to be fixed, then we fix it". See "Library Settings shows its search settings, and each one acts as it says" below.)*
+- *The Vision OCR demo row is a test idea, not a feature* (row "Multi-Modal Verification (Vision OCR)"). 5.7's
+  pictures are described from the picture, and an image with no readable text imports with its labels and
+  description (`ImageUnderstandingService`, read from code; no test imports such an image yet).
+- *Deep Think keeps its local reasoning chain by default* (row "Decide: long-context PCC pass vs the local reasoning
+  chain"). The local chain sends nothing out; a long-context pass on Private Cloud Compute would send the documents'
+  passages for every Deep Think question. It is reconsidered with an A/B on the owner's documents, which needs a
+  signed build.
+
+**Handed back to the owner.** *Which languages to localize into* (row "Localization"): a choice of markets and of
+who checks the translations. *A per-answer-mode model profile* and *passages by reference* were moved to Future
+Backlog at his word on 2026-10-14. *User-built reasoning profiles* and *visual document retrieval* need protected
+files he has not named (`FoundationModelRoutePolicy.swift`, `BNNSVectorDatabase.swift`) and, for the second, a
+third-party image model, which is his call: on 2026-10-06 he kept the app on Apple's models for generation, and no
+decision covers a third-party model for search.
+
+**Alternatives.** Leave every row waiting: rejected, rows nobody can close accumulate (the roadmap skill's rule).
+
+## 2026-10-15 - A deletion in the app waits a few seconds before it removes anything
+
+**Context.** Through 5.6 a delete removed a document's passages, text, Spotlight entries, file and iCloud copy at once,
+and the catalogue row "Delete with confirmation, undo" asked for an undo. Removing passages and embeddings cannot be
+reversed without importing the file again, which makes new embeddings and a new id.
+
+**Decision.** A deletion takes the documents out of the list at once and runs the removal six seconds later
+(`PendingDocumentRemoval.undoWindow`), unless it is undone (`RAGService.scheduleRemoval`). Nothing is removed in those
+seconds, so an undo puts the documents back exactly as they were. The removal also runs when the app goes to the
+background, before a library is deleted, and at the next launch if the app ended in those seconds; the ids are kept
+per run of the app in `pending_document_removals.json` for that. Six seconds is a default chosen on 2026-10-15, not a
+measurement.
+
+**Alternatives.** A Recently Deleted area that keeps everything for days, as Photos does: every sweep that removes
+passages or text with no document (`removeTextOfUnfinishedImports`, the iCloud sweeps) would have to know about it,
+and a shared library's other devices would keep showing the document. Restoring by importing again: slower, and the
+document comes back with a new id, so conversations citing it lose the link.
+
+**Consequences.** Another device sees the deletion only when the removal runs, since the record of a deleted document
+(`registerDeletedDocuments`) is written then. A Mac app quit in those seconds removes the documents at its next launch;
+a Mac window closed in them keeps its engine until the removal runs. In those seconds Spotlight still finds the
+documents, while Shortcuts and Siri no longer list them. Anything that empties or rebuilds a library runs pending
+removals first or skips them, because their files and passages are still there. "Delete Documents" uses the same
+removal with undo only in the open app, on the app's own engine (`UndoableIntent`, `isTheAppsEngine`); run with no app
+on screen, it removes at once, because nothing is there to undo it in. A refuting review on the day of the decision
+found eight ways the first version could lose or keep the wrong document, and each is answered in the code.
+
+## 2026-10-15 - Domain isolation engages only for a question that reads as lab science
+
+**Context.** Gate I (`DomainIsolationService`) keeps an answer to a lab-science question from mixing in vitro, in vivo,
+clinical and in silico evidence. It engaged when the question or two passages scored two keywords, and it matched
+keywords inside words. A demo library of travel and hotel documents had ten right answers marked Unverified by this gate
+alone, and one question refused (Simulator, demo copy of e9de06d, 2026-10-15).
+
+**Decision.** Keywords count as whole words or phrases; "um", "ip", "po" and "iv" are no longer keywords; and the gate
+engages only when the question itself scores two or more keywords.
+
+**Alternatives.** Whole words alone: an everyday question over a benefits document ("participants", "human resources")
+ranked first could still be refused as clinical evidence. Engaging on the passages too, as before: a general question
+over a scientific library ("what did the study find?") keeps the protection, at the cost of refusing everyday answers in
+any library whose documents use those words.
+
+**Consequences.** A general question over a scientific library is no longer kept to one study domain; the other gates
+still check every claim against its passages. The decision is reopened if a scientific library's general questions are
+seen mixing domains in answers.
+
+## 2026-10-16 - Text meets 4.5 to 1: a high-contrast gray, label-colored words on tinted chips, a deeper light-mode accent
+
+**Context.** Apple's Sufficient Contrast label asks for 4.5 to 1 on most text in the common tasks, by default, in
+light and dark ("Sufficient Contrast evaluation criteria", developer.apple.com, read 2026-10-16). With the hardware
+X-Ray off, Apple's audit found 31 to 54 issues per setting on Chat, Documents and Settings
+(`BenchmarkRuns/2026-10-15-accessibility-audit-xray-off/`): small `Color.secondary` text, which draws at 3.4 to 1 on
+white; colored words on pale tints of the same color (3.5 to 4.1 even in Apple's high-contrast colors; iOS 27 draws its
+high-contrast blue as (30, 110, 244)); and white on the #007AFF accent at 4.0 to 1. The audit's own contrast verdicts did
+not always follow the drawn pixels, so every item was measured on the screenshot. The owner pulled the work into 5.7
+and chose the two styling changes below.
+
+**Decision.** `DSColors.secondaryText` is `systemGray` resolved with the high-contrast trait (#6C6C70 in light, 5.2 to 1),
+and `DSColors.readable(_:)` resolves any color the same way; on the Mac, where `NSAppearance(named:)` returns nil for the
+high-contrast names, a color is blended toward black or white until it reaches 4.5 to 1 against the window background.
+Words on tinted chips and pills are in the label color, and the color stays in the icon and the tint ("Black/white text,
+color stays"). The accent is #005CDB in light ("Deeper blue #005CDB"; white on it and it on white are both 5.9 to 1) and
+stays #007AFF in dark.
+
+**Alternatives.** Apple's high-contrast colors for the chip words: measured 3.5 to 4.1 on their tints. Responding only to
+the Increase Contrast setting: the criterion asks for contrast by default. A deeper accent in dark as well: blue text on
+black would fall from 5.2 to 3.6 to 1, and in dark no one blue gives both white-on-blue and blue-on-dark 4.5 to 1 against
+the dark cards. Larger type for the small grays: moves the layout more than a darker gray does.
+
+**Consequences.** Gray text everywhere `DSColors.secondaryText` is used is a shade darker; the chips lose their colored
+words but keep their colored icons and tints; the light-mode accent and everything tinted with it is a little deeper.
+White on a filled blue button in dark mode stays at 4.0 to 1. Only Chat, Documents and Settings are audited so far; the
+first-run screen, an answer, adding a document and the purchase sheet come before the labels are declared. Reopen if
+Apple's criteria or the audit change, or if a screen shows a contrast item that measures under 4.5 to 1 on screen.
+
+## 2026-10-19: Balanced stays the default GPU profile; large searches are not moved to the GPU by default
+
+**Context.** On 2026-10-18 the owner, told that the GPU setting's text had been untrue, asked for the CPU, GPU and Neural
+Engine to be "cranked" and used "when they're supposed to be", and the plan he was given included deciding the default
+profile and the background GPU path by measurement.
+
+**Measured.** (1) Vector search, M3 Pro, macOS 27 (`BenchmarkRuns/2026-10-19-metal-vs-vdsp-search`): the app's Metal
+shader is slower than Accelerate's `vDSP_mmul` at every size tried, 0.28 against 0.01 ms at 1,000 passages and 5.69
+against 3.80 ms at 150,016 with zero-copy buffers; scores agree to 1e-7. (2) Embedding: Core ML plans MiniLM onto the
+Neural Engine under `.all` (150 of 161 operations, M3 Pro, `BenchmarkRuns/2026-10-18-compute-plan`); on the owner's
+iPhone 16 Pro Max on 2026-10-10 the Neural Engine was the fastest unit for it (116 to 121 passages a second against 108
+for CPU and GPU); on the Mac a new library uses Core AI, on the GPU. (3) Background GPU: the owner's iPhone 16 Pro Max
+records `backgroundGPUSupported: false` with the entitlement in the build (its status files, 2026-10-16 and 10-17).
+
+**Decision.** Balanced stays the default. It keeps search on the faster CPU path, lets an import's embedding model use
+whatever unit Core ML picks (the Neural Engine where it plans it), and gives scanned PDF pages the extra Core Image pass
+on the GPU. Performance and Maximum stay as choices; on this Mac they make large searches 1 to 2 ms slower, which no
+person will notice, and nothing they add was measured faster. The background GPU request stays as it is: iOS decides,
+and on the owner's iPhone it says no.
+
+**Alternatives.** Making Balanced use Metal for large searches (rejected: slower on the only machine measured).
+Removing the Metal search path (not done: an iPhone has not been measured, and the path is correct).
+
+**Consequences.** "Crank" is answered with numbers rather than more GPU: the hardware is used where it was measured to
+help. An iPhone measurement of the search paths would reopen this (a debug benchmark like `DebugEmbeddingBench`).
+
+## 2026-10-20 - Library Settings shows its search settings, and each one acts as it says
+
+**Context.** The row "Custom RAG Pipeline Configuration" said Advanced Controls covered it. A robot run that day
+found no one could see them: `ContainerSettingsSheet` drew them only when `SettingsStore.developerRAGTuningEnabled`
+was on, and the app forces that off. Asked whether to show them, the owner answered that anything that can be added
+is added and anything that needs fixing is fixed. Reading what each control did found three more faults: Passages
+Needed acted only for a library whose values equalled the High Accuracy preset, and there the acceptance override,
+set for nearly any library of ten or more passages, skipped it; Require Explicit Citations changed nothing, because
+every mode asks for citations; and tuning after an import could replace values the person set.
+
+**Decision.** A Search section in Library Settings: a style (Automatic, Balanced, High Precision, Technical Manual,
+Exploratory) and Advanced Controls with four values, each described by what the code does with it. The bar is called
+the minimum score and is described as relative, because the re-ranker rescales each question's scores to 10 to 90
+(`RAGEngine.rerank`); a refuting review on 2026-10-20 found the first wording ("how closely a passage has to match")
+untrue on that ground and three other lines too. Passages Needed acts for any library when it is 2 or more, counted at
+the re-ranker's scores (`RetrievalPolicyService.strongPassageShortfall`). The citations switch is
+not shown. The person's choice is recorded in the field the switch used, `requireExplicitCitations`, read through
+`RetrievalConfig.isChosenByPerson`: the filter already used it to keep the person's bar, and tuning after an import
+already left such a library alone, so it meant "the person's values" in practice. The keyword and meaning slider
+covers 35% to 65%, the range the search keeps each side in. The developer switch stays forced off; it also turns on
+the ungrounded fallback, which this does not touch.
+
+**Alternatives.** A new field for the person's choice (needs `KnowledgeContainer.swift`, whose route requires the
+owner to name it, and changes the library's saved and synced form). Showing the old controls unchanged (two of them
+did not do what they said). Making the bar a hard floor for every chosen style (would make Balanced chosen by hand
+stricter than Balanced picked by Automatic).
+
+**Consequences.** A library whose values someone set by hand keeps them. A High Precision library holds back a
+Standard answer with fewer than two close passages, which it never did in practice before. Deep Think and Maximum
+use the weights and Variety but set their own bar for each step, and the section says so. Because the score is
+relative, a minimum says how a passage ranks among those found, not how well it matches; making it absolute (the
+cross-encoder's raw score) would be a retrieval change of its own, for the benchmark. Not measured on the retrieval
+benchmark. `[evidence_level: code_verified, test_verified (RetrievalStyleTests), measured (robot run in the iOS 27.0
+Simulator, 2026-10-20), confidence: high for the mechanism]`
+
+## 2026-10-20 - Answers and passages handed to Shortcuts are kept for a day and looked up by id
+
+**Context.** In the iOS 27.0 Simulator, "Ask My Documents" followed by Copy to Clipboard failed with "There was a
+problem running the shortcut" after the answer card's Done. Shortcuts' runner stopped on an assertion while writing
+the answer for the clipboard (`-[WFContentItem additionalRepresentationsForSerialization]`, reason "All serialized
+item keys must have the prefix link.contentkit.", crash reports in `~/Library/Logs/DiagnosticReports`). Find Passages
+followed by Copy to Clipboard failed the same way; List Documents followed by it ran. The answer and the passage were
+`TransientAppEntity` types, handed out whole; a document is an `AppEntity` the system passes by id and looks up
+again through the app's query. Adding a plain-text data form to the two transient items was tried first and changed
+nothing (same assertion).
+
+**Decision.** `OIAnswerEntity` and `OIPassageEntity` are `AppEntity` types with queries that read
+`HandedOutItems`, a file in the local cache folder holding what actions handed out in the last day (at most 100
+answers with their passages, and 500 passages of no kept answer). An item past its day is removed from the file
+whenever it is read or written and at each document load, and a passage of a document in no library goes then with
+any answer that used it. An answer is recorded with its passages when it is built (`init(question:response:mode:)`),
+and Find Passages records its passages (`OIPassageEntity.handedOut`). `RAGAppIntents.swift` is not changed.
+
+**Alternatives.** Returning text instead of items (loses the answer's sources and question for the next step).
+Resolving a passage from its library's vector store by its chunk id (its score belongs to one search, and a
+deleted document would leave nothing to return). Keeping items longer (a shortcut's steps need them for seconds).
+
+**Consequences.** Answers and passages exist on the device for up to a day after a shortcut asked for them, which
+`Docs/PRIVACY_AND_ROUTING.md` records. A shortcut that saves an answer and reads it more than a day later gets
+nothing back. The assertion is in Apple's code and may be fixed by Apple; nothing here depends on it staying.
+`[evidence_level: measured (robot runs in the iOS 27.0 Simulator, the Simulator's clipboard, BackgroundShortcutRunner
+crash reports, 2026-10-20), build_verified (Metadata.appintents), test_verified (HandedOutItemsTests), confidence:
+high]`
+
+
+## 2026-10-20 - Labels number the passages an answer keeps; a label that still matches none is logged, not removed
+
+**Context.** In the iOS 27.0 Simulator "How much is the pet deposit?" was answered "$300.00 [S1], [S5], [S6]" from
+three passages, and only [S1] opened anything. A first fix took labels that matched no passage out of the answer,
+on the reading that the model had made them up. A refuting review traced them to the app: the sentence extractor
+labelled each source by its place among all the candidates (`[S\(sentence.sourceIndex + 1 + labelOffset)]`), while
+the answer keeps only the sources it used, numbered from one, so the model was shown [S1], [S5] and [S6] for the
+answer's passages 1, 2 and 3 and cited them correctly. The needle rescue (the same extractor from `labelOffset`) and
+`RAGEngine.assembleContext` (labels by candidate after skipping near-duplicates) had the same gap; in the assembler a
+label after a skip opened the wrong passage, not just none. Removing the labels would have deleted those correct
+citations and hidden the defect, which is what the 2026-08-19 rule for the reasoning trace ("This logs rather than
+rewrites", the comment above `AgenticOrchestrator.danglingCitations` in `RAGService`) exists to prevent.
+
+**Decision.** Labels are numbered where they are made, by the passages the answer keeps. For the Standard path and
+its needle rescue, which keep only the sources used, the extractor fills each number in after packing, in the order of
+`usedSourceIndices` (`numberByUse`, `RAGService.numberedLabels`); Deep Think's windows, which keep every routed
+passage, keep the candidate's place plus the window's start, which was already right for them. The assembler labels
+a block `used + 1`. `finalizeResponse` logs a label past the answer's passages and leaves the text as it is, the
+same rule the reasoning trace has.
+
+**Alternatives.** Taking such labels out of the answer (deletes correct citations whenever the numbering is wrong,
+and hides that it is). Renumbering the answer's labels after generation (guesses which passage each label meant).
+Numbering by candidate and keeping every candidate in the answer's passages (gives the answer passages the model
+never read).
+
+**Consequences.** A label in a Standard answer opens the passage the model was shown under it, and Share, Copy and
+an answer handed to Shortcuts list the right document for it. A label that still matches nothing stays visible as
+text and is in the trace with the answer's source count, which is where a future numbering mismatch will show.
+Deep Think's reasoning chain numbers its labels over `routedChunks` and its result returns that list
+(`AgenticOrchestrator`, the chain path); its other result paths (the multi-chain, recursive research and
+`allRetrievedChunks` ones) were not traced. `[evidence_level: code_verified (the three label sites, the callers that
+build the answer's passages, and the chain path's result), test_verified (CitationLabelNumberingTests), confidence:
+high for the Standard path]`
+
+**Refined the same night: the numbers follow the order the context reads.** The household run on the committed fix
+(`1e379aa`) logged no label past an answer's passages, and the citation maps matched the saved passages, but 11 of the
+42 labels seemed to sit on a sentence another passage matched better (`~/.agents/oi-robot/scripts/label_truth.py`,
+which resolves each saved label the way a tap does). The extractor writes the sources by relevance and had numbered
+them by candidate, so the model read [S1], [S8], [S9], [S6] down the page. The sources are now numbered in the order
+the blocks are written and the answer keeps them in that order; the whole-passage assembler already labelled in the
+order it writes, and since the same night it chooses the passages that fit before placing them (the rank-2 fix in
+CHANGELOG 5.7). Considered and not taken: writing the blocks in candidate order instead, which keeps the numbers but
+gives up placing the most relevant sentences first. Repeated on the same 16 questions the order made no difference
+(10 of 36 by the same measure), and the measure itself misled: it compared sentences with saved passages cut to 600
+characters, while the extractor reads each passage with about 250 characters around it (`DocumentChunk.contextText`).
+Against full passages it was 8 of 36, mostly sentences from that surrounding text, which a tap shows on the page beside
+the highlighted passage, or sentences citing two sources. The order is kept because labels and the source list now
+read the way the model read them. `[evidence_level: measured (label_truth.py, two runs), code_verified, confidence:
+high that the numbering is right; the remaining placements are the model's]`

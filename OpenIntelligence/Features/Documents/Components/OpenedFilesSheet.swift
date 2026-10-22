@@ -11,14 +11,33 @@ import SwiftUI
 /// Look, read-only, and nothing joins a library until Add to Library; Don't Add, or closing the
 /// sheet, removes the app's copies. Through the first 5.7 builds a file handed over was imported at
 /// once. The system's document browser (`DocumentGroup`) was not used: it would make a document
-/// window part of the app's launch, for a file the person may not keep.
+/// window part of the app's launch, for a file the person may not keep. The library the files go to
+/// is chosen here, with the same chips the Documents screen uses, and starts on the open library.
 struct OpenedFilesSheet: View {
     let files: [URL]
-    let libraryName: String
-    let onAdd: () -> Void
+    let libraries: [KnowledgeContainer]
+    let documentCount: (UUID) -> Int
+    let onAdd: (UUID?) -> Void
     let onDiscard: () -> Void
 
     @State private var previewing: URL?
+    @State private var libraryId: UUID?
+
+    init(
+        files: [URL], libraries: [KnowledgeContainer], initialLibraryId: UUID?,
+        documentCount: @escaping (UUID) -> Int, onAdd: @escaping (UUID?) -> Void, onDiscard: @escaping () -> Void
+    ) {
+        self.files = files
+        self.libraries = libraries
+        self.documentCount = documentCount
+        self.onAdd = onAdd
+        self.onDiscard = onDiscard
+        _libraryId = State(initialValue: initialLibraryId)
+    }
+
+    private var libraryName: String {
+        libraries.first { $0.id == libraryId }?.name ?? "Library"
+    }
 
     var body: some View {
         NavigationStack {
@@ -28,13 +47,14 @@ struct OpenedFilesSheet: View {
                         Button {
                             previewing = file
                         } label: {
-                            HStack(spacing: 12) {
+                            HStack(spacing: DSSpacing.md) {
                                 Image(systemName: Self.symbol(for: file))
                                     .font(.title3)
                                     .foregroundStyle(DSColors.accent)
                                     .frame(width: 28)
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                                     Text(file.lastPathComponent)
+                                        .font(.subheadline)
                                         .foregroundStyle(DSColors.primaryText)
                                         .lineLimit(2)
                                     Text(Self.detail(of: file))
@@ -52,6 +72,27 @@ struct OpenedFilesSheet: View {
                 } footer: {
                     Text("Tap a file to look at it. Nothing is added until you add it.")
                 }
+
+                if libraries.count > 1 {
+                    Section("Add to") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: DSSpacing.sm) {
+                                ForEach(libraries) { library in
+                                    let count = documentCount(library.id)
+                                    ContainerPill(
+                                        container: library,
+                                        isSelected: library.id == libraryId,
+                                        canDelete: false,
+                                        badgeText: count > 0 ? "\(count)" : nil,
+                                        badgeStyle: .count,
+                                        onSelect: { libraryId = library.id }
+                                    )
+                                }
+                            }
+                            .padding(.vertical, DSSpacing.xs)
+                        }
+                    }
+                }
             }
             .navigationTitle(files.count == 1 ? "Opened File" : "\(files.count) Opened Files")
             #if os(iOS)
@@ -62,7 +103,7 @@ struct OpenedFilesSheet: View {
                     Button("Don't Add", role: .cancel, action: onDiscard)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add to \(libraryName)", action: onAdd)
+                    Button("Add to \(libraryName)") { onAdd(libraryId) }
                         .fontWeight(.semibold)
                 }
             }

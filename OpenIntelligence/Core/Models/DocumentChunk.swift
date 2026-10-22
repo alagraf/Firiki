@@ -31,6 +31,37 @@ struct DocumentChunk: Identifiable, Codable, Sendable {
         set { content = newValue }
     }
 
+    /// The text to read for this passage: its parent window when that holds the passage, the passage itself
+    /// otherwise (5.7). Readers use this in place of `parentContent ?? content`.
+    ///
+    /// A prose passage stores the window around it as `parentContent`, and the window holds the passage. A structured
+    /// passage (a table, a list, a run of key values) stores its section's title there, a label
+    /// (`DocumentProcessor` passes `currentSectionTitle`). Through 5.6 every reader took `parentContent ?? content`,
+    /// so a table's passage was read as its title alone. On 2026-10-19, in the iOS 27.0 Simulator, the last page of a
+    /// 60-page PDF was retrieved first for "Where is VERMILION-4417 kept?", and the model was given "Field log page 60
+    /// of 60: the harbor survey." and none of the row that answers it; it said no document mentioned the code. In
+    /// that library 238 of 520 passages were table passages whose parent was their title, and every prose passage's
+    /// parent held the passage.
+    nonisolated var contextText: String {
+        guard let parent = parentContent, parent.count >= content.count,
+            Self.window(parent, holds: content)
+        else { return content }
+        return parent
+    }
+
+    /// Whether `parent` holds the passage: the passage's first line of text, past any "[Part N]" label the
+    /// token-limit split adds, compared without whitespace, since a window and its passage can be wrapped
+    /// differently.
+    nonisolated static func window(_ parent: String, holds passage: String) -> Bool {
+        let firstLine = passage.split(whereSeparator: \.isNewline).lazy
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && !($0.hasPrefix("[Part ") && $0.hasSuffix("]")) }
+        guard let firstLine else { return true }
+        let probe = String(firstLine.prefix(40).filter { !$0.isWhitespace })
+        guard !probe.isEmpty else { return true }
+        return parent.filter { !$0.isWhitespace }.contains(probe)
+    }
+
     nonisolated init(
         id: UUID = UUID(),
         documentId: UUID,
@@ -698,11 +729,37 @@ struct ProcessingSummary: Identifiable {
         case "nl_embedding", nil:
             return "NLEmbedding"
         case "coreml_sentence_embedding":
-            return "CoreML Sentence"
+            return "MiniLM (Core ML)"
+        case "coreai_sentence_embedding":
+            return "MiniLM (Core AI)"
         case "apple_fm_embed":
             return "Apple FM"
         default:
             return embeddingProviderId ?? "NLEmbedding"
+        }
+    }
+
+    /// The vector size the provider writes, the figures `EmbeddingService.forProvider`'s `nativeDimensions` holds (5.7).
+    /// The import summary showed "512" for every library, and MiniLM, the default on every device, writes 384.
+    var embeddingDimensions: Int? {
+        switch embeddingProviderId {
+        case "nl_embedding", "nl_contextual_embedding", nil: return 512
+        case "coreml_sentence_embedding", "coreai_sentence_embedding": return 384
+        case "apple_fm_embed": return 1024
+        default: return nil
+        }
+    }
+
+    /// Where the provider runs, in the summary's words (5.7). Until 5.7 the summary said "Neural Engine accelerated"
+    /// for every library. Core ML picks the chip for the MiniLM copy and plans most of it onto the Neural Engine (150 of
+    /// 161 operations under `.all`, `MLComputePlan` on an M3 Pro, 2026-10-18); the Core AI copy fails Neural Engine validation and runs on the GPU (timed
+    /// on the Mac and an iPhone 16 Pro Max the same week); a background import without the GPU runs Core ML on the CPU.
+    var embeddingRunsOn: String {
+        switch embeddingProviderId {
+        case "coreml_sentence_embedding": return "Core ML, on the Neural Engine where it can"
+        case "coreai_sentence_embedding": return "Core AI, on the GPU"
+        case "nl_embedding", "nl_contextual_embedding", nil: return "Apple's NaturalLanguage framework"
+        default: return "On this device"
         }
     }
 

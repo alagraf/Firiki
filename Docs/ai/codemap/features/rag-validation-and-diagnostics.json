@@ -19,8 +19,7 @@
     {"path": "OpenIntelligence/Features/Diagnostics/Validation/RAGAccuracyView.swift", "role": "primary", "blob": "9216e029933de9adcfa08614aa50ccdb00ff40fc"},
     {"path": "OpenIntelligence/Features/Diagnostics/Validation/RAGPipelineAuditView.swift", "role": "primary", "blob": "8bcf1dada76d2fd51780e66a368ed38ccb58539a"},
     {"path": "OpenIntelligence/Features/Diagnostics/Validation/ValidationDashboardView.swift", "role": "primary", "blob": "86c28e9c6831177aa03e7109b30e890a28608435"},
-    {"path": "OpenIntelligence/Features/Diagnostics/Validation/ValidationDashboardViewModel.swift", "role": "primary", "blob": "81ffbf7b714c6fcffd2020c40afbd49d1a54b4f7"},
-    {"path": "OpenIntelligence/Features/Telemetry/Diagnostics/NLChunkingDiagnosticsView.swift", "role": "primary", "blob": "14465bec84d81be6540b5537898fcde56ed868b9"}
+    {"path": "OpenIntelligence/Features/Diagnostics/Validation/ValidationDashboardViewModel.swift", "role": "primary", "blob": "81ffbf7b714c6fcffd2020c40afbd49d1a54b4f7"}
   ],
   "nodes": [
     {"id": "DeveloperDiagnosticsHubView", "kind": "view", "path": "OpenIntelligence/Features/Diagnostics/Hub/DeveloperDiagnosticsHubView.swift", "line": 10, "match": "struct DeveloperDiagnosticsHubView: View {", "status": "VERIFIED", "by": "build"},
@@ -71,7 +70,7 @@
     {"id": "QuickStat", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 1823, "match": "private struct QuickStat: View {", "status": "VERIFIED", "by": "build"},
     {"id": "DatabaseMetricCard", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 1865, "match": "private struct DatabaseMetricCard: View {", "status": "VERIFIED", "by": "build"},
     {"id": "HealthIndicator", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 2169, "match": "private struct HealthIndicator: View {", "status": "VERIFIED", "by": "build"},
-    {"id": "PerformanceComparisonRow", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 1905, "match": "private struct PerformanceComparisonRow: View {", "status": "VERIFIED", "by": "build"},
+    {"id": "IndexFactRow", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 1905, "match": "private struct IndexFactRow: View {", "status": "VERIFIED", "by": "build"},
     {"id": "MiniStatCard", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 2129, "match": "private struct MiniStatCard: View {", "status": "VERIFIED", "by": "build"},
     {"id": "DocumentStatRow", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 1940, "match": "private struct DocumentStatRow: View {", "status": "VERIFIED", "by": "build"},
     {"id": "LibraryIntelligenceCard", "kind": "view", "path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 2212, "match": "struct LibraryIntelligenceCard: View {", "status": "VERIFIED", "by": "build"},
@@ -127,7 +126,7 @@
     {"from": "DatabaseDashboardView", "type": "renders", "to": "QuickStat", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 330, "match": "QuickStat(value: \"\\(scopedDocumentCount(stats))\", label: \"Docs\", icon: \"doc.fill\", color: .blue)"}], "by": "build", "note": "constructs it"},
     {"from": "DatabaseDashboardView", "type": "renders", "to": "DatabaseMetricCard", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 584, "match": "DatabaseMetricCard("}], "by": "build", "note": "constructs it"},
     {"from": "DatabaseDashboardView", "type": "renders", "to": "HealthIndicator", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 686, "match": "HealthIndicator("}], "by": "build", "note": "constructs it"},
-    {"from": "DatabaseDashboardView", "type": "renders", "to": "PerformanceComparisonRow", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 722, "match": "PerformanceComparisonRow("}], "by": "build", "note": "constructs it"},
+    {"from": "DatabaseDashboardView", "type": "renders", "to": "IndexFactRow", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 722, "match": "IndexFactRow("}], "by": "build", "note": "constructs it"},
     {"from": "DatabaseDashboardView", "type": "renders", "to": "MiniStatCard", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 844, "match": "MiniStatCard(label: \"Words\", value: formatLargeNumber(listedWordCount))"}], "by": "build", "note": "constructs it"},
     {"from": "DatabaseDashboardView", "type": "renders", "to": "DocumentStatRow", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 858, "match": "DocumentStatRow(doc: doc, documentName: documentName(for: doc.documentId))"}], "by": "build", "note": "constructs it"},
     {"from": "DatabaseDashboardView", "type": "renders", "to": "LibraryIntelligenceCard", "status": "VERIFIED", "evidence": [{"path": "OpenIntelligence/Features/Database/DatabaseDashboardView.swift", "line": 886, "match": "LibraryIntelligenceCard("}], "by": "build", "note": "constructs it"},

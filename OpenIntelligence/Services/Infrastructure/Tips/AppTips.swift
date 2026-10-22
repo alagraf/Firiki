@@ -122,7 +122,7 @@ struct AtlasTip: Tip {
     }
 
     var message: Text? {
-        Text("Explore document clusters and embeddings interactively.")
+        Text("See which passages of your documents sit close together in meaning.")
     }
 
     var image: Image? {
@@ -153,9 +153,10 @@ struct CompactTipViewStyle: TipViewStyle {
                 configuration.title
                     .font(.subheadline.weight(.semibold))
 
+                // The readable gray for every tip (5.7): `.secondary` here "failed" Apple's contrast audit in Settings.
                 configuration.message?
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DSColors.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

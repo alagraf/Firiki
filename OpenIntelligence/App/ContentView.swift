@@ -34,6 +34,8 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
     /// A crash report saved since the app last offered one (`CrashReports`, 5.7).
     @State private var crashReportToOffer: URL?
+    /// What could not be added of what was shared from another app's share sheet, and what was (5.7).
+    @State private var sharedItemsMessage: SharedItemsMessage?
     @State private var selectedTab: Tab = .chat
     @State private var previousScenePhase: ScenePhase = .inactive
     @State private var showVisualValidationDashboard = false
@@ -58,6 +60,7 @@ struct ContentView: View {
         // The app's engine is the one actions reach for imports, lists and conversations. It sets
         // itself here; an engine an action builds for one question registers only when none is set.
         RAGService.activePresentedInstance = ragSvc
+        ragSvc.isTheAppsEngine = true
         _workspaceSyncService = StateObject(wrappedValue: workspaceSyncSvc)
         _containerService = StateObject(wrappedValue: containerSvc)
         _ragService = StateObject(wrappedValue: ragSvc)
@@ -113,6 +116,11 @@ struct ContentView: View {
                     onOpenSettings: { selectedTab = .settings },
                     onOpenChat: { selectedTab = .chat }
                 )
+                // Modal for VoiceOver (5.7): the welcome screen covers Chat, and VoiceOver should stay on it.
+                // `accessibilityHidden` on the tabs did not take Chat out of Apple's audit, and this does not either
+                // (it still lists Chat's pills behind the welcome screen); what VoiceOver does here is not checked on a
+                // device.
+                .accessibilityAddTraits(.isModal)
                 .transition(.opacity.combined(with: .scale))
                 .zIndex(1)
             }
@@ -246,6 +254,7 @@ struct ContentView: View {
                 "A report of where it stopped was saved on this device. It has the app and system versions, the device model and the app's code that was running, and none of your documents, questions or answers. You can also email or share it later from Settings, About."
             )
         }
+        .modifier(SharedItemsAlert(message: $sharedItemsMessage))
         .onReceive(consentRelay.$request) { request in
             guard let request else {
                 relayedConsent = nil
@@ -354,6 +363,12 @@ struct ContentView: View {
         .onChange(of: scenePhase) { oldPhase, newPhase in
             handleScenePhaseChange(from: oldPhase, to: newPhase)
         }
+        // The "Your Library" widget shows the open library and its document count (5.7, `WidgetSnapshot`), written
+        // once an import ends rather than for every document it adds.
+        .onChange(of: widgetLibrary, initial: true) { _, library in
+            guard !library.importing else { return }
+            WidgetSnapshot.recordLibrary(id: library.id, name: library.name, documentCount: library.documentCount)
+        }
         .onChange(
             of: containerService.containers.map { "\($0.id.uuidString):\($0.syncMode.rawValue)" }.joined(separator: "|")
         ) { _, _ in
@@ -385,51 +400,50 @@ struct ContentView: View {
         }
     }
 
+    /// The tabs, declared with SwiftUI's `Tab` (iOS 18, macOS 15) in place of `.tabItem` (5.7, roadmap row
+    /// "Liquid Glass UI Refresh"). The older form kept the tab bar from the iOS 26 behaviours, among them
+    /// shrinking while a list scrolls on iPhone (`tabBarMinimizeBehavior`), which this turns on. It is
+    /// `SwiftUI.Tab` because this view has a `Tab` of its own, the selection's type.
     @ViewBuilder
     private var tabViewContent: some View {
         TabView(selection: $selectedTab) {
-            NavigationStack {
-                ChatScreen(ragService: ragService)
-                    .safeAreaInset(edge: .top, spacing: 0) { if !screenshotMode.isEnabled { LaunchSaleBanner() } }
-            }
-            .tabItem {
-                Label("Chat", systemImage: "bubble.left.and.bubble.right")
+            SwiftUI.Tab("Chat", systemImage: "bubble.left.and.bubble.right", value: Tab.chat) {
+                NavigationStack {
+                    ChatScreen(ragService: ragService)
+                        .safeAreaInset(edge: .top, spacing: 0) { if !screenshotMode.isEnabled { LaunchSaleBanner() } }
+                }
             }
             .badge(chatAnswerNotice.unseenAnswers)
-            .tag(Tab.chat)
 
-            NavigationStack {
-                DocumentLibraryView(
-                    ragService: ragService,
-                    containerService: containerService
-                )
-                .safeAreaInset(edge: .top, spacing: 0) { if !screenshotMode.isEnabled { LaunchSaleBanner() } }
+            SwiftUI.Tab("Documents", systemImage: "doc.text.magnifyingglass", value: Tab.documents) {
+                NavigationStack {
+                    DocumentLibraryView(
+                        ragService: ragService,
+                        containerService: containerService
+                    )
+                    .safeAreaInset(edge: .top, spacing: 0) { if !screenshotMode.isEnabled { LaunchSaleBanner() } }
+                }
             }
-            .tabItem {
-                Label("Documents", systemImage: "doc.text.magnifyingglass")
-            }
-            .tag(Tab.documents)
 
-            NavigationStack {
-                DatabaseDashboardView()
-                    .environmentObject(ragService)
-                    .environmentObject(containerService)
+            SwiftUI.Tab("Database", systemImage: "cylinder.split.1x2", value: Tab.database) {
+                NavigationStack {
+                    DatabaseDashboardView()
+                        .environmentObject(ragService)
+                        .environmentObject(containerService)
+                }
             }
-            .tabItem {
-                Label("Database", systemImage: "cylinder.split.1x2")
-            }
-            .tag(Tab.database)
 
-            NavigationStack {
-                SettingsView(ragService: ragService)
+            SwiftUI.Tab("Settings", systemImage: "gearshape", value: Tab.settings) {
+                NavigationStack {
+                    SettingsView(ragService: ragService)
+                }
+                .environmentObject(settingsStore)
+                .environmentObject(entitlementStore)
             }
-            .environmentObject(settingsStore)
-            .environmentObject(entitlementStore)
-            .tabItem {
-                Label("Settings", systemImage: "gearshape")
-            }
-            .tag(Tab.settings)
         }
+        #if os(iOS)
+            .tabBarMinimizeBehavior(.onScrollDown)
+        #endif
     }
 
     @MainActor
@@ -443,6 +457,27 @@ struct ContentView: View {
     }
 
     // MARK: - Scene Phase Handling for Transcript Persistence
+
+    /// The open library's name and document count, for the "Your Library" widget (5.7).
+    private struct WidgetLibrary: Equatable {
+        let id: UUID
+        let name: String
+        let documentCount: Int
+        let importing: Bool
+    }
+
+    /// Counted as the library screen counts (`DocumentLibraryView.filteredDocuments`): a document with no library is
+    /// in the first one. Not counted while an import runs, when the count changes with every document.
+    private var widgetLibrary: WidgetLibrary {
+        let activeId = containerService.activeContainerId
+        let name = containerService.activeContainer?.name ?? "Library"
+        guard !ragService.isProcessing else {
+            return WidgetLibrary(id: activeId, name: name, documentCount: 0, importing: true)
+        }
+        let firstId = containerService.containers.first?.id
+        let count = ragService.documents.reduce(0) { $0 + (($1.containerId ?? firstId) == activeId ? 1 : 0) }
+        return WidgetLibrary(id: activeId, name: name, documentCount: count, importing: false)
+    }
 
     /// Handle app lifecycle transitions for transcript persistence.
     ///
@@ -465,6 +500,13 @@ struct ContentView: View {
                 await ragService.persistAllVectorStores()
                 ragService.persistIngestionQueueState()
                 ragService.saveSessionTranscript()
+                // A deletion still in its undo seconds runs now (5.7, `RAGService.scheduleRemoval`): after the
+                // flush above, so a slow removal cannot hold it up, and flushed again after, for the stores it
+                // changed. If iOS ends the app before it finishes, the next launch runs it.
+                if ragService.hasUnfinishedRemovals {
+                    await ragService.commitPendingRemovals()
+                    await ragService.persistAllVectorStores()
+                }
                 #if os(iOS)
                     // Last, so that nothing above waits on it. Not on the Mac: a hidden or
                     // minimised window would pay a full decode at its next question, and
@@ -502,8 +544,23 @@ struct ContentView: View {
         case .active:
             entitlementStore.refreshTransientState()
             BackgroundTaskService.shared.applyIngestionExecutionProfileForCurrentState()
+            // What finished while the app was away is on screen now (5.7): its notifications and the Lock Screen's
+            // card for a finished import or answer go, where they stayed for up to ten minutes after the person was back.
+            CompletionNotificationService.shared.clearDelivered()
+            IngestionLiveActivityService.shared.dismissFinished()
+            #if os(iOS) && canImport(ActivityKit) && !targetEnvironment(macCatalyst)
+                QueryLiveActivityService.shared.endLeftovers()
+            #endif
             // An import that a background limit stopped continues without being asked.
             ragService.resumeIngestionStoppedInBackgroundIfNeeded()
+            // The overview, tags and suggested questions of documents imported in the background (5.7).
+            ragService.runDeferredEnrichmentsIfNeeded()
+            // Web pages and text shared from another app's share sheet while the app was away (5.7).
+            takeSharedItems()
+            // Pages scanned from the Lock Screen while the app was away (5.7).
+            takeLockedCaptures()
+            // The storefront's country, for a sale's regular price where it differs by territory (5.7).
+            Task { await StorefrontTerritory.shared.refresh() }
             Task { @MainActor in
                 await refreshSharedWorkspaceIfNeeded(forceReload: workspaceSyncService.isUsingSharedWorkspace)
             }
@@ -529,6 +586,76 @@ struct ContentView: View {
         @unknown default:
             break
         }
+    }
+
+    /// What was shared to OpenIntelligence from another app's share sheet (`SharedInbox`, 5.7), stored the way the
+    /// Documents screen's Paste button stores a copied address or text and handed to that screen at once for its plan
+    /// check and import review. What could not be stored is said in an alert afterwards.
+    private func takeSharedItems() {
+        guard let folder = SharedInbox.defaultFolder, SharedInbox.hasItems(in: folder) else { return }
+        Task { @MainActor in
+            // Only what the plan has room for: the rest waits in the inbox, and the app says so once for each new
+            // number waiting (review of 2026-10-17).
+            let taken = await SharedInboxImport.takeAndStage(from: folder, room: documentRoom())
+            let outcome = taken.outcome
+            if !outcome.staged.isEmpty { AppNavigationRequest.post(.importFiles(outcome.staged)) }
+            var lines = outcome.failures
+            if taken.waiting > Self.sharedItemsSaidWaiting {
+                let things =
+                    taken.waiting == 1 ? "One thing you shared waits" : "\(taken.waiting) things you shared wait"
+                lines.append(
+                    "\(things) in OpenIntelligence, because your plan has room for no more documents. Remove a document "
+                        + "or upgrade, and \(taken.waiting == 1 ? "it's" : "they're") added the next time you open "
+                        + "OpenIntelligence.")
+            }
+            Self.sharedItemsSaidWaiting = taken.waiting
+            if !lines.isEmpty {
+                sharedItemsMessage = SharedItemsMessage(
+                    addedSome: !outcome.staged.isEmpty, failures: lines,
+                    customTitle: outcome.failures.isEmpty ? "Waiting for Room in Your Plan" : nil)
+            }
+        }
+    }
+
+    /// The number of shared items the app last said were waiting, so it says so once and not at every return.
+    @MainActor private static var sharedItemsSaidWaiting = 0
+
+    /// Pages scanned with the Lock Screen's "Scan into Library" (`LockedCaptureImport`, 5.7), handed to the Documents
+    /// screen for its plan check and import review, into the library that is open. Only as many as the plan has room
+    /// for: the rest wait in the camera's folder, and the app says so once for each new number waiting.
+    private func takeLockedCaptures() {
+        Task { @MainActor in
+            let taken = await LockedCaptureImport.takeFromTheLockScreen(atMost: documentRoom())
+            if !taken.staged.isEmpty { AppNavigationRequest.post(.importFiles(taken.staged)) }
+            if taken.waiting > Self.lockScreenPagesSaidWaiting {
+                let pages =
+                    taken.waiting == 1
+                    ? "A page you scanned from the Lock Screen waits"
+                    : "\(taken.waiting) pages you scanned from the Lock Screen wait"
+                sharedItemsMessage = SharedItemsMessage(
+                    addedSome: !taken.staged.isEmpty,
+                    failures: [
+                        "\(pages) in OpenIntelligence's camera, because your plan has room for no more documents. "
+                            + "Remove a document or upgrade, and \(taken.waiting == 1 ? "it's" : "they're") added the "
+                            + "next time you open OpenIntelligence."
+                    ],
+                    customTitle: "Waiting for Room in Your Plan")
+            }
+            Self.lockScreenPagesSaidWaiting = taken.waiting
+        }
+    }
+
+    /// The number of Lock Screen pages the app last said were waiting, so it says so once and not at every return.
+    @MainActor private static var lockScreenPagesSaidWaiting = 0
+
+    /// How many more documents the plan takes, counted up to `cap` (5.7). The Documents screen removes a handed-over file
+    /// it can't add, so what's taken from the Lock Screen camera or the share inbox is only what fits (review of
+    /// 2026-10-17).
+    private func documentRoom(cap: Int = 1_000) -> Int {
+        let count = ragService.documents.count
+        var room = 0
+        while room < cap, entitlementStore.canAddDocument(currentCount: count + room) { room += 1 }
+        return room
     }
 
     @MainActor
@@ -559,6 +686,10 @@ struct ContentView: View {
         }
 
         ragService.reloadWorkspaceData()
+        // A conversation deleted on another device is gone from here now; so is its answer on the widget (5.7).
+        WidgetSnapshot.forgetAnswer(unlessConversationExists: { threadId, libraryId in
+            (try? ragService.threadStore.getThread(id: threadId, containerId: libraryId)) != nil
+        })
     }
 
     @MainActor

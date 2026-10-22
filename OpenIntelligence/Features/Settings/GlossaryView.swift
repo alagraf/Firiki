@@ -87,6 +87,7 @@ struct GlossaryView: View {
                     }
                 } header: {
                     Text("\(results.count) \(results.count == 1 ? "term" : "terms")")
+                        .monospacedDigit()
                 }
             }
         }
@@ -115,7 +116,7 @@ struct GlossaryView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Toggle(isOn: $showsTechnical) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text("Always show the technical version")
                         .font(.subheadline.weight(.medium))
                     Text("Applies to every definition in the app, including the ones you tap from other screens")
@@ -139,10 +140,10 @@ struct GlossaryView: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(DSColors.accent)
                     .frame(width: 22)
-                    .padding(.top, 2)
+                    .padding(.top, DSSpacing.xxs)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(term.term)
                         .font(.body.weight(.medium))
                     // One line of the plain register, so the list is scannable without
@@ -154,7 +155,7 @@ struct GlossaryView: View {
                         .lineLimit(2)
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, DSSpacing.xxs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

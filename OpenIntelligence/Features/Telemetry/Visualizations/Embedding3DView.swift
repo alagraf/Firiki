@@ -11,6 +11,8 @@
 //  Embedding Atlas or true UMAP/t-SNE later without changing UI.
 
 import SwiftUI
+import Charts
+import Spatial
 
 struct EmbeddingInsight: Identifiable, Equatable {
     let id = UUID()
@@ -293,9 +295,10 @@ struct EmbeddingSpaceRenderer: View {
     @State private var fts5TopTerms: [String] = []  // Top terms from SQLite FTS5 index
     @State private var fts5KeyPhrases: [(phrase: String, count: Int)] = []  // Multi-word phrases
 
-    // Sample options: 500 up to 50K (ALL) for full corpus visibility
-    // Higher counts auto-scale point size smaller
-    private let sampleOptions = [500, 2000, 5000, 50000] // 50K = "All" for most libraries
+    // How many passages the map draws. The most is what `allChunksForActiveContainer` reads, an even sample of up to
+    // `RAGService.visualizationPassageLimit` (6,000) since 5.7; through 5.6 the choices were 5,000 and "All" (50,000).
+    // Higher counts auto-scale point size smaller.
+    private let sampleOptions = [500, 2000, RAGService.visualizationPassageLimit]
     private static let countFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -303,7 +306,7 @@ struct EmbeddingSpaceRenderer: View {
     }()
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: DSSpacing.md) {
             if let err = errorText {
                 errorBanner(err)
             }
@@ -330,7 +333,7 @@ struct EmbeddingSpaceRenderer: View {
     private func errorBanner(_ err: String) -> some View {
         Text(err)
             .font(.caption)
-            .foregroundColor(.red)
+            .foregroundStyle(DSColors.readable(.red))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -346,7 +349,7 @@ struct EmbeddingSpaceRenderer: View {
     }
 
     private var readyContent: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: DSSpacing.lg) {
             heroScene
             controlToolbar
             tuningCard
@@ -358,29 +361,29 @@ struct EmbeddingSpaceRenderer: View {
 
     /// Detailed nerd stats for the embedding space
     private var embeddingSpaceStats: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
             HStack {
                 Image(systemName: "chart.dots.scatter")
-                    .foregroundColor(.purple)
+                    .foregroundStyle(DSColors.accent)
                 Text("Embedding Space Analytics")
                     .font(.headline)
                 Spacer()
                 Text("🤓 Nerd Mode")
                     .font(.caption2)
-                    .foregroundColor(.purple)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.purple.opacity(0.15))
-                    .cornerRadius(8)
+                    .foregroundStyle(DSColors.accent)
+                    .padding(.horizontal, DSSpacing.sm)
+                    .padding(.vertical, DSSpacing.xs)
+                    .background(DSColors.accent.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
             }
 
             // Core metrics grid
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: DSSpacing.md) {
                 EmbeddingStatMini(
                     label: "Points",
                     value: "\(totalPoints)",
                     icon: "circle.fill",
-                    color: .blue
+                    color: DSColors.accent
                 )
                 EmbeddingStatMini(
                     label: "Documents",
@@ -392,7 +395,7 @@ struct EmbeddingSpaceRenderer: View {
                     label: "Dimensions",
                     value: "\(embeddingDimension)",
                     icon: "cube.fill",
-                    color: .purple
+                    color: DSColors.accent
                 )
                 EmbeddingStatMini(
                     label: "Method",
@@ -404,23 +407,23 @@ struct EmbeddingSpaceRenderer: View {
                     label: "Coverage",
                     value: String(format: "%.0f%%", sampleCoverageRatio * 100),
                     icon: "percent",
-                    color: .cyan
+                    color: DSColors.accent
                 )
                 EmbeddingStatMini(
                     label: "Sample Cap",
                     value: "\(sampleLimit)",
                     icon: "slider.horizontal.3",
-                    color: .pink
+                    color: .secondary
                 )
             }
 
             Divider().opacity(0.3)
 
             // Distribution insights
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 Text("Distribution Analysis")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 if !legendItems.isEmpty {
                     let sortedItems = legendItems.sorted { $0.count > $1.count }
@@ -429,32 +432,32 @@ struct EmbeddingSpaceRenderer: View {
                     let avgCount = totalPoints > 0 ? totalPoints / max(legendItems.count, 1) : 0
                     let variance = calculateVariance(legendItems.map { $0.count })
 
-                    HStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: DSSpacing.lg) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                             Text("Max pts/doc")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text("\(maxCount)")
                                 .font(.caption.monospacedDigit().weight(.semibold))
                         }
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                             Text("Min pts/doc")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text("\(minCount)")
                                 .font(.caption.monospacedDigit().weight(.semibold))
                         }
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                             Text("Avg pts/doc")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text("\(avgCount)")
                                 .font(.caption.monospacedDigit().weight(.semibold))
                         }
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                             Text("Std Dev")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Text(String(format: "%.1f", sqrt(variance)))
                                 .font(.caption.monospacedDigit().weight(.semibold))
                         }
@@ -462,15 +465,15 @@ struct EmbeddingSpaceRenderer: View {
 
                     // Balance indicator
                     let balanceScore = calculateBalanceScore(legendItems.map { $0.count })
-                    HStack(spacing: 8) {
+                    HStack(spacing: DSSpacing.sm) {
                         Text("Balance Score:")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                                     .fill(Color.secondary.opacity(0.2))
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                                     .fill(balanceColor(balanceScore))
                                     .frame(width: geo.size.width * CGFloat(balanceScore))
                             }
@@ -478,32 +481,32 @@ struct EmbeddingSpaceRenderer: View {
                         .frame(height: 8)
                         Text(String(format: "%.0f%%", balanceScore * 100))
                             .font(.caption2.monospacedDigit())
-                            .foregroundColor(balanceColor(balanceScore))
+                            .foregroundStyle(DSColors.readable(balanceColor(balanceScore)))
                     }
                     .frame(height: 20)
 
                     Text(balanceDescription(balanceScore))
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
             Divider().opacity(0.3)
 
             // Projection details
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 Text("Projection Details")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
-                HStack(spacing: 16) {
+                HStack(spacing: DSSpacing.lg) {
                     ProjectionDetailRow(label: "Algorithm", value: projectionMethodDescription)
                     Spacer()
                 }
 
                 Text(projectionExplainer)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -517,11 +520,11 @@ struct EmbeddingSpaceRenderer: View {
             // Raw data inspector
             rawDataInspector
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .background(DSColors.surface)
-        .cornerRadius(16)
+        .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
-        .padding(.horizontal)
+        .padding(.horizontal, DSSpacing.lg)
     }
 
     private var embeddingDimension: Int {
@@ -572,19 +575,19 @@ struct EmbeddingSpaceRenderer: View {
 
     @ViewBuilder
     private var spatialDensitySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             HStack {
                 Image(systemName: "waveform.path.ecg.rectangle")
-                    .foregroundColor(.cyan)
+                    .foregroundStyle(DSColors.accent)
                 Text("Spatial Density Analysis")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             if !points.isEmpty {
                 let stats = computeSpatialStats()
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DSSpacing.sm) {
                     SpatialStatMini(
                         label: "Centroid",
                         value: String(format: "(%.2f, %.2f, %.2f)", stats.centroid.x, stats.centroid.y, stats.centroid.z),
@@ -618,12 +621,12 @@ struct EmbeddingSpaceRenderer: View {
                 }
 
                 // Axis-wise distribution mini-chart
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text("Axis Distribution")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: DSSpacing.xs) {
                         AxisDistributionBar(label: "X", range: stats.xRange, color: .red)
                         AxisDistributionBar(label: "Y", range: stats.yRange, color: .green)
                         AxisDistributionBar(label: "Z", range: stats.zRange, color: .blue)
@@ -633,7 +636,7 @@ struct EmbeddingSpaceRenderer: View {
             } else {
                 Text("No points to analyze")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -642,34 +645,34 @@ struct EmbeddingSpaceRenderer: View {
 
     @ViewBuilder
     private var rawDataInspector: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             HStack {
                 Image(systemName: "tablecells")
-                    .foregroundColor(.indigo)
+                    .foregroundStyle(DSColors.accent)
                 Text("Raw Data Inspector")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text("\(points.count) vectors")
                     .font(.caption2.monospacedDigit())
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             if !points.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     // Memory usage estimate
                     let memoryBytes = points.count * 3 * MemoryLayout<Float>.size
                     HStack {
                         Text("3D Memory:")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(formatBytes(memoryBytes))
                             .font(.caption2.monospacedDigit())
                             .fontWeight(.medium)
                         Spacer()
                         Text("Float32 × 3")
                             .font(.caption2)
-                            .foregroundColor(.secondary.opacity(0.7))
+                            .foregroundStyle(.secondary)
                     }
 
                     // Original embedding memory estimate
@@ -677,7 +680,7 @@ struct EmbeddingSpaceRenderer: View {
                     HStack {
                         Text("Original (\(embeddingDimension)D):")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(formatBytes(embeddingMemory))
                             .font(.caption2.monospacedDigit())
                             .fontWeight(.medium)
@@ -685,33 +688,33 @@ struct EmbeddingSpaceRenderer: View {
                         let ratio = Double(memoryBytes) / Double(embeddingMemory)
                         Text(String(format: "%.1f%% of original", ratio * 100))
                             .font(.caption2)
-                            .foregroundColor(.green)
+                            .foregroundStyle(DSColors.readable(.green))
                     }
                 }
 
                 Divider().opacity(0.2)
 
                 // Sample point coordinates
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text("Sample Points")
                         .font(.caption2.weight(.medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     ForEach(Array(points.prefix(3).enumerated()), id: \.offset) { idx, point in
-                        HStack(spacing: 8) {
+                        HStack(spacing: DSSpacing.sm) {
                             Text("[\(idx)]")
                                 .font(.caption2.monospacedDigit())
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .frame(width: 24, alignment: .trailing)
                             Text(String(format: "x:%.4f", point.x))
                                 .font(.caption2.monospacedDigit())
-                                .foregroundColor(.red.opacity(0.8))
+                                .foregroundStyle(DSColors.readable(.red))
                             Text(String(format: "y:%.4f", point.y))
                                 .font(.caption2.monospacedDigit())
-                                .foregroundColor(.green.opacity(0.8))
+                                .foregroundStyle(DSColors.readable(.green))
                             Text(String(format: "z:%.4f", point.z))
                                 .font(.caption2.monospacedDigit())
-                                .foregroundColor(.blue.opacity(0.8))
+                                .foregroundStyle(DSColors.readable(.blue))
                             Spacer()
                         }
                     }
@@ -719,8 +722,8 @@ struct EmbeddingSpaceRenderer: View {
                     if points.count > 3 {
                         Text("... + \(points.count - 3) more")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .padding(.leading, 32)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, DSSpacing.xxl)
                     }
                 }
             }
@@ -918,26 +921,26 @@ struct EmbeddingSpaceRenderer: View {
         let icon: String
 
         var body: some View {
-            HStack(spacing: 6) {
+            HStack(spacing: DSSpacing.xs) {
                 Image(systemName: icon)
                     .font(.caption2)
-                    .foregroundColor(.cyan.opacity(0.8))
+                    .foregroundStyle(DSColors.accent)
                     .frame(width: 14)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(label)
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                        .scaledFont(size: 9)
+                        .foregroundStyle(.secondary)
                     Text(value)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .scaledFont(size: 10, weight: .medium, design: .monospaced)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-            .padding(.horizontal, 6)
-            .background(Color.cyan.opacity(0.06))
-            .cornerRadius(6)
+            .padding(.vertical, DSSpacing.xs)
+            .padding(.horizontal, DSSpacing.sm)
+            .background(DSColors.accent.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
         }
     }
 
@@ -947,16 +950,16 @@ struct EmbeddingSpaceRenderer: View {
         let color: Color
 
         var body: some View {
-            VStack(spacing: 2) {
+            VStack(spacing: DSSpacing.xxs) {
                 Text(label)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(color)
+                    .scaledFont(size: 9, weight: .bold)
+                    .foregroundStyle(DSColors.readable(color))
 
                 GeometryReader { geo in
                     let width = range.upperBound - range.lowerBound
                     let normalized = min(1, max(0.1, CGFloat(width)))
 
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [color.opacity(0.3), color.opacity(0.7)],
@@ -969,8 +972,8 @@ struct EmbeddingSpaceRenderer: View {
                 }
 
                 Text(String(format: "%.2f", range.upperBound - range.lowerBound))
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .scaledFont(size: 8, design: .monospaced)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
         }
@@ -978,33 +981,33 @@ struct EmbeddingSpaceRenderer: View {
 
     private var loadingCard: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(DSColors.background)
                 .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-            VStack(spacing: 12) {
+            VStack(spacing: DSSpacing.md) {
                 ProgressView("Preparing 3D embedding space…")
                 Text("Downsampling and projecting to 3D")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
-            .padding()
+            .padding(DSSpacing.lg)
         }
         .frame(height: 340)
     }
 
     private var emptyStateCard: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(DSColors.background)
                 .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-            VStack(spacing: 8) {
+            VStack(spacing: DSSpacing.sm) {
                 Text("No embeddings available for the active container")
                     .font(.subheadline)
                 Text("Add documents or switch libraries to see the 3D map")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
-            .padding()
+            .padding(DSSpacing.lg)
         }
         .frame(height: 340)
     }
@@ -1012,7 +1015,7 @@ struct EmbeddingSpaceRenderer: View {
     private var heroScene: some View {
         let (filteredPoints, filteredColors) = filteredArrays()
         return ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                 .fill(backgroundGradient(for: backgroundStyle))
 
             Embedding3DSceneView(
@@ -1027,7 +1030,7 @@ struct EmbeddingSpaceRenderer: View {
                     showPointDetail = true
                 }
             )
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous))
         }
         .overlay(alignment: .topLeading) {
             if showHUD { sceneHUD }
@@ -1058,10 +1061,10 @@ struct EmbeddingSpaceRenderer: View {
         .frame(height: heroHeight)
         .shadow(color: .black.opacity(0.08), radius: 18, x: 0, y: 12)
         .padding(.horizontal, heroHorizontalPadding)
-        .animation(.spring(response: 0.45, dampingFraction: 0.88), value: focusMode)
-        .animation(.easeInOut(duration: 0.2), value: showHUD)
-        .animation(.easeInOut(duration: 0.25), value: isSearching)
-        .animation(.easeInOut(duration: 0.3), value: hasSeenOnboarding)
+        .animation(DSAnimations.gentleSpring, value: focusMode)
+        .animation(DSAnimations.fastEase, value: showHUD)
+        .animation(DSAnimations.fastEase, value: isSearching)
+        .animation(DSAnimations.fastEase, value: hasSeenOnboarding)
     }
 
     // MARK: - Search & Help UI
@@ -1079,27 +1082,27 @@ struct EmbeddingSpaceRenderer: View {
             }
         } label: {
             Image(systemName: showHelpTip ? "xmark.circle.fill" : "questionmark.circle")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.white.opacity(0.7))
-                .padding(12)
+                .scaledFont(size: 18, weight: .medium)
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(DSSpacing.md)
                 .background(
                     Circle()
                         .fill(.ultraThinMaterial.opacity(showHelpTip ? 0.9 : 0.5))
                 )
         }
-        .padding(12)
+        .padding(DSSpacing.md)
         .popover(isPresented: $showHelpTip, arrowEdge: .top) {
             gestureHelpContent
         }
     }
 
     private var gestureHelpContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             Text("Navigate Your Knowledge")
                 .font(.headline)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 helpRow(icon: "hand.draw", text: "Drag to rotate")
                 helpRow(icon: "arrow.up.left.and.arrow.down.right", text: "Pinch to zoom")
                 helpRow(icon: "hand.tap", text: "Tap a point for details")
@@ -1110,32 +1113,32 @@ struct EmbeddingSpaceRenderer: View {
 
             Text("Points close together = similar content")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .frame(width: 220)
     }
 
     private func helpRow(icon: String, text: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DSSpacing.sm) {
             Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundColor(.accentColor)
+                .scaledFont(size: 14)
+                .foregroundStyle(DSColors.accent)
                 .frame(width: 20)
             Text(text)
                 .font(.subheadline)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
         }
     }
 
     private var searchBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DSSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.6))
 
             TextField("Search chunks...", text: $searchQuery)
                 .textFieldStyle(.plain)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .submitLabel(.search)
                 .onSubmit {
                     performSearch()
@@ -1147,79 +1150,79 @@ struct EmbeddingSpaceRenderer: View {
                     highlightedPointIndices = []
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.5))
                 }
             }
 
             Button {
-                withAnimation { isSearching = false }
+                withAnimation(DSAnimations.fastEase) { isSearching = false }
                 searchQuery = ""
                 highlightedPointIndices = []
             } label: {
                 Text("Done")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundStyle(.white.opacity(0.8))
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
         )
         .padding(.horizontal, 60)
-        .padding(.top, 12)
+        .padding(.top, DSSpacing.md)
     }
 
     private var onboardingTip: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DSSpacing.sm) {
             Image(systemName: "lightbulb.fill")
-                .foregroundColor(.yellow)
+                .foregroundStyle(.orange)
 
             Text("Drag to explore • Pinch to zoom • Close points = similar ideas")
                 .font(.caption)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
 
             Button {
-                withAnimation {
+                withAnimation(DSAnimations.fastEase) {
                     hasSeenOnboarding = true
                 }
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.6))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
         .background(
             Capsule()
                 .fill(.black.opacity(0.7))
         )
-        .padding(.bottom, 16)
+        .padding(.bottom, DSSpacing.lg)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     /// Detail card shown when a point is tapped
     private func tappedPointDetailCard(index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             // Header with close button
             HStack {
                 Label("Chunk \(index + 1)", systemImage: "doc.text.fill")
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
 
                 Spacer()
 
                 Button {
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(DSAnimations.fastEase) {
                         showPointDetail = false
                         tappedPointIndex = nil
                     }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.secondary)
+                        .scaledFont(size: 20)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -1227,13 +1230,13 @@ struct EmbeddingSpaceRenderer: View {
 
             // Document name
             if index < chunkDocNames.count {
-                HStack(spacing: 6) {
+                HStack(spacing: DSSpacing.xs) {
                     Image(systemName: "folder")
                         .font(.caption)
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(DSColors.accent)
                     Text(chunkDocNames[index])
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -1242,20 +1245,20 @@ struct EmbeddingSpaceRenderer: View {
             if index < chunkTexts.count {
                 Text(chunkTexts[index])
                     .font(.caption)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text("Loading chunk data...")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .italic()
             }
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .frame(width: 280)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(.regularMaterial)
                 .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 4)
         )
@@ -1283,31 +1286,30 @@ struct EmbeddingSpaceRenderer: View {
     }
 
     private var tuningCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: DSSpacing.md) {
             sampleOptionRow
             Divider().opacity(0.08)
             pointSizeRow
         }
-        .padding(.vertical, 16)
-        .padding(.horizontal, 18)
+        .padding(.vertical, DSSpacing.lg)
+        .padding(.horizontal, DSSpacing.lg)
         .background(DSColors.surface)
-        .cornerRadius(20)
+        .clipShape(RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 4)
-        .padding(.horizontal)
+        .padding(.horizontal, DSSpacing.lg)
     }
 
-    /// Format sample option label - 50K shows as "All"
+    /// 500, 2K, 6K.
     private func sampleOptionLabel(_ option: Int) -> String {
-        if option >= 50000 { return "All" }
         if option >= 1000 { return "\(option/1000)K" }
         return "\(option)"
     }
 
     private var sampleOptionRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DSSpacing.sm) {
             Text("Points")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             ForEach(sampleOptions, id: \.self) { option in
                 Button {
@@ -1320,10 +1322,10 @@ struct EmbeddingSpaceRenderer: View {
                     Text(sampleOptionLabel(option))
                         .font(.caption2)
                         .fontWeight(sampleLimit == option ? .semibold : .regular)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(sampleLimit == option ? Color.accentColor.opacity(0.16) : DSColors.background)
-                        .foregroundColor(sampleLimit == option ? .accentColor : .primary)
+                        .padding(.vertical, DSSpacing.xs)
+                        .padding(.horizontal, DSSpacing.md)
+                        .background(sampleLimit == option ? DSColors.accent.opacity(0.16) : DSColors.background)
+                        .foregroundStyle(sampleLimit == option ? DSColors.accent : .primary)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1333,7 +1335,7 @@ struct EmbeddingSpaceRenderer: View {
 
             InfoButtonView(
                 title: "Sampling",
-                explanation: "Controls how many embedding points are displayed. 'All' shows up to 50K points (scales point size automatically for performance). Higher limits give complete coverage but may slow rotation."
+                explanation: "How many passages the map draws, up to 6,000. A library with more is drawn from an even sample across all of it. More points draw smaller and can make turning the map slower."
             )
         }
     }
@@ -1354,17 +1356,17 @@ struct EmbeddingSpaceRenderer: View {
     }
 
     private var pointSizeRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSSpacing.md) {
             Label("Point size", systemImage: "circle.grid.cross")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Slider(value: $pointScale, in: 0.6...1.6, step: 0.1)
 
             Text(String(format: "%.1fx", pointScale))
                 .font(.caption)
-                .foregroundColor(.secondary)
-                .frame(width: 44)
+                .foregroundStyle(.secondary)
+                .frame(width: DSSpacing.tapTarget)
         }
     }
 
@@ -1786,8 +1788,8 @@ struct EmbeddingSpaceRenderer: View {
     }
 
     private var controlOverlay: some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            HStack(spacing: 6) {
+        VStack(alignment: .trailing, spacing: DSSpacing.sm) {
+            HStack(spacing: DSSpacing.xs) {
                 ControlToggleButton(
                     icon: "arrow.triangle.2.circlepath",
                     title: "Rotate",
@@ -1814,7 +1816,7 @@ struct EmbeddingSpaceRenderer: View {
                     title: "HUD",
                     isActive: showHUD,
                     action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(DSAnimations.fastEase) {
                             showHUD.toggle()
                         }
                     }
@@ -1825,7 +1827,7 @@ struct EmbeddingSpaceRenderer: View {
                     title: "Labels",
                     isActive: showClusterLabels,
                     action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(DSAnimations.fastEase) {
                             showClusterLabels.toggle()
                             sceneReloadToken = UUID() // Force scene rebuild
                         }
@@ -1837,7 +1839,7 @@ struct EmbeddingSpaceRenderer: View {
                     title: "Focus",
                     isActive: focusMode,
                     action: {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                        withAnimation(DSAnimations.gentleSpring) {
                             focusMode.toggle()
                         }
                     }
@@ -1846,10 +1848,10 @@ struct EmbeddingSpaceRenderer: View {
                 Button(action: resetScene) {
                     Label("Reset", systemImage: "arrow.counterclockwise")
                         .font(.caption2)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 10)
+                        .padding(.vertical, DSSpacing.xs)
+                        .padding(.horizontal, DSSpacing.sm)
                         .background(Color.black.opacity(0.12))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1872,51 +1874,51 @@ struct EmbeddingSpaceRenderer: View {
             } label: {
                 Label(backgroundStyle.displayName, systemImage: backgroundStyle.iconName)
                     .font(.caption2)
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 12)
+                    .padding(.vertical, DSSpacing.xs)
+                    .padding(.horizontal, DSSpacing.md)
                     .background(Color.black.opacity(0.14))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .clipShape(Capsule())
             }
         }
-        .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .padding(16)
+        .padding(DSSpacing.md)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous))
+        .padding(DSSpacing.lg)
     }
 
     /// Inline HUD inspired by Apple's Embedding Atlas to explain what the user is seeing.
     @ViewBuilder
     private var sceneHUD: some View {
         if totalPoints > 0 {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
                 sampleSummaryBadge
                 axisHintPanel
             }
-            .padding(16)
+            .padding(DSSpacing.lg)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.white.opacity(0.55))
+                RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
+                    .fill(.regularMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
+                            .stroke(DSColors.border, lineWidth: 1)
                     )
             )
             .shadow(color: .black.opacity(0.04), radius: 10, x: 0, y: 6)
-            .padding(12)
+            .padding(DSSpacing.md)
         }
     }
 
     private var controlToolbar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: DSSpacing.sm) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     // Search button
                     ControlToggleButton(
                         icon: "magnifyingglass",
                         title: "Search",
                         isActive: isSearching,
                         action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(DSAnimations.fastEase) {
                                 isSearching.toggle()
                             }
                         }
@@ -1948,7 +1950,7 @@ struct EmbeddingSpaceRenderer: View {
                         title: "HUD",
                         isActive: showHUD,
                         action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(DSAnimations.fastEase) {
                                 showHUD.toggle()
                             }
                         }
@@ -1959,7 +1961,7 @@ struct EmbeddingSpaceRenderer: View {
                         title: "Labels",
                         isActive: showClusterLabels,
                         action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(DSAnimations.fastEase) {
                                 showClusterLabels.toggle()
                                 sceneReloadToken = UUID()
                             }
@@ -1971,7 +1973,7 @@ struct EmbeddingSpaceRenderer: View {
                         title: "Focus",
                         isActive: focusMode,
                         action: {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                            withAnimation(DSAnimations.gentleSpring) {
                                 focusMode.toggle()
                             }
                         }
@@ -1980,15 +1982,15 @@ struct EmbeddingSpaceRenderer: View {
                     Button(action: resetScene) {
                         Label("Reset", systemImage: "arrow.counterclockwise")
                             .font(.caption2)
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 8)
-                            .background(Color.black.opacity(0.08))
-                            .foregroundColor(.primary)
+                            .padding(.vertical, DSSpacing.xs)
+                            .padding(.horizontal, DSSpacing.sm)
+                            .background(Color.secondary.opacity(0.12))
+                            .foregroundStyle(.primary)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, DSSpacing.xs)
             }
 
             Menu {
@@ -2008,48 +2010,50 @@ struct EmbeddingSpaceRenderer: View {
             } label: {
                 Label(backgroundStyle.displayName, systemImage: backgroundStyle.iconName)
                     .font(.caption2)
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 12)
-                    .background(Color.black.opacity(0.05))
-                    .foregroundColor(.primary)
+                    .padding(.vertical, DSSpacing.xs)
+                    .padding(.horizontal, DSSpacing.md)
+                    .background(Color.secondary.opacity(0.1))
+                    .foregroundStyle(.primary)
                     .clipShape(Capsule())
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 18)
+        .padding(.vertical, DSSpacing.sm)
+        .padding(.horizontal, DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                 .fill(.thinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
+                        .stroke(DSColors.border, lineWidth: 1)
                 )
         )
         .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, DSSpacing.lg)
     }
 
     private var sampleSummaryBadge: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            HStack(spacing: DSSpacing.xs) {
                 Image(systemName: "chart.scatter")
                 Text(sampleCoverageText)
+                    .monospacedDigit()
             }
             .font(.caption)
-            .foregroundColor(.primary)
+            .foregroundStyle(.primary)
 
-            HStack(spacing: 6) {
+            HStack(spacing: DSSpacing.xs) {
                 Image(systemName: "rectangle.3.group")
                 Text(docCoverageText.isEmpty ? projectionExplainer : docCoverageText)
+                    .monospacedDigit()
             }
             .font(.caption2)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
         }
     }
 
     private var axisHintPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(spacing: DSSpacing.sm) {
                 Image(systemName: "chart.xyaxis.line")
                 Text("Axis cheat sheet")
                     .font(.caption)
@@ -2062,18 +2066,18 @@ struct EmbeddingSpaceRenderer: View {
     }
 
     private func axisHintRow(label: String, detail: String, color: Color) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: DSSpacing.sm) {
             Circle()
                 .fill(color.opacity(0.9))
                 .frame(width: 8, height: 8)
-                .padding(.top, 4)
-            VStack(alignment: .leading, spacing: 2) {
+                .padding(.top, DSSpacing.xs)
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text(label)
                     .font(.caption2)
                     .fontWeight(.semibold)
                 Text(detail)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -2081,26 +2085,26 @@ struct EmbeddingSpaceRenderer: View {
     @ViewBuilder
     private var insightHighlights: some View {
         if !insights.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
                 HStack {
                     Text("Quick insights")
                         .font(.headline)
                     Spacer()
                     Text(projectionExplainer)
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: DSSpacing.md) {
                         ForEach(insights) { insight in
                             InsightCard(insight: insight)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, DSSpacing.xs)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, DSSpacing.lg)
         }
     }
 
@@ -2163,7 +2167,7 @@ struct EmbeddingSpaceRenderer: View {
 
         var body: some View {
             Button(action: action) {
-                HStack(spacing: 4) {
+                HStack(spacing: DSSpacing.xs) {
                     Image(systemName: icon)
                     Text(title)
                         .lineLimit(1)
@@ -2171,10 +2175,10 @@ struct EmbeddingSpaceRenderer: View {
                         .layoutPriority(1)
                 }
                 .font(.caption2)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 8)
-                .background(isActive ? Color.accentColor : Color.black.opacity(0.1))
-                .foregroundColor(isActive ? .white : .white.opacity(0.85))
+                .padding(.vertical, DSSpacing.xs)
+                .padding(.horizontal, DSSpacing.sm)
+                .background(isActive ? DSColors.accent : Color.secondary.opacity(0.15))
+                .foregroundStyle(isActive ? .white : .primary)
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -2187,32 +2191,32 @@ struct EmbeddingSpaceRenderer: View {
         let label: String
         let value: String
         let icon: String
-        var color: Color = .purple
+        var color: Color = DSColors.accent
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                HStack(spacing: DSSpacing.xs) {
                     Image(systemName: icon)
-                        .font(.system(size: 10))
-                        .foregroundColor(color.opacity(0.8))
+                        .scaledFont(size: 10)
+                        .foregroundStyle(color)
                     Text(label)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .scaledFont(size: 9, weight: .medium)
+                        .foregroundStyle(.secondary)
                 }
                 Text(value)
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundColor(.primary)
+                    .scaledFont(size: 13, weight: .bold, design: .monospaced)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                     .fill(color.opacity(0.08))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                             .strokeBorder(color.opacity(0.2), lineWidth: 0.5)
                     )
             )
@@ -2227,17 +2231,17 @@ struct EmbeddingSpaceRenderer: View {
         var body: some View {
             HStack {
                 Text(label)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .scaledFont(size: 11)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(valueColor)
+                    .scaledFont(size: 11, weight: .medium, design: .monospaced)
+                    .foregroundStyle(valueColor)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.purple.opacity(0.05))
-            .cornerRadius(4)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.xs)
+            .background(DSColors.accent.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
         }
     }
 
@@ -2266,67 +2270,67 @@ struct EmbeddingSpaceRenderer: View {
         let sparsity: Double // 0-1
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 Text("Vector Space Health")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .scaledFont(size: 10, weight: .semibold)
+                    .foregroundStyle(.secondary)
 
-                HStack(spacing: 12) {
+                HStack(spacing: DSSpacing.md) {
                     // Coverage meter
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                         Text("Coverage")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                            .scaledFont(size: 9)
+                            .foregroundStyle(.secondary)
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                    .fill(Color.gray.opacity(0.2))
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
+                                    .fill(Color.secondary.opacity(0.2))
+                                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                                     .fill(coverageColor)
                                     .frame(width: geo.size.width * coverage)
                             }
                         }
                         .frame(height: 6)
                         Text(String(format: "%.1f%%", coverage * 100))
-                            .font(.system(size: 9, design: .monospaced))
+                            .scaledFont(size: 9, design: .monospaced)
                     }
 
                     // Density meter
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                         Text("Density")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                            .scaledFont(size: 9)
+                            .foregroundStyle(.secondary)
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                    .fill(Color.gray.opacity(0.2))
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
+                                    .fill(Color.secondary.opacity(0.2))
+                                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                                     .fill(densityColor)
                                     .frame(width: geo.size.width * (1 - sparsity))
                             }
                         }
                         .frame(height: 6)
                         Text(String(format: "%.1f%%", (1 - sparsity) * 100))
-                            .font(.system(size: 9, design: .monospaced))
+                            .scaledFont(size: 9, design: .monospaced)
                     }
                 }
             }
-            .padding(10)
-            .background(Color.purple.opacity(0.05))
-            .cornerRadius(8)
+            .padding(DSSpacing.sm)
+            .background(DSColors.accent.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
         }
 
         private var coverageColor: Color {
             if coverage > 0.8 { return .green }
-            if coverage > 0.5 { return .yellow }
+            if coverage > 0.5 { return .orange }
             return .orange
         }
 
         private var densityColor: Color {
             let density = 1 - sparsity
             if density > 0.7 { return .green }
-            if density > 0.4 { return .blue }
-            return .purple
+            if density > 0.4 { return DSColors.accent }
+            return .secondary
         }
     }
 
@@ -2343,7 +2347,7 @@ struct EmbeddingSpaceRenderer: View {
                     title: "Document Legend",
                     explanation: "Each color represents a different document in the active library. The numbers show how many points from that document are included in the current sample, and the percentage of the total points they represent. Tap a document to toggle it on or off in the 3D view."
                 )
-                .padding(.trailing)
+                .padding(.trailing, DSSpacing.lg)
             }
         }
     }
@@ -2356,7 +2360,7 @@ struct EmbeddingSpaceRenderer: View {
 
         var body: some View {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(spacing: DSSpacing.sm) {
                     ForEach(items, id: \.id) { item in
                         LegendChip(
                             item: item,
@@ -2368,7 +2372,7 @@ struct EmbeddingSpaceRenderer: View {
                         }
                     }
                 }
-                .padding(.leading)
+                .padding(.leading, DSSpacing.lg)
             }
         }
 
@@ -2399,7 +2403,7 @@ struct EmbeddingSpaceRenderer: View {
         }
 
         var body: some View {
-            HStack(spacing: 6) {
+            HStack(spacing: DSSpacing.xs) {
                 Circle()
                     .fill(item.color)
                     .frame(width: 10, height: 10)
@@ -2407,12 +2411,12 @@ struct EmbeddingSpaceRenderer: View {
                     .font(.caption2)
                     .lineLimit(1)
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
+            .padding(.vertical, DSSpacing.xs)
+            .padding(.horizontal, DSSpacing.sm)
             .background(DSColors.surface.opacity(selected ? 0.9 : 0.4))
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(selected ? Color.blue.opacity(0.6) : Color.clear, lineWidth: 1)
+                Capsule()
+                    .stroke(selected ? DSColors.accent.opacity(0.6) : Color.clear, lineWidth: 1)
             )
             .clipShape(Capsule())
             .contentShape(Rectangle())
@@ -2433,7 +2437,7 @@ struct EmbeddingSpaceRenderer: View {
                         )
                         .scaleEffect(depthScale(label.depthHint))
                         .opacity(depthOpacity(label.depthHint, score: label.score))
-                        .animation(.spring(response: 0.4, dampingFraction: 0.92), value: label.id)
+                        .animation(DSAnimations.gentleSpring, value: label.id)
                         .transition(.scale.combined(with: .opacity))
                         .zIndex(Double(label.depthHint))
                 }
@@ -2463,38 +2467,38 @@ struct EmbeddingSpaceRenderer: View {
         }
 
         var body: some View {
-            HStack(spacing: 6) {
+            HStack(spacing: DSSpacing.xs) {
                 Circle()
                     .fill(label.accent)
-.frame(width: 6, height: 6)
-    .shadow(color: label.accent.opacity(0.5), radius: 2, x: 0, y: 0)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: label.accent.opacity(0.5), radius: 2, x: 0, y: 0)
 
                 Text(label.title)
-.font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .scaledFont(size: 11, weight: .semibold, design: .rounded)
                     .lineLimit(1)
-.foregroundColor(.primary)
+                    .foregroundStyle(.primary)
 
                 if let keyword = keywordTag {
                     Text("·")
-.font(.system(size: 9, weight: .medium))
-    .foregroundColor(.secondary.opacity(0.7))
+                        .scaledFont(size: 9, weight: .medium)
+                        .foregroundStyle(.secondary)
                     Text(keyword)
-.font(.system(size: 10, weight: .medium, design: .rounded))
-    .foregroundColor(.secondary)
+                        .scaledFont(size: 10, weight: .medium, design: .rounded)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
-.padding(.horizontal, 8)
-    .padding(.vertical, 4)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.xs)
             .background(
                 Capsule()
-.fill(.regularMaterial)
+                    .fill(.regularMaterial)
                     .overlay(
                         Capsule()
-.strokeBorder(label.accent.opacity(0.4), lineWidth: 0.5)
+                            .strokeBorder(label.accent.opacity(0.4), lineWidth: 0.5)
                     )
             )
-.shadow(color: Color.black.opacity(0.15), radius: 4, x: 0, y: 2)
+            .shadow(color: Color.black.opacity(0.15), radius: 4, x: 0, y: 2)
         }
     }
 
@@ -2502,26 +2506,26 @@ struct EmbeddingSpaceRenderer: View {
         let insight: EmbeddingInsight
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                HStack(spacing: DSSpacing.xs) {
                     Image(systemName: insight.icon)
-                        .foregroundColor(insight.accent)
+                        .foregroundStyle(insight.accent)
                     Text(insight.title)
                         .font(.caption)
                         .fontWeight(.semibold)
                 }
                 Text(insight.detail)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14)
+            .padding(DSSpacing.md)
             .background(DSColors.background)
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .stroke(insight.accent.opacity(0.4), lineWidth: 1)
             )
-            .cornerRadius(14)
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
         }
     }
 
@@ -2794,224 +2798,6 @@ struct EmbeddingSpaceRenderer: View {
         }
     }
 
-    // MARK: - Intelligent Axis Analysis
-
-    /// Analyze what content appears at the extremes of each projection axis
-    /// Returns content-derived labels like "Baking ↔ Grilling" based on actual chunk content
-    private func analyzeAxisLabels(
-        coords: [SIMD3<Float>],
-        chunks: [DocumentChunk]
-    ) -> Embedding3DSceneView.AxisLabels {
-        guard coords.count >= 6, coords.count == chunks.count else {
-            return .placeholder
-        }
-
-        // For each axis, find the top N chunks at each extreme
-        let extremeSampleSize = max(3, min(10, coords.count / 8)) // 3-10 chunks per extreme
-
-        // Create indexed tuples for sorting
-        let indexed = coords.enumerated().map { (idx: $0.offset, coord: $0.element) }
-
-        // X-axis extremes
-        let sortedByX = indexed.sorted { $0.coord.x < $1.coord.x }
-        let xNegIndices = Array(sortedByX.prefix(extremeSampleSize).map { $0.idx })
-        let xPosIndices = Array(sortedByX.suffix(extremeSampleSize).map { $0.idx })
-
-        // Y-axis extremes
-        let sortedByY = indexed.sorted { $0.coord.y < $1.coord.y }
-        let yNegIndices = Array(sortedByY.prefix(extremeSampleSize).map { $0.idx })
-        let yPosIndices = Array(sortedByY.suffix(extremeSampleSize).map { $0.idx })
-
-        // Z-axis extremes
-        let sortedByZ = indexed.sorted { $0.coord.z < $1.coord.z }
-        let zNegIndices = Array(sortedByZ.prefix(extremeSampleSize).map { $0.idx })
-        let zPosIndices = Array(sortedByZ.suffix(extremeSampleSize).map { $0.idx })
-
-        // Use FTS5 terms as a reference vocabulary - these are proven meaningful
-        let vocabularySet = Set(fts5TopTerms.map { $0.lowercased() })
-
-        // Build corpus-wide word frequencies for TF-IDF contrast scoring
-        // Terms appearing uniformly across ALL chunks are noise, not axis-discriminative
-        let globalFreqs = buildGlobalWordFrequencies(chunks: chunks)
-
-        // Greedy deduplication: each axis endpoint claims a unique label
-        // so the same keyword never appears at multiple axis endpoints
-        var usedLabels = Set<String>()
-
-        let xNegLabel = extractExtremeLabel(indices: xNegIndices, chunks: chunks, vocabulary: vocabularySet, excluding: usedLabels, globalFreqs: globalFreqs, totalChunks: chunks.count)
-        if !xNegLabel.isEmpty { usedLabels.insert(xNegLabel.lowercased()) }
-        let xPosLabel = extractExtremeLabel(indices: xPosIndices, chunks: chunks, vocabulary: vocabularySet, excluding: usedLabels, globalFreqs: globalFreqs, totalChunks: chunks.count)
-        if !xPosLabel.isEmpty { usedLabels.insert(xPosLabel.lowercased()) }
-        let yNegLabel = extractExtremeLabel(indices: yNegIndices, chunks: chunks, vocabulary: vocabularySet, excluding: usedLabels, globalFreqs: globalFreqs, totalChunks: chunks.count)
-        if !yNegLabel.isEmpty { usedLabels.insert(yNegLabel.lowercased()) }
-        let yPosLabel = extractExtremeLabel(indices: yPosIndices, chunks: chunks, vocabulary: vocabularySet, excluding: usedLabels, globalFreqs: globalFreqs, totalChunks: chunks.count)
-        if !yPosLabel.isEmpty { usedLabels.insert(yPosLabel.lowercased()) }
-        let zNegLabel = extractExtremeLabel(indices: zNegIndices, chunks: chunks, vocabulary: vocabularySet, excluding: usedLabels, globalFreqs: globalFreqs, totalChunks: chunks.count)
-        if !zNegLabel.isEmpty { usedLabels.insert(zNegLabel.lowercased()) }
-        let zPosLabel = extractExtremeLabel(indices: zPosIndices, chunks: chunks, vocabulary: vocabularySet, excluding: usedLabels, globalFreqs: globalFreqs, totalChunks: chunks.count)
-
-        return Embedding3DSceneView.AxisLabels(
-            xNeg: xNegLabel, xPos: xPosLabel,
-            yNeg: yNegLabel, yPos: yPosLabel,
-            zNeg: zNegLabel, zPos: zPosLabel
-        )
-    }
-
-    /// Build word → chunk-count map across entire corpus for IDF scoring
-    private func buildGlobalWordFrequencies(chunks: [DocumentChunk]) -> [String: Int] {
-        var docFreq: [String: Int] = [:]
-        for chunk in chunks {
-            let uniqueWords = Set(
-                chunk.text
-                    .components(separatedBy: CharacterSet.alphanumerics.inverted)
-                    .map { $0.lowercased() }
-                    .filter { $0.count >= 3 }
-            )
-            for word in uniqueWords {
-                docFreq[word, default: 0] += 1
-            }
-            for kw in chunk.metadata.keywords {
-                let clean = kw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if clean.count >= 3 { docFreq[clean, default: 0] += 1 }
-            }
-        }
-        return docFreq
-    }
-
-    /// Extract the most distinctive keyword from chunks at an axis extreme.
-    /// Uses TF-IDF contrast scoring: penalizes terms appearing uniformly across
-    /// all chunks (corpus noise). Prefers terms concentrated at this specific extreme.
-    private func extractExtremeLabel(indices: [Int], chunks: [DocumentChunk], vocabulary: Set<String>, excluding: Set<String> = [], globalFreqs: [String: Int] = [:], totalChunks: Int = 1) -> String {
-        guard !indices.isEmpty else { return "" }
-        let extremeCount = Double(indices.count)
-        let totalDocs = max(Double(totalChunks), 1.0)
-
-        // First, try to use chunk metadata keywords (already curated)
-        var metadataKeywords: [String: Int] = [:]
-        for idx in indices {
-            guard idx < chunks.count else { continue }
-            for keyword in chunks[idx].metadata.keywords {
-                let clean = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-                if clean.count >= 3 {
-                    metadataKeywords[clean.lowercased(), default: 0] += 1
-                }
-            }
-        }
-
-        // If we have metadata keywords, prefer those — but REQUIRE FTS5 validation
-        // with TF-IDF contrast scoring to filter corpus-wide noise
-        if !metadataKeywords.isEmpty {
-            let scored = metadataKeywords
-                .filter({ vocabulary.contains($0.key) && !excluding.contains($0.key) })
-                .map { kw, count -> (String, Double) in
-                    let tf = Double(count) / extremeCount
-                    let globalCount = Double(globalFreqs[kw] ?? 1)
-                    let idf = log(totalDocs / max(globalCount, 1.0)) + 1.0
-                    let concentration = Double(count) / max(globalCount, 1.0)
-                    return (kw, tf * idf * (1.0 + concentration))
-                }
-                .sorted(by: { $0.1 > $1.1 })
-
-            if let topKeyword = scored.first?.0 {
-                return topKeyword.prefix(1).uppercased() + topKeyword.dropFirst()
-            }
-        }
-
-        // Fallback: extract from text content
-        let extremeTexts = indices.compactMap { idx -> String? in
-            guard idx < chunks.count else { return nil }
-            return chunks[idx].text
-        }
-
-        guard !extremeTexts.isEmpty else { return "" }
-
-        // Common stopwords to exclude
-        let stopwords = Set([
-            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-            "have", "has", "had", "do", "does", "did", "will", "would", "could",
-            "should", "may", "might", "must", "shall", "can", "need", "dare",
-            "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
-            "from", "as", "into", "through", "during", "before", "after", "above",
-            "below", "between", "under", "again", "further", "then", "once", "here",
-            "there", "when", "where", "why", "how", "all", "each", "few", "more",
-            "most", "other", "some", "such", "no", "nor", "not", "only", "own",
-            "same", "so", "than", "too", "very", "just", "also", "now", "and",
-            "but", "or", "because", "while", "although", "if", "this", "that",
-            "these", "those", "it", "its", "they", "their", "them", "we", "our",
-            "you", "your", "he", "she", "him", "her", "his", "i", "me", "my",
-            "any", "many", "much", "new", "first", "last", "long", "great", "little",
-            "old", "right", "big", "high", "different", "small", "large", "next",
-            "early", "young", "important", "public", "bad", "good", "like", "make",
-            "get", "see", "know", "take", "come", "think", "look", "want", "give",
-            "use", "find", "tell", "ask", "work", "seem", "feel", "try", "leave",
-            "call", "put", "keep", "let", "begin", "show", "hear", "play", "run",
-            "move", "live", "believe", "hold", "bring", "happen", "write", "provide",
-            "sit", "stand", "lose", "pay", "meet", "include", "continue", "set",
-            "learn", "change", "lead", "understand", "watch", "follow", "stop",
-            "create", "speak", "read", "allow", "add", "spend", "grow", "open",
-            "walk", "win", "offer", "remember", "love", "consider", "appear", "buy",
-            "wait", "serve", "die", "send", "expect", "build", "stay", "fall", "cut",
-            "reach", "kill", "remain", "data", "file", "page", "section", "chapter"
-        ])
-
-        // Extract words and count frequency
-        var wordCounts: [String: Int] = [:]
-        var originalCase: [String: String] = [:] // Store original casing
-
-        for text in extremeTexts {
-            // Split into words - reduced minimum to 3 chars
-            let words = text
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
-                .filter { word in
-                    let lower = word.lowercased()
-                    return word.count >= 3 && // At least 3 chars (was 4)
-                           word.count <= 20 && // Not too long
-                           !stopwords.contains(lower) &&
-                           !word.allSatisfy({ $0.isNumber }) // Not all numbers
-                }
-
-            for word in words {
-                let lower = word.lowercased()
-                wordCounts[lower, default: 0] += 1
-                // Keep the most "proper" looking case (capitalized or original)
-                if originalCase[lower] == nil || (word.first?.isUppercase == true && originalCase[lower]?.first?.isUppercase != true) {
-                    originalCase[lower] = word
-                }
-            }
-        }
-
-        // FTS5-validated terms with TF-IDF contrast scoring
-        var fts5Scored: [(word: String, score: Double)] = []
-        var fallbackScored: [(word: String, score: Double)] = []
-        for (word, count) in wordCounts where !excluding.contains(word) {
-            let tf = Double(count) / extremeCount
-            let globalCount = Double(globalFreqs[word] ?? 1)
-            let idf = log(totalDocs / max(globalCount, 1.0)) + 1.0
-            let concentration = Double(count) / max(globalCount, 1.0)
-            let score = tf * idf * (1.0 + concentration)
-
-            if vocabulary.contains(word) {
-                fts5Scored.append((word, score * 2.0))
-            } else {
-                fallbackScored.append((word, score))
-            }
-        }
-
-        // Prefer FTS5-validated, fall back to unvalidated only if empty
-        let scored = fts5Scored.isEmpty ? fallbackScored : fts5Scored
-
-        // Get top scoring word
-        guard let topWord = scored.sorted(by: { $0.score > $1.score }).first?.word else {
-            return ""
-        }
-
-        // Use original casing if available, otherwise capitalize
-        if let original = originalCase[topWord] {
-            return original
-        }
-        return topWord.prefix(1).uppercased() + topWord.dropFirst()
-    }
-
     // MARK: - Data + Projection
 
     private func loadAndProject() async {
@@ -3211,11 +2997,13 @@ struct EmbeddingSpaceRenderer: View {
                cached.coords.count == sampledEmbeddings.count {
                 coords3D = cached.coords
             } else {
-                coords3D = ProjectionService.shared.project3D(
-                    embeddings: sampledEmbeddings,
-                    method: methodKind,
-                    seed: rngSeed
-                )
+                // Off the main actor: UMAP and t-SNE take seconds on a few thousand passages (`ProjectionService`).
+                let toProject = sampledEmbeddings
+                let method = methodKind
+                let seed = rngSeed
+                coords3D = await Task.detached(priority: .userInitiated) {
+                    ProjectionService.shared.project3D(embeddings: toProject, method: method, seed: seed)
+                }.value
                 // Build counts per doc for legend and cache
                 var perDocCounts: [UUID: Int] = [:]
                 for did in sampledDocIds {
@@ -3276,8 +3064,14 @@ struct EmbeddingSpaceRenderer: View {
             let chunkTextList = sampledChunks.map { $0.text }
             let chunkDocNameList = sampledDocIds.map { nameById[$0] ?? "Unknown" }
 
-            // Analyze axis extremes to derive content-specific labels
-            let axisLabels = self.analyzeAxisLabels(coords: coords3D, chunks: sampledChunks)
+            // The same axis words as the Knowledge Atlas (5.7), read off the main actor.
+            let axisTexts = sampledChunks.map(\.content)
+            let axisCoords = coords3D
+            let axisEnds = await Task.detached(priority: .userInitiated) {
+                await AtlasLabeling.loadWordClasses(for: axisTexts)
+                return AtlasLabeling.axisLabels(coords: axisCoords, texts: axisTexts)
+            }.value
+            let axisLabels = Embedding3DSceneView.AxisLabels(ends: axisEnds)
 
             await MainActor.run {
                 self.points = scnPoints
@@ -3311,6 +3105,9 @@ struct EmbeddingSpaceRenderer: View {
         let key = "viz.sampleLimit.\(containerService.activeContainerId.uuidString)"
         if let v = UserDefaults.standard.value(forKey: key) as? Int, sampleOptions.contains(v) {
             sampleLimit = v
+        } else if let v = UserDefaults.standard.value(forKey: key) as? Int, v > 2000 {
+            // 5,000 or "All" from before 5.7: the most the map draws now.
+            sampleLimit = RAGService.visualizationPassageLimit
         } else {
             sampleLimit = 2000 // Higher default for full visibility
         }
@@ -3372,18 +3169,222 @@ struct Embedding3DSceneView: View {
     let reloadToken: UUID
     let annotations: [AnnotationData]
     var onPointTapped: ((Int, SCNVector3) -> Void)?
+    /// The 3D chart's angle, when the view that shows it keeps it (5.7), so it outlasts the chart: a reload or a change
+    /// of layout recreates the chart, and a pose of its own would start over.
+    var pose: Binding<Chart3DPose>?
+    /// Draws the SceneKit scene rather than the chart (5.7): the Atlas's Scene style (`AtlasDrawingStyle`), which names
+    /// each axis end and each cluster in the map, as the Atlas did through 5.6.
+    var drawsScene = false
+    /// What the views over the scene cover, which its axis labels keep clear of (5.7).
+    var labelInsets = AxisLabelInsets.zero
+
+    /// What each axis runs between, for VoiceOver, in the chart's words (`AtlasChart3D.axisTitle`).
+    private var sceneAxesDescription: String {
+        let labels = options.axisLabels
+        let x = AtlasChart3D.axisTitle(negative: labels.xNeg, positive: labels.xPos, fallback: "X")
+        let y = AtlasChart3D.axisTitle(negative: labels.yNeg, positive: labels.yPos, fallback: "Y")
+        let z = AtlasChart3D.axisTitle(negative: labels.zNeg, positive: labels.zPos, fallback: "Z")
+        return "Axes: \(x); \(y); \(z)"
+    }
 
     var body: some View {
-        SceneViewContainer(
-            points: points,
-            colors: colors,
-            options: options,
-            reloadToken: reloadToken,
-            annotations: annotations,
-            onPointTapped: onPointTapped
+        if onPointTapped != nil || drawsScene {
+            // The explorer (`EmbeddingSpaceRenderer`) opens the passage a tap lands on, which a 3D chart can't do: on
+            // the iOS 27 Simulator, `chartXSelection`, `chartYSelection` and `chartZSelection` on a `Chart3D` reported
+            // nothing for a tap, a press or a drag on a point (a drag turned it, 1° per point; probe run 2026-10-19),
+            // and Apple's page for `chartZSelection` describes no behaviour. So it keeps the SceneKit scene, framed as
+            // through 5.6, with each axis's names kept on screen at any angle (`keepAxisLabelsInView`). The Atlas's
+            // Scene style draws the same scene, without the tap (`drawsScene`).
+            SceneViewContainer(
+                points: points,
+                colors: colors,
+                options: options,
+                reloadToken: reloadToken,
+                annotations: annotations,
+                onPointTapped: onPointTapped,
+                labelInsets: labelInsets
+            )
+            .background(DSColors.background)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // VoiceOver reads the map as the chart's is read (5.7): the scene's words are SceneKit text, which it
+            // can't reach (review, 2026-10-20).
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Knowledge Atlas, \(points.count) passages in three dimensions")
+            .accessibilityValue(sceneAxesDescription)
+        } else {
+            // The Atlas's card and full screen are drawn with Swift Charts' `Chart3D` from 5.7 (`AtlasChart3D`). The
+            // SceneKit scene drew the axes to ±5 and their labels at ±5.4 around a cloud scaled to 4.5, with the camera
+            // 7.38 away and a 60° field of view, so an axis lying across the screen had both labels outside the view.
+            // Fog, labels tested against the depth of the translucent points, and a blue Aurora background behind the
+            // blue axis hid more, and every update rebuilt the scene and put the camera back. A
+            // chart frames its axes inside the plot volume and keeps the user's angle in state. Cluster badges and
+            // their lines are not drawn: the views' legends name the clusters, and the colours match.
+            AtlasChart3D(points: points, colors: colors, options: options, pose: pose)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+}
+
+/// The Atlas's axis key (5.7): what each of the chart's X, Y and Z runs between, named from the passages at its two
+/// ends (`AtlasLabeling`). The chart itself carries only the letters.
+struct AtlasAxisKey: View {
+    let labels: Embedding3DSceneView.AxisLabels
+    var lineLimit: Int = 2
+
+    var body: some View {
+        if hasNames {
+            VStack(alignment: .leading, spacing: 4) {
+                row("X", labels.xNeg, labels.xPos)
+                row("Y", labels.yNeg, labels.yPos)
+                row("Z", labels.zNeg, labels.zPos)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var hasNames: Bool {
+        ![labels.xNeg, labels.xPos, labels.yNeg, labels.yPos, labels.zNeg, labels.zPos].allSatisfy(\.isEmpty)
+    }
+
+    private func row(_ axis: String, _ negative: String, _ positive: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(axis)
+                .font(.caption.weight(.bold).monospaced())
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 14, alignment: .leading)
+            Text(AtlasChart3D.axisTitle(negative: negative, positive: positive, fallback: "Not named"))
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(lineLimit)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// The Knowledge Atlas in 3D (5.7): one point per passage where the Atlas's projection put it, in its cluster's or its
+/// library's colour, inside a cube whose three axes `AtlasLabeling` names from the passages at each end. The pose is the
+/// person's own drag, kept by the view that shows the chart when it passes one (`pose`), so a reload or a change of
+/// layout doesn't start it over; auto-rotate turns the same pose, so it never jumps back.
+struct AtlasChart3D: View {
+    struct Plot: Identifiable {
+        let id: Int
+        let x: Double
+        let y: Double
+        let z: Double
+        let color: Color
+    }
+
+    let plots: [Plot]
+    /// Half the side of the cube the axes span: the largest coordinate plus a margin, the same on all three axes so
+    /// the cloud keeps its shape.
+    let extent: Double
+    let options: Embedding3DSceneView.SceneOptions
+    /// The caller's angle, when it keeps one; otherwise `localPose`.
+    private let poseBinding: Binding<Chart3DPose>?
+    @State private var localPose: Chart3DPose = .default
+    private var pose: Binding<Chart3DPose> { poseBinding ?? $localPose }
+
+    init(
+        points: [SCNVector3], colors: [PlatformColor], options: Embedding3DSceneView.SceneOptions,
+        pose: Binding<Chart3DPose>? = nil
+    ) {
+        var plots: [Plot] = []
+        plots.reserveCapacity(points.count)
+        var maxAbs = 0.0
+        for (index, point) in points.enumerated() {
+            let x = Double(point.x), y = Double(point.y), z = Double(point.z)
+            maxAbs = max(maxAbs, abs(x), abs(y), abs(z))
+            let color: Color = index < colors.count ? Self.color(colors[index]) : .accentColor
+            plots.append(Plot(id: index, x: x, y: y, z: z, color: color))
+        }
+        self.plots = plots
+        self.extent = max(maxAbs, 0.001) * 1.08
+        self.options = options
+        self.poseBinding = pose
+    }
+
+    private static func color(_ platformColor: PlatformColor) -> Color {
+        #if canImport(UIKit)
+            Color(uiColor: platformColor)
+        #else
+            Color(nsColor: platformColor)
+        #endif
+    }
+
+    /// "Negative end ↔ positive end", or the one end that has a name. An axis whose ends do not differ is "Component N"
+    /// at both ends (`AtlasLabeling.axisLabels`), named once.
+    static func axisTitle(negative: String, positive: String, fallback: String) -> String {
+        switch (negative.isEmpty, positive.isEmpty) {
+        case (true, true): return fallback
+        case (true, false): return positive
+        case (false, true): return negative
+        case (false, false): return negative == positive ? negative : "\(negative) ↔ \(positive)"
+        }
+    }
+
+    var body: some View {
+        let labels = options.axisLabels
+        let xTitle = Self.axisTitle(negative: labels.xNeg, positive: labels.xPos, fallback: "X")
+        let yTitle = Self.axisTitle(negative: labels.yNeg, positive: labels.yPos, fallback: "Y")
+        let zTitle = Self.axisTitle(negative: labels.zNeg, positive: labels.zPos, fallback: "Z")
+        let spec = options.backgroundStyle.gradientSpec
+        Chart3D(plots) { plot in
+            PointMark(
+                x: .value("X", plot.x),
+                y: .value("Y", plot.y),
+                z: .value("Z", plot.z)
+            )
+            .foregroundStyle(plot.color)
+            // The chart's own point size. In a probe on the iOS 27 Simulator (2026-10-19) each of eight `symbolSize`
+            // values from 0.02 to 1,000 drew the nearest point over the whole chart, and Apple documents no unit for it
+            // in 3D.
+        }
+        .chartXScale(domain: -extent...extent)
+        .chartYScale(domain: -extent...extent)
+        .chartZScale(domain: -extent...extent)
+        // The projection's numbers mean nothing to a person, so the axes keep their grid and drop the figures.
+        .chartXAxis { AxisMarks { AxisGridLine() } }
+        .chartYAxis { AxisMarks { AxisGridLine() } }
+        .chartZAxis { AxisMarks { AxisGridLine() } }
+        // The letters only: names drawn along a 3D chart's axes ran off the card's edge and over each other as it turned
+        // (robot shots, 2026-10-19). `AtlasAxisKey` writes out what each axis runs between.
+        .chartXAxisLabel("X")
+        .chartYAxisLabel("Y")
+        .chartZAxisLabel("Z")
+        .chart3DPose(pose)
+        // Depth: a perspective camera, where nearer passages draw larger, or a flat orthographic one. (The volumetric
+        // rendering style is visionOS only, per the iOS 27 SDK's Charts interface.)
+        .chart3DCameraProjection(options.depthCue ? .perspective : .orthographic)
+        // Square, in the middle of whatever frame it is given. A 3D chart sizes its cube from its frame's longer side:
+        // in a probe on the iOS 27 Simulator a frame 360 points square drew the cube inside it with room to turn, with
+        // either camera, and a frame 360 wide and 640 tall drew it wider than the frame (2026-10-19); the Atlas's full
+        // screen on a phone did the same.
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(
+                colors: spec.colors.map { Self.color($0) },
+                startPoint: UnitPoint(x: spec.startPoint.x, y: spec.startPoint.y),
+                endPoint: UnitPoint(x: spec.endPoint.x, y: spec.endPoint.y)
+            )
         )
-        .background(DSColors.background)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // Parchment is the one light background; on the others the axes and their names are drawn light.
+        .environment(\.colorScheme, options.backgroundStyle == .parchment ? .light : .dark)
+        .task(id: options.autoRotate) {
+            guard options.autoRotate else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(33))
+                let current = pose.wrappedValue
+                pose.wrappedValue = Chart3DPose(
+                    azimuth: Angle2D(degrees: current.azimuth.degrees + 0.4),
+                    inclination: current.inclination
+                )
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Knowledge Atlas, \(plots.count) passages in three dimensions")
+        .accessibilityValue("Axes: \(xTitle); \(yTitle); \(zTitle)")
     }
 }
 
@@ -3397,11 +3398,13 @@ struct SceneViewContainer: UIViewRepresentable {
 
     // Callback for when a point is tapped
     var onPointTapped: ((Int, SCNVector3) -> Void)?
+    /// What the views over the scene cover, which the axis labels keep clear of (5.7).
+    var labelInsets = AxisLabelInsets.zero
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
         view.delegate = context.coordinator
-        configure(view)
+        configure(view, coordinator: context.coordinator)
 
         // Add tap gesture for point inspection
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
@@ -3413,13 +3416,13 @@ struct SceneViewContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
-        configure(uiView)
+        configure(uiView, coordinator: context.coordinator)
         context.coordinator.onPointTapped = onPointTapped
     }
 
-    private func configure(_ view: SCNView) {
-        let _ = reloadToken
-        view.scene = buildScene(points: points, colors: colors, options: options, annotations: annotations)
+    private func configure(_ view: SCNView, coordinator: Coordinator) {
+        installScene(in: view, built: &coordinator.builtKey)
+        coordinator.labelInsets = labelInsets
         view.allowsCameraControl = true
         view.autoenablesDefaultLighting = true
         view.backgroundColor = .clear
@@ -3434,6 +3437,8 @@ struct SceneViewContainer: UIViewRepresentable {
         private let updateInterval: TimeInterval = 0.05 // Throttle to 20fps for performance
         weak var scnView: SCNView?
         var onPointTapped: ((Int, SCNVector3) -> Void)?
+        /// What the scene on screen was built from (`SceneBuildKey`).
+        var builtKey: SceneBuildKey?
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = scnView else { return }
@@ -3441,7 +3446,8 @@ struct SceneViewContainer: UIViewRepresentable {
 
             // Perform hit test
             let hitResults = view.hitTest(location, options: [
-                .searchMode: SCNHitTestSearchMode.closest.rawValue,
+                // Every hit, nearest first: an axis label drawn over the cloud (5.7) would otherwise be the only one.
+                .searchMode: SCNHitTestSearchMode.all.rawValue,
                 .boundingBoxOnly: false
             ])
 
@@ -3468,56 +3474,34 @@ struct SceneViewContainer: UIViewRepresentable {
             updateLabelLOD(scene: scene, pointOfView: renderer.pointOfView)
         }
 
+        /// The map's labels, found once for each scene: walking every node 20 times a second visits each of up to
+        /// 6,000 points (5.7).
+        private weak var labelledScene: SCNScene?
+        private var labelNodes: [SCNNode] = []
+        private var axisPins: [AxisLabelPin] = []
+
+        /// The share of the view at each edge that the axis labels keep clear of (`AxisLabelInsets`).
+        var labelInsets = AxisLabelInsets.zero
+
         private func updateLabelLOD(scene: SCNScene, pointOfView: SCNNode?) {
             guard let camera = pointOfView else { return }
-            let cameraPos = camera.position
-
-            // Find the labelLayer node
-            scene.rootNode.enumerateChildNodes { node, stop in
-                guard node.name == "labelLayer" else { return }
-
-                // Update each cluster label based on distance
-                node.enumerateChildNodes { labelNode, _ in
-                    // Only process our cluster labels
-                    guard let nodeName = labelNode.name, nodeName.hasPrefix("clusterLabel_") else { return }
-
-                    let distance = simd_distance(
-                        simd_float3(cameraPos.x, cameraPos.y, cameraPos.z),
-                        simd_float3(labelNode.position.x, labelNode.position.y, labelNode.position.z)
-                    )
-
-                    // Smooth LOD transitions - labels always visible but scale with distance
-                    // Closer = smaller scale (more readable), Farther = larger scale (visible from afar)
-                    let (opacity, scale): (Float, Float)
-
-                    if distance < 2.5 {
-                        // Very close - small, crisp, high opacity
-                        opacity = 0.95
-                        scale = 0.8
-                    } else if distance < 4.0 {
-                        // Close - slightly larger
-                        opacity = 0.92
-                        scale = 1.0
-                    } else if distance < 6.0 {
-                        // Medium - normal size
-                        opacity = 0.88
-                        scale = 1.2
-                    } else if distance < 9.0 {
-                        // Far - larger to stay readable
-                        opacity = 0.82
-                        scale = 1.5
-                    } else {
-                        // Very far - largest, slightly faded
-                        opacity = 0.7
-                        scale = 1.8
-                    }
-
-                    labelNode.opacity = CGFloat(opacity)
-                    labelNode.scale = SCNVector3(scale, scale, scale)
-                }
-
-                stop.pointee = true // Found labelLayer, stop enumeration
+            if labelledScene !== scene {
+                labelNodes = mapLabelNodes(in: scene)
+                axisPins = axisLabelPins(in: scene)
+                labelledScene = scene
             }
+            sizeLabelsForScreen(labelNodes, pointOfView: camera)
+        }
+
+        /// Every frame, once the map's turning is applied: the field of view across the narrower side, and each axis
+        /// label on its end or at the edge of the view (5.7). Six labels, so this is cheap enough for every frame.
+        func renderer(_ renderer: SCNSceneRenderer, didApplyAnimationsAtTime time: TimeInterval) {
+            guard let scene = renderer.scene, labelledScene === scene, let camera = renderer.pointOfView else { return }
+            let viewport = renderer.currentViewport
+            guard viewport.width > 0, viewport.height > 0 else { return }
+            let aspect = Float(viewport.width / viewport.height)
+            fitProjection(of: camera, aspect: aspect)
+            keepAxisLabelsInView(axisPins, pointOfView: camera, aspect: aspect, insets: labelInsets)
         }
     }
 }
@@ -3531,11 +3515,13 @@ struct SceneViewContainer: NSViewRepresentable {
 
     // Callback for when a point is tapped (optional for macOS)
     var onPointTapped: ((Int, SCNVector3) -> Void)?
+    /// What the views over the scene cover, which the axis labels keep clear of (5.7).
+    var labelInsets = AxisLabelInsets.zero
 
     func makeNSView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
         view.delegate = context.coordinator
-        configure(view)
+        configure(view, coordinator: context.coordinator)
 
         // Add click gesture for point inspection
         let clickGesture = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleClick(_:)))
@@ -3547,13 +3533,13 @@ struct SceneViewContainer: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: SCNView, context: Context) {
-        configure(nsView)
+        configure(nsView, coordinator: context.coordinator)
         context.coordinator.onPointTapped = onPointTapped
     }
 
-    private func configure(_ view: SCNView) {
-        let _ = reloadToken
-        view.scene = buildScene(points: points, colors: colors, options: options, annotations: annotations)
+    private func configure(_ view: SCNView, coordinator: Coordinator) {
+        installScene(in: view, built: &coordinator.builtKey)
+        coordinator.labelInsets = labelInsets
         view.allowsCameraControl = true
         view.autoenablesDefaultLighting = true
         view.backgroundColor = .clear
@@ -3568,6 +3554,8 @@ struct SceneViewContainer: NSViewRepresentable {
         private let updateInterval: TimeInterval = 0.05 // Throttle to 20fps for performance
         weak var scnView: SCNView?
         var onPointTapped: ((Int, SCNVector3) -> Void)?
+        /// What the scene on screen was built from (`SceneBuildKey`).
+        var builtKey: SceneBuildKey?
 
         @objc func handleClick(_ gesture: NSClickGestureRecognizer) {
             guard let view = scnView else { return }
@@ -3575,7 +3563,8 @@ struct SceneViewContainer: NSViewRepresentable {
 
             // Perform hit test
             let hitResults = view.hitTest(location, options: [
-                .searchMode: SCNHitTestSearchMode.closest.rawValue,
+                // Every hit, nearest first: an axis label drawn over the cloud (5.7) would otherwise be the only one.
+                .searchMode: SCNHitTestSearchMode.all.rawValue,
                 .boundingBoxOnly: false
             ])
 
@@ -3601,54 +3590,337 @@ struct SceneViewContainer: NSViewRepresentable {
             updateLabelLOD(scene: scene, pointOfView: renderer.pointOfView)
         }
 
+        /// The map's labels, found once for each scene: walking every node 20 times a second visits each of up to
+        /// 6,000 points (5.7).
+        private weak var labelledScene: SCNScene?
+        private var labelNodes: [SCNNode] = []
+        private var axisPins: [AxisLabelPin] = []
+
+        /// The share of the view at each edge that the axis labels keep clear of (`AxisLabelInsets`).
+        var labelInsets = AxisLabelInsets.zero
+
         private func updateLabelLOD(scene: SCNScene, pointOfView: SCNNode?) {
             guard let camera = pointOfView else { return }
-            let cameraPos = camera.position
-
-            // Find the labelLayer node
-            scene.rootNode.enumerateChildNodes { node, stop in
-                guard node.name == "labelLayer" else { return }
-
-                // Update each cluster label based on distance
-                node.enumerateChildNodes { labelNode, _ in
-                    // Only process our cluster labels
-                    guard let nodeName = labelNode.name, nodeName.hasPrefix("clusterLabel_") else { return }
-
-                    let distance = simd_distance(
-                        simd_float3(Float(cameraPos.x), Float(cameraPos.y), Float(cameraPos.z)),
-                        simd_float3(Float(labelNode.position.x), Float(labelNode.position.y), Float(labelNode.position.z))
-                    )
-
-                    // Smooth LOD transitions - labels always visible but scale with distance
-                    let (opacity, scale): (Float, Float)
-
-                    if distance < 2.5 {
-                        opacity = 0.95
-                        scale = 0.8
-                    } else if distance < 4.0 {
-                        opacity = 0.92
-                        scale = 1.0
-                    } else if distance < 6.0 {
-                        opacity = 0.88
-                        scale = 1.2
-                    } else if distance < 9.0 {
-                        opacity = 0.82
-                        scale = 1.5
-                    } else {
-                        opacity = 0.7
-                        scale = 1.8
-                    }
-
-                    labelNode.opacity = CGFloat(opacity)
-                    labelNode.scale = SCNVector3(scale, scale, scale)
-                }
-
-                stop.pointee = true
+            if labelledScene !== scene {
+                labelNodes = mapLabelNodes(in: scene)
+                axisPins = axisLabelPins(in: scene)
+                labelledScene = scene
             }
+            sizeLabelsForScreen(labelNodes, pointOfView: camera)
+        }
+
+        /// Every frame, once the map's turning is applied: the field of view across the narrower side, and each axis
+        /// label on its end or at the edge of the view (5.7). Six labels, so this is cheap enough for every frame.
+        func renderer(_ renderer: SCNSceneRenderer, didApplyAnimationsAtTime time: TimeInterval) {
+            guard let scene = renderer.scene, labelledScene === scene, let camera = renderer.pointOfView else { return }
+            let viewport = renderer.currentViewport
+            guard viewport.width > 0, viewport.height > 0 else { return }
+            let aspect = Float(viewport.width / viewport.height)
+            fitProjection(of: camera, aspect: aspect)
+            keepAxisLabelsInView(axisPins, pointOfView: camera, aspect: aspect, insets: labelInsets)
         }
     }
 }
 #endif
+
+/// What a SceneKit map was built from (5.7). SwiftUI calls a representable's update for every change around it (the
+/// explorer's search field, its HUD, an import's progress), and through 5.6 each call built the whole scene again, up to
+/// 6,000 nodes, and put the camera back where it starts. The scene is built again only when this changes.
+struct SceneBuildKey: Equatable {
+    let reloadToken: UUID
+    let pointCount: Int
+    /// A sum over every point, so a different set of the same size (another document filter) still counts as changed.
+    let pointChecksum: Double
+    let colorCount: Int
+    let annotationCount: Int
+    let options: String
+
+    init(
+        reloadToken: UUID, points: [SCNVector3], colorCount: Int, annotationCount: Int,
+        options: Embedding3DSceneView.SceneOptions
+    ) {
+        self.reloadToken = reloadToken
+        self.pointCount = points.count
+        var sum = 0.0
+        for (index, point) in points.enumerated() {
+            sum += (Double(point.x) + 2 * Double(point.y) + 3 * Double(point.z)) * Double(index % 7 + 1)
+        }
+        self.pointChecksum = sum
+        self.colorCount = colorCount
+        self.annotationCount = annotationCount
+        self.options = String(describing: options)
+    }
+}
+
+extension SceneViewContainer {
+    /// Puts the scene on `view` when what it shows has changed since `built` (`SceneBuildKey`). A new scene starts
+    /// from its own camera, as through 5.6, which is what the explorer's Reset relies on.
+    func installScene(in view: SCNView, built: inout SceneBuildKey?) {
+        let key = SceneBuildKey(
+            reloadToken: reloadToken, points: points, colorCount: colors.count, annotationCount: annotations.count,
+            options: options)
+        guard key != built else { return }
+        view.scene = buildScene(points: points, colors: colors, options: options, annotations: annotations)
+        built = key
+    }
+}
+
+extension Embedding3DSceneView.AxisLabels {
+    /// The six labels in `AtlasLabeling.axisLabels`'s order: x low, x high, y low, y high, z low, z high (5.7).
+    init(ends: [String]) {
+        func end(_ index: Int) -> String { index < ends.count ? ends[index] : "" }
+        self.init(xNeg: end(0), xPos: end(1), yNeg: end(2), yPos: end(3), zNeg: end(4), zPos: end(5))
+    }
+}
+
+// MARK: - Label size
+
+/// The distance at which a map label is drawn at its own size: where the camera started through 5.6, |(3.5, 2.5, 6.0)|.
+/// `sizeLabelsForScreen` scales each label from it, so labels keep the size on screen they had then.
+nonisolated let startingCameraDistance: Float = 7.38
+
+/// Where the camera starts: where it started through 5.6 (back on 2026-10-20). From 2026-10-19 it started about 23 from
+/// the middle (22.9, fitted so each axis label's centre stayed within 70% of the half-width at any angle in a view at least
+/// 0.6 as wide as tall), and the cloud drew at about a third of its 5.6 size under labels kept at their 5.6 size; the owner
+/// wanted the 5.6 map back. Axis labels are kept in view by `keepAxisLabelsInView` instead.
+nonisolated let mapCameraPosition = SIMD3<Float>(3.5, 2.5, 6.0)
+
+/// How far the camera starts from the middle of the map, about 7.38.
+nonisolated let mapCameraDistance: Float = simd_length(mapCameraPosition)
+
+/// The map's words: the labels at the ends of its axes and the clusters' labels (5.7).
+nonisolated func mapLabelNodes(in scene: SCNScene) -> [SCNNode] {
+    scene.rootNode.childNodes { node, _ in
+        (node.name?.hasPrefix("axisLabel") ?? false) || (node.name?.hasPrefix("clusterLabel_") ?? false)
+    }
+}
+
+/// Keeps every label of the map one size on screen however near or far it is (5.7), 20 times a second (the scene's
+/// update is throttled to that). Each was drawn at one size in the scene, so on the owner's iPhone an axis end near the
+/// camera read in letters about four times the height of the one at the far end of the same axis (2026-10-16). The
+/// scale grows with the label's depth along the view and with the camera's field of view, and is 1 at the distance
+/// the camera starts from, between 0.35 and 4; a cluster's label is drawn half as large again, as at that distance
+/// before, and fades a little with depth.
+///
+/// It reads the positions as drawn: a spinning map turns its content with an animation, which moves only the
+/// presentation nodes (SCNNode.h, `presentationNode`: "with any active animations applied"), so a model position
+/// stands still while the map turns. And it uses the depth along the view, not the straight-line distance: a label
+/// off to the side of the screen is no smaller on it for being further along the diagonal.
+nonisolated func sizeLabelsForScreen(_ labels: [SCNNode], pointOfView: SCNNode) {
+    let view = pointOfView.presentation
+    let camera = view.simdWorldPosition
+    let front = view.simdWorldFront
+    let fieldOfView = Float(pointOfView.camera?.fieldOfView ?? 60)
+    // A cluster's label fades by how far behind the middle of the map it is, so the fade is the same from any distance.
+    let middle = viewDepth(of: .zero, camera: camera, front: front)
+    for label in labels {
+        let depth = viewDepth(of: label.presentation.simdWorldPosition, camera: camera, front: front)
+        let scale = screenScale(depth: depth, fieldOfView: fieldOfView)
+        if label.name?.hasPrefix("clusterLabel_") ?? false {
+            label.simdScale = SIMD3(repeating: scale * 1.5)
+            let behind = depth - middle
+            label.opacity = behind < -3.4 ? 0.95 : behind < 1.6 ? 0.88 : 0.75
+        } else {
+            // An axis label is kept on screen (`keepAxisLabelsInView`) even when its end is near the camera, where the
+            // 0.35 floor would draw it larger than the others (review, 2026-10-20).
+            label.simdScale = SIMD3(repeating: screenScale(depth: depth, fieldOfView: fieldOfView, minimum: 0.02))
+        }
+    }
+}
+
+/// How far in front of the camera a point is, along the way it looks: the depth a perspective view divides by, never
+/// under 0.05.
+nonisolated func viewDepth(of position: SIMD3<Float>, camera: SIMD3<Float>, front: SIMD3<Float>) -> Float {
+    max(simd_dot(position - camera, front), 0.05)
+}
+
+/// The scale that keeps a label one size on screen at `depth` with a field of view of `fieldOfView` degrees: 1 at the
+/// distance the camera starts from and the default 60 degrees, between `minimum` (0.35 unless given) and 4.
+nonisolated func screenScale(depth: Float, fieldOfView: Float, minimum: Float = 0.35) -> Float {
+    let viewFactor = tan(fieldOfView * .pi / 360) / tan(Float.pi / 6)
+    return min(max(depth * viewFactor / startingCameraDistance, minimum), 4)
+}
+
+// MARK: - Axis labels kept in view
+
+/// An axis end's label and the point it names (5.7). The label hangs under the scene's root, so the map's turning
+/// never moves it; `anchor` sits at the axis end inside the map, and turns with it.
+nonisolated struct AxisLabelPin {
+    let label: SCNNode
+    let anchor: SCNNode
+    /// Half the text's width and height, in the label's own units, before `sizeLabelsForScreen` scales it.
+    let halfWidth: Float
+    let halfHeight: Float
+}
+
+/// Moves each axis label of `axes` under `root`, at its place, with an empty node named "axisAnchor_<n>" left at that
+/// place in the map, and names the label "axisLabel_<n>" to match. The map turns its content node, so the anchors turn
+/// with it and the labels do not, and `keepAxisLabelsInView` puts each label back on its anchor every frame.
+nonisolated func pinAxisLabels(of axes: SCNNode, to root: SCNNode) {
+    let labels = axes.childNodes.filter { $0.name == "axisLabel" }
+    for (index, label) in labels.enumerated() {
+        let anchor = SCNNode()
+        anchor.name = "axisAnchor_\(index)"
+        anchor.position = label.position
+        axes.addChildNode(anchor)
+        label.removeFromParentNode()
+        label.name = "axisLabel_\(index)"
+        root.addChildNode(label)
+    }
+}
+
+/// The scene's pinned axis labels with their anchors, found once for each scene.
+nonisolated func axisLabelPins(in scene: SCNScene) -> [AxisLabelPin] {
+    var anchors: [String: SCNNode] = [:]
+    var labels: [(key: String, node: SCNNode)] = []
+    scene.rootNode.enumerateHierarchy { node, _ in
+        guard let name = node.name else { return }
+        if name.hasPrefix("axisAnchor_") {
+            anchors[String(name.dropFirst("axisAnchor_".count))] = node
+        } else if name.hasPrefix("axisLabel_") {
+            labels.append((String(name.dropFirst("axisLabel_".count)), node))
+        }
+    }
+    return labels.sorted { (Int($0.key) ?? 0) < (Int($1.key) ?? 0) }.compactMap { key, label in
+        guard let anchor = anchors[key], let text = label.childNodes.first?.geometry else { return nil }
+        let (low, high) = text.boundingBox
+        return AxisLabelPin(
+            label: label, anchor: anchor, halfWidth: Float(high.x - low.x) / 2, halfHeight: Float(high.y - low.y) / 2)
+    }
+}
+
+/// The share of the view at each edge that a label keeps clear of (5.7): the top bar, the legends and the controls
+/// drawn over the scene. Top and bottom are shares of the view's height, leading and trailing of its width.
+nonisolated struct AxisLabelInsets: Equatable, Sendable {
+    var top: Float = 0
+    var bottom: Float = 0
+    var leading: Float = 0
+    var trailing: Float = 0
+
+    static let zero = AxisLabelInsets()
+}
+
+/// The tangents of half the view's width and height as the camera sees them: a field of view of `fieldOfView` degrees
+/// across the height (SceneKit's default projection direction) or, when `horizontal`, across the width, in a view
+/// `aspect` wide for each unit high.
+nonisolated func viewHalfAngles(fieldOfView: Float, aspect: Float, horizontal: Bool) -> SIMD2<Float> {
+    let half = tan(fieldOfView * .pi / 360)
+    return horizontal ? SIMD2(half, half / aspect) : SIMD2(half * aspect, half)
+}
+
+/// Where a point is drawn on the view, -1 to 1 across and up, and how deep it is along the view, for a camera at
+/// `camera` (its world transform; a SceneKit camera looks down its -z) with the view's half-angle tangents `halfAngles`.
+nonisolated func viewPoint(
+    of world: SIMD3<Float>, camera: simd_float4x4, halfAngles: SIMD2<Float>
+) -> (point: SIMD2<Float>, depth: Float) {
+    let local = simd_inverse(camera) * SIMD4<Float>(world, 1)
+    let depth = -local.z
+    return (SIMD2(local.x, local.y) / (halfAngles * max(depth, 0.0001)), depth)
+}
+
+/// The world position drawn at `point` on the view at `depth`: the inverse of `viewPoint`.
+nonisolated func worldPoint(
+    at point: SIMD2<Float>, depth: Float, camera: simd_float4x4, halfAngles: SIMD2<Float>
+) -> SIMD3<Float> {
+    let local = point * halfAngles * depth
+    let world = camera * SIMD4<Float>(local.x, local.y, -depth, 1)
+    return SIMD3(world.x, world.y, world.z)
+}
+
+/// Sets the camera's field of view to run across the narrower side of the view (5.7): across the width on a screen
+/// taller than wide, across the height otherwise. Through 5.6 it always ran across the height, so on an upright phone the
+/// map in the full screen was wider than the screen and an axis's name could take most of its width.
+nonisolated func fitProjection(of pointOfView: SCNNode, aspect: Float) {
+    guard let camera = pointOfView.camera else { return }
+    let direction: SCNCameraProjectionDirection = aspect < 1 ? .horizontal : .vertical
+    if camera.projectionDirection != direction { camera.projectionDirection = direction }
+}
+
+/// Puts each axis label on its axis end as the map is drawn now, or, when that end is out of the part of the view
+/// `insets` leave clear, at the edge of that part nearest it, so every axis keeps its names on screen at any angle (5.7).
+/// Through 5.6 a label went off the screen with its end, and an axis lying across the view had both its names outside
+/// it. A label that would cover one already placed steps toward the middle of the clear part by its height. Called for
+/// every frame after the map's turning is applied (`renderer(_:didApplyAnimationsAtTime:)`), so a label moves with its
+/// end. `margin` is the share of the clear part's half-width and half-height kept free at its edge. A label whose end
+/// is behind the camera is hidden.
+nonisolated func keepAxisLabelsInView(
+    _ pins: [AxisLabelPin], pointOfView: SCNNode, aspect: Float, insets: AxisLabelInsets = .zero, margin: Float = 0.04
+) {
+    guard let camera = pointOfView.camera, !pins.isEmpty else { return }
+    let transform = pointOfView.presentation.simdWorldTransform
+    let halfAngles = viewHalfAngles(
+        fieldOfView: Float(camera.fieldOfView), aspect: aspect, horizontal: camera.projectionDirection == .horizontal)
+    let region = AxisLabelRegion(insets: insets, margin: margin)
+    var placed: [AxisLabelPlacement] = []
+    for pin in pins {
+        let (wanted, depth) = viewPoint(
+            of: pin.anchor.presentation.simdWorldPosition, camera: transform, halfAngles: halfAngles)
+        guard depth > 0.1 else {
+            pin.label.isHidden = true
+            continue
+        }
+        pin.label.isHidden = false
+        // Drawn no deeper than where the fog starts: SceneKit fogs every material (no switch for one in the iOS 27 SDK),
+        // and a blue name at the far end of the blue axis faded into the blue background (robot shots, 2026-10-20).
+        // A label is drawn over everything and sized for the screen by its depth (`sizeLabelsForScreen`), so the depth
+        // it is drawn at changes nothing else.
+        let drawDepth = min(depth, max(mapCameraDistance - 1, 0.2))
+        let scale = pin.label.simdScale.x
+        let size = SIMD2<Float>(pin.halfWidth, pin.halfHeight) * scale / (halfAngles * drawDepth)
+        let spot = axisLabelSpot(wanted: wanted, halfSize: size, region: region, placed: placed)
+        placed.append(AxisLabelPlacement(center: spot, halfSize: size))
+        pin.label.simdWorldPosition = worldPoint(at: spot, depth: drawDepth, camera: transform, halfAngles: halfAngles)
+    }
+}
+
+/// The part of the view a label may be drawn in, -1 to 1 across and up: the view less `insets`, less `margin` of
+/// what is left at each side.
+nonisolated struct AxisLabelRegion: Equatable {
+    let minimum: SIMD2<Float>
+    let maximum: SIMD2<Float>
+
+    init(insets: AxisLabelInsets, margin: Float) {
+        let low = SIMD2<Float>(-1 + 2 * insets.leading, -1 + 2 * insets.bottom)
+        let high = SIMD2<Float>(1 - 2 * insets.trailing, 1 - 2 * insets.top)
+        let inset = (high - low) * margin / 2
+        minimum = low + inset
+        maximum = high - inset
+    }
+}
+
+/// A label placed on the view, in its own units: -1 to 1 across and up.
+nonisolated struct AxisLabelPlacement: Equatable {
+    let center: SIMD2<Float>
+    let halfSize: SIMD2<Float>
+
+    func overlaps(_ other: AxisLabelPlacement) -> Bool {
+        abs(center.x - other.center.x) < halfSize.x + other.halfSize.x
+            && abs(center.y - other.center.y) < halfSize.y + other.halfSize.y
+    }
+}
+
+/// Where a label of `halfSize` goes on the view (-1 to 1 across and up) to name the point at `wanted`: there, moved in
+/// until all of it is inside `region`, then stepped toward the middle of the region by its height while it covers one
+/// in `placed`, at most six times. A label wider or taller than the region is centred across it.
+nonisolated func axisLabelSpot(
+    wanted: SIMD2<Float>, halfSize: SIMD2<Float>, region: AxisLabelRegion, placed: [AxisLabelPlacement]
+) -> SIMD2<Float> {
+    let middle = (region.minimum + region.maximum) / 2
+    var low = region.minimum + halfSize
+    var high = region.maximum - halfSize
+    for axis in 0..<2 where low[axis] > high[axis] {
+        low[axis] = middle[axis]
+        high[axis] = middle[axis]
+    }
+    var spot = simd_clamp(wanted, low, high)
+    var steps = 0
+    while steps < 6, placed.contains(where: { $0.overlaps(AxisLabelPlacement(center: spot, halfSize: halfSize)) }) {
+        spot.y += (spot.y > middle.y ? -2.2 : 2.2) * halfSize.y
+        spot.y = min(max(spot.y, low.y), high.y)
+        steps += 1
+    }
+    return spot
+}
 
 // MARK: - Scene construction
 
@@ -3665,7 +3937,9 @@ private func buildScene(points: [SCNVector3], colors: [PlatformColor], options: 
 
     // Add intuitive axes with human-readable labels
     if options.showAxes {
-        contentRoot.addChildNode(makeIntuiveAxesNode(projectionMethod: options.projectionMethod, axisLabels: options.axisLabels))
+        let axes = makeIntuiveAxesNode(axisLabels: options.axisLabels)
+        contentRoot.addChildNode(axes)
+        pinAxisLabels(of: axes, to: scene.rootNode)
     }
 
     addPointNodes(points, colors, scale: options.pointScale, depthCue: options.depthCue, into: contentRoot)
@@ -3678,14 +3952,14 @@ private func buildScene(points: [SCNVector3], colors: [PlatformColor], options: 
     applyAutoRotate(options.autoRotate, to: contentRoot)
 
     if options.depthCue {
-        scene.fogStartDistance = 5.0
-        scene.fogEndDistance = 12.0
+        // From just in front of the middle of the map to past the far axis labels, and light enough that a label on
+        // the far side still reads: SceneKit fogs every material, with no switch for one (SCNMaterial.h, iOS 27 SDK).
+        // Through 5.6 it ran from 5 to 12 with the camera 7.38 away, so the far half of the map and its labels sank
+        // into the fog.
+        scene.fogStartDistance = CGFloat(mapCameraDistance - 1)
+        scene.fogEndDistance = CGFloat(mapCameraDistance + 9)
         scene.fogDensityExponent = 1.0
-        #if canImport(UIKit)
-        scene.fogColor = options.backgroundStyle.fogColor.withAlphaComponent(0.7)
-        #else
-        scene.fogColor = options.backgroundStyle.fogColor.withAlphaComponent(0.7)
-        #endif
+        scene.fogColor = options.backgroundStyle.fogColor.withAlphaComponent(0.55)
     } else {
         scene.fogStartDistance = 0
         scene.fogEndDistance = 0
@@ -3737,7 +4011,7 @@ private func makeGroundPlane() -> SCNNode {
 
 // MARK: - Clean Arrow Axes (visible, no text clutter)
 
-private func makeIntuiveAxesNode(projectionMethod: ProjectionMethodKind, axisLabels: Embedding3DSceneView.AxisLabels) -> SCNNode {
+private func makeIntuiveAxesNode(axisLabels: Embedding3DSceneView.AxisLabels) -> SCNNode {
     let node = SCNNode()
 
     // Bright axis colors
@@ -3773,8 +4047,8 @@ private func makeIntuiveAxesNode(projectionMethod: ProjectionMethodKind, axisLab
     node.addChildNode(makeOriginMarker())
 
     // === DYNAMIC CONTENT-DERIVED AXIS LABELS ===
-    // Show content-specific labels at each axis endpoint (e.g., "Baking ↔ Grilling")
-    // If labels are empty, fall back to minimal X/Y/Z
+    // Each end of each axis is named by the words of the passages at that end (`AtlasLabeling.axisLabels`), so once the
+    // map has loaded every end has a label (5.7). While it loads, the positive ends read X, Y and Z.
 
     let xPosText = axisLabels.xPos.isEmpty ? "X" : axisLabels.xPos
     let yPosText = axisLabels.yPos.isEmpty ? "Y" : axisLabels.yPos
@@ -3808,27 +4082,8 @@ private func makeIntuiveAxesNode(projectionMethod: ProjectionMethodKind, axisLab
                                         color: zColor))
     }
 
-    // Add a subtle hint near origin explaining the labels represent content themes
-    let hasContentLabels = !axisLabels.xPos.isEmpty || !axisLabels.yPos.isEmpty || !axisLabels.zPos.isEmpty
-    if hasContentLabels {
-        node.addChildNode(makeAxisHintLabel(text: "← themes from content →",
-                                            position: SCNVector3(0, -0.4, 0),
-                                            axis: .x))
-    } else {
-        // Fallback hint based on projection method
-        let hintText: String
-        switch projectionMethod {
-        case .pca, .rp:
-            hintText = "← distance matters →"
-        case .tsne:
-            hintText = "← clusters matter →"
-        case .umap:
-            hintText = "← structure matters →"
-        }
-        node.addChildNode(makeAxisHintLabel(text: hintText,
-                                            position: SCNVector3(0, -0.4, 0),
-                                            axis: .x))
-    }
+    // The hint that sat under the origin ("← themes from content →") went in 5.7: it was drawn over the middle of
+    // the points, where the cluster labels are, and its words said less than the labels do.
 
     return node
 }
@@ -3843,7 +4098,9 @@ private func makeAxisLabel(text: String, position: SCNVector3, color: PlatformCo
     textGeo.font = NSFont.systemFont(ofSize: 0.35, weight: .bold)
     #endif
     textGeo.flatness = 0.02
-    textGeo.chamferRadius = 0.01
+    // No chamfer (5.7): with one, the iOS 27 Simulator drew nothing for a name with a colon ("Juniper Flats Lease: Late
+    // Charges", an empty text box, robot run 2026-10-20), and at 0.01 on text 0.35 high it was not visible anyway.
+    textGeo.chamferRadius = 0
 
     let mat = SCNMaterial()
     mat.diffuse.contents = color
@@ -3851,9 +4108,12 @@ private func makeAxisLabel(text: String, position: SCNVector3, color: PlatformCo
     mat.emission.intensity = 0.9
     mat.lightingModel = .constant
     mat.isDoubleSided = true
+    // Drawn over the points (5.7): tested against their depth, a label behind the translucent cloud was hidden by it.
+    mat.readsFromDepthBuffer = false
     textGeo.materials = [mat]
 
     let textNode = SCNNode(geometry: textGeo)
+    textNode.renderingOrder = 100
 
     // Center the text
     let (minBound, maxBound) = textGeo.boundingBox
@@ -3866,57 +4126,14 @@ private func makeAxisLabel(text: String, position: SCNVector3, color: PlatformCo
     )
 
     let container = SCNNode()
+    container.name = "axisLabel"
     container.addChildNode(textNode)
     container.position = position
 
-    // Billboard constraint so it always faces camera
+    // Billboard constraint so it always faces camera, on every axis (5.7): turned only about x and y, a name was upside
+    // down on screen once the map was turned over the top (robot shots, 2026-10-20).
     let billboard = SCNBillboardConstraint()
-    billboard.freeAxes = [.X, .Y]
-    container.constraints = [billboard]
-
-    return container
-}
-
-/// Creates a smaller hint label near the origin explaining what the axis represents
-private func makeAxisHintLabel(text: String, position: SCNVector3, axis: AxisDirection) -> SCNNode {
-    let textGeo = SCNText(string: text, extrusionDepth: 0.01)
-
-    #if canImport(UIKit)
-    textGeo.font = UIFont.systemFont(ofSize: 0.18, weight: .medium)
-    let textColor = UIColor.white.withAlphaComponent(0.5)
-    #else
-    textGeo.font = NSFont.systemFont(ofSize: 0.18, weight: .medium)
-    let textColor = NSColor.white.withAlphaComponent(0.5)
-    #endif
-    textGeo.flatness = 0.02
-
-    let mat = SCNMaterial()
-    mat.diffuse.contents = textColor
-    mat.emission.contents = textColor
-    mat.emission.intensity = 0.4
-    mat.lightingModel = .constant
-    mat.isDoubleSided = true
-    textGeo.materials = [mat]
-
-    let textNode = SCNNode(geometry: textGeo)
-
-    // Center the text
-    let (minBound, maxBound) = textGeo.boundingBox
-    let textWidth = maxBound.x - minBound.x
-    let textHeight = maxBound.y - minBound.y
-    textNode.pivot = SCNMatrix4MakeTranslation(
-        minBound.x + textWidth / 2,
-        minBound.y + textHeight / 2,
-        0
-    )
-
-    let container = SCNNode()
-    container.addChildNode(textNode)
-    container.position = position
-
-    // Billboard constraint
-    let billboard = SCNBillboardConstraint()
-    billboard.freeAxes = [.X, .Y]
+    billboard.freeAxes = .all
     container.constraints = [billboard]
 
     return container
@@ -4013,12 +4230,12 @@ private func makeCameraNode(depthCue: Bool) -> SCNNode {
     camera.zFar = 100
     camera.wantsDepthOfField = depthCue
     if depthCue {
-        camera.focusDistance = 5.5
+        camera.focusDistance = CGFloat(mapCameraDistance)
         camera.fStop = 10
     }
     node.camera = camera
-    // Camera positioned for optimal viewing of a 4.5-unit data cube with 5-unit axes
-    node.position = SCNVector3(3.5, 2.5, 6.0)
+    // Where it started through 5.6, `mapCameraDistance` from the middle.
+    node.simdPosition = mapCameraPosition
     node.look(at: SCNVector3(0, 0, 0))
     return node
 }
@@ -4427,7 +4644,7 @@ private func makeClusterBadge(
         displayText = title
     } else if isDocumentCluster {
         // Main document cluster: Name (count) + keywords
-        let truncatedTitle = String(title.prefix(22)) + (title.count > 22 ? "…" : "")
+        let truncatedTitle = String(title.prefix(32)) + (title.count > 32 ? "…" : "")
         displayText = "\(truncatedTitle) (\(clusterSize))"
         if detailLevel >= 1 && !keywords.isEmpty {
             // Filter out keywords that are substrings of the title (avoid "API API" duplication)
@@ -4451,7 +4668,8 @@ private func makeClusterBadge(
         }
     } else {
         // Sub-cluster: Section name only, smaller
-        let truncatedTitle = String(title.prefix(18)) + (title.count > 18 ? "…" : "")
+        // 28 characters (5.7): at 18, "Cleaning & Detergent" read "Cleaning & Deterge…".
+        let truncatedTitle = String(title.prefix(28)) + (title.count > 28 ? "…" : "")
         displayText = "▸ \(truncatedTitle)"
         if !keywords.isEmpty {
             // Filter keywords that match section title
@@ -4572,9 +4790,10 @@ private func makeClusterBadge(
         container.addChildNode(indicatorNode)
     }
 
-    // Billboard constraint - always face camera
+    // Billboard constraint - always face camera, on every axis (5.7), so a cluster's name stays upright on screen once the
+    // map is turned over the top.
     let billboard = SCNBillboardConstraint()
-    billboard.freeAxes = [.X, .Y]
+    billboard.freeAxes = .all
     container.constraints = [billboard]
 
     return container
@@ -4840,37 +5059,37 @@ struct EmbeddingSpaceRenderer: View {
     let chunkCount: Int
     let documentCount: Int
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: DSSpacing.md) {
             ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.background)
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-                VStack(spacing: 8) {
+                VStack(spacing: DSSpacing.sm) {
                     Image(systemName: "cube.transparent")
                         .font(.title)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("3D embedding visualization requires SceneKit")
                         .font(.subheadline)
                     Text("This platform does not support SceneKit. A compatible renderer (RealityKit) can be added.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                        .padding(.horizontal, DSSpacing.lg)
                     Text("Tracking \(chunkCount) chunks across \(documentCount) documents")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 4)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, DSSpacing.xs)
                     Text(projectionHelper)
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                     Text("Tip: On compatible devices, use Focus mode to stretch the scene, or hide the HUD for a clean canvas.")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .padding(.top, 2)
+                        .padding(.top, DSSpacing.xxs)
                 }
-                .padding()
+                .padding(DSSpacing.lg)
             }
             .frame(height: 360)
 

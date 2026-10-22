@@ -610,8 +610,21 @@ nonisolated class SemanticChunker {
                     }
 
                     if let lastRange = wordRanges.last {
-                        // Truncate to end of last word within limit
-                        chunkText = String(chunkText[chunkText.startIndex..<lastRange.upperBound])
+                        // Truncate to end of last word within limit, or to the last space before it when one is within
+                        // 200 characters (5.7). The tokenizer's words end inside a run of text with no spaces, such as
+                        // a JSON record or a line of code, so the cut left half a record at the end of the passage.
+                        // Only inside an ASCII run: in Chinese, Japanese or Thai a word's end is the boundary itself,
+                        // with no space to look for (review, 2026-10-20).
+                        var cut = lastRange.upperBound
+                        let cutsARun = cut < chunkText.endIndex && !chunkText[cut].isWhitespace
+                            && !chunkText[chunkText.index(before: cut)].isWhitespace
+                            && chunkText[cut].isASCII && chunkText[chunkText.index(before: cut)].isASCII
+                        if cutsARun, let space = chunkText[..<cut].lastIndex(where: \.isWhitespace),
+                            space > chunkText.startIndex, chunkText.distance(from: space, to: cut) <= 200
+                        {
+                            cut = space
+                        }
+                        chunkText = String(chunkText[chunkText.startIndex..<cut])
 
                         // Recalculate the range to match truncated text
                         let newEnd = text.index(currentPosition, offsetBy: chunkText.count, limitedBy: text.endIndex) ?? text.endIndex
@@ -717,13 +730,13 @@ nonisolated class SemanticChunker {
                     sectionPath: prev.metadata.sectionPath.isEmpty ? chunk.metadata.sectionPath : prev.metadata.sectionPath,
                     wordCount: prev.metadata.wordCount + chunk.metadata.wordCount,
                     characterCount: prev.metadata.characterCount + chunk.metadata.characterCount,
-                    topKeywords: Array(Set(prev.metadata.topKeywords + chunk.metadata.topKeywords)),
+                    topKeywords: Self.orderedUnion(prev.metadata.topKeywords, chunk.metadata.topKeywords),
                     semanticDensity: (prev.metadata.semanticDensity + chunk.metadata.semanticDensity) / 2.0,
                     hasNumericData: prev.metadata.hasNumericData || chunk.metadata.hasNumericData,
                     hasListStructure: prev.metadata.hasListStructure || chunk.metadata.hasListStructure,
                     startOffset: prev.metadata.startOffset,
                     endOffset: chunk.metadata.endOffset,
-                    entities: Array(Set(prev.metadata.entities + chunk.metadata.entities)),
+                    entities: Self.orderedUnion(prev.metadata.entities, chunk.metadata.entities),
                     abbreviations: prev.metadata.abbreviations.merging(chunk.metadata.abbreviations) { first, _ in first },
                     documentCategory: prev.metadata.documentCategory ?? chunk.metadata.documentCategory,
                     chunkType: prev.metadata.chunkType == .warning || chunk.metadata.chunkType == .warning ? .warning : prev.metadata.chunkType,
@@ -1529,9 +1542,15 @@ nonisolated class SemanticChunker {
             }
         }
 
-        // Adjust to nearest sentence boundary
+        // Adjust to nearest sentence boundary, or else to the nearest place no word is cut (5.7)
         if let sentenceEnd = findNearestSentenceEnd(in: text, near: targetIndex, within: 100) {
             targetIndex = sentenceEnd
+        } else if targetIndex > start {
+            let snapped = Self.snappedToWordBoundary(targetIndex, in: text, within: 100)
+            if snapped > start { targetIndex = snapped }
+            if logsEachChunk {
+                Log.debug("[SemanticChunker] No sentence ends within 100 characters of the target; the passage ends at a word boundary", category: .ingestion)
+            }
         }
 
         // 5. Table block protection: if the proposed end falls within a table, adjust
@@ -1596,6 +1615,13 @@ nonisolated class SemanticChunker {
             guard let originalIndex = text.index(searchStart, offsetBy: offset, limitedBy: text.endIndex) else {
                 return true
             }
+            // The last token "ends" wherever the window does: the tokenizer can't see what comes after it, so that end
+            // counts only where a sentence really ends (5.7), the mirror of the first token's start in
+            // `findNearestSentenceStart`. Through 5.6 a window with no sentence end in it returned its own last
+            // character, so a passage could end mid-word.
+            if boundaryInSubstring == substring.endIndex, !Self.canEndSentence(at: originalIndex, in: text) {
+                return true
+            }
 
             let dist = abs(text.distance(from: index, to: originalIndex))
             if dist < nearestDistance {
@@ -1606,6 +1632,85 @@ nonisolated class SemanticChunker {
         }
 
         return nearestIndex
+    }
+
+    /// Sentence ends that a space follows: Latin, Devanagari (danda, double danda), Urdu and Arabic.
+    private static let spacedSentenceEnds: Set<Character> = [".", "!", "?", "\u{0964}", "\u{0965}", "\u{06D4}", "\u{061F}"]
+    /// Sentence ends that need no space after them: Chinese and Japanese, full width and half width.
+    private static let unspacedSentenceEnds: Set<Character> = ["\u{3002}", "\u{FF01}", "\u{FF1F}", "\u{FF61}", "\u{FF0E}"]
+    /// Closing quotes and brackets that can stand between a sentence's end and the next sentence.
+    private static let closers: Set<Character> = [
+        "\"", "'", "\u{201D}", "\u{2019}", ")", "]", "\u{00BB}", "\u{203A}", "\u{300D}", "\u{300F}", "\u{FF09}",
+        "\u{300B}", "\u{3009}", "\u{3011}",
+    ]
+
+    /// Whether a sentence can end at `index`: the end of the text, at a line break, or after the end of a sentence with
+    /// closing quotes or brackets and spaces allowed after it (5.7). After `.`, `!`, `?` and the other spaced ends a space
+    /// or the text's end has to follow, so "3.14" and "example.com" don't end sentences; after `。` and the other CJK
+    /// ends nothing has to.
+    static func canEndSentence(at index: String.Index, in text: String) -> Bool {
+        guard index < text.endIndex else { return true }
+        if text[index].isNewline { return true }
+        guard index > text.startIndex else { return false }
+        var cursor = text.index(before: index)
+        var spaced = text[index].isWhitespace
+        while text[cursor].isWhitespace {
+            if text[cursor].isNewline { return true }
+            spaced = true
+            guard cursor > text.startIndex else { return false }
+            cursor = text.index(before: cursor)
+        }
+        while closers.contains(text[cursor]) {
+            guard cursor > text.startIndex else { return false }
+            cursor = text.index(before: cursor)
+        }
+        if unspacedSentenceEnds.contains(text[cursor]) { return true }
+        return spaced && spacedSentenceEnds.contains(text[cursor])
+    }
+
+    /// `index`, or the nearest place within `distance` characters where no word is cut: a space or line break on
+    /// either side, the earlier one when two are as near, and `index` itself when a token runs past both (5.7). The
+    /// fallback for a chunk's end and its parent window's edges when no sentence ends near them.
+    static func snappedToWordBoundary(_ index: String.Index, in text: String, within distance: Int) -> String.Index {
+        func isBoundary(_ i: String.Index) -> Bool {
+            i == text.startIndex || i == text.endIndex || text[i].isWhitespace || text[text.index(before: i)].isWhitespace
+        }
+        if isBoundary(index) { return index }
+        var back = index
+        var forward = index
+        for _ in 0..<distance {
+            if back > text.startIndex {
+                back = text.index(before: back)
+                if isBoundary(back) { return back }
+            }
+            if forward < text.endIndex {
+                forward = text.index(after: forward)
+                if isBoundary(forward) { return forward }
+            }
+        }
+        return index
+    }
+
+    /// Whether a sentence can start at `index`: the start of the text, after a line break, or after the end of a
+    /// sentence, with closing quotes or brackets allowed in between (5.7). After `.`, `!`, `?` and the other spaced ends
+    /// there has to be a space as well, so "3.14" and "example.com" aren't sentence ends; after `。` and the other CJK
+    /// ends there needn't be.
+    static func canStartSentence(at index: String.Index, in text: String) -> Bool {
+        guard index > text.startIndex else { return true }
+        var cursor = text.index(before: index)
+        var spaced = false
+        while text[cursor].isWhitespace {
+            if text[cursor].isNewline { return true }
+            spaced = true
+            guard cursor > text.startIndex else { return true }
+            cursor = text.index(before: cursor)
+        }
+        while closers.contains(text[cursor]) {
+            guard cursor > text.startIndex else { return false }
+            cursor = text.index(before: cursor)
+        }
+        if unspacedSentenceEnds.contains(text[cursor]) { return true }
+        return spaced && spacedSentenceEnds.contains(text[cursor])
     }
 
     /// Find nearest sentence start using NLTokenizer for robust detection.
@@ -1623,9 +1728,25 @@ nonisolated class SemanticChunker {
         var nearestDistance = Int.max
         var nearestIndex: String.Index?
 
+        var isFirstToken = true
         sentenceTokenizer.enumerateTokens(in: substring.startIndex..<substring.endIndex) { tokenRange, _ in
             // The start of each sentence token is a sentence boundary
             let boundaryInSubstring = tokenRange.lowerBound
+            // The first token "starts" wherever the window does, or after its leading spaces: the tokenizer can't see what
+            // comes before the window, so that start counts only where a sentence really ends before it (5.7). The tokens
+            // after it are the tokenizer's own boundaries, in any script, and count as before. Through 5.6 a window with
+            // no sentence start in it returned its own first character, so a passage could start mid-word (reviews of
+            // 2026-10-17).
+            if isFirstToken {
+                isFirstToken = false
+                let candidate =
+                    text.index(
+                        searchStart, offsetBy: substring.distance(from: substring.startIndex, to: boundaryInSubstring),
+                        limitedBy: text.endIndex) ?? text.endIndex
+                if !Self.canStartSentence(at: candidate, in: text) {
+                    return true
+                }
+            }
             let offset = substring.distance(from: substring.startIndex, to: boundaryInSubstring)
             guard let originalIndex = text.index(searchStart, offsetBy: offset, limitedBy: text.endIndex) else {
                 return true
@@ -1653,8 +1774,10 @@ nonisolated class SemanticChunker {
         let lower = text.index(range.lowerBound, offsetBy: -windowChars, limitedBy: text.startIndex) ?? text.startIndex
         let upper = text.index(range.upperBound, offsetBy: windowChars, limitedBy: text.endIndex) ?? text.endIndex
 
-        let start = findNearestSentenceStart(in: text, near: lower, within: 120) ?? lower
-        let end = findNearestSentenceEnd(in: text, near: upper, within: 120) ?? upper
+        let start = findNearestSentenceStart(in: text, near: lower, within: 120)
+            ?? Self.snappedToWordBoundary(lower, in: text, within: 120)
+        let end = findNearestSentenceEnd(in: text, near: upper, within: 120)
+            ?? Self.snappedToWordBoundary(upper, in: text, within: 120)
 
         guard start < end else { return String(text[range]) }
         let expanded = String(text[start ..< end])
@@ -1896,6 +2019,13 @@ nonisolated class SemanticChunker {
                             "since", "while", "if", "in", "on", "at", "for", "with", "as", "it", "its", "a", "an",
                             "and", "but", "or", "so", "yet", "after", "before", "each", "every", "some", "many",
                             "most", "such", "please", "note", "see",
+                            "should", "would", "could", "shall", "must", "might", "can", "do", "does", "did",
+                            "is", "are", "was", "were", "be", "has", "have", "had", "not", "no", "all", "any",
+                            "both", "only", "here", "now", "you", "your", "he", "she", "they", "their", "his",
+                            "her", "my", "from", "to", "of", "by", "about", "during", "until", "unless",
+                            "whether", "once", "even", "still", "just", "always", "never", "often", "perhaps",
+                            "indeed", "overall", "similarly", "specifically", "generally", "typically",
+                            "currently", "recently", "later", "lastly", "today", "yes",
                         ]
                         if term.count >= 2, term.count <= 50, !seen.contains(key), !stopWords.contains(key) {
                             seen.insert(key)
@@ -2014,6 +2144,23 @@ nonisolated class SemanticChunker {
 
         return abbreviations
     }
+
+    /// The keywords with the highest counts, those with the same count in alphabetical order (5.7). A dictionary's
+    /// order changes with every launch, and through 5.6 ties kept it, so the same passage could keep different keywords
+    /// each time it was imported.
+    static func topKeywords(_ counts: [String: Int], limit: Int) -> [String] {
+        counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(limit)
+            .map(\.key)
+    }
+
+    /// Two lists in their order, with the second's repeats left out (5.7). Merging a small passage into the one before
+    /// it took the union of their keywords and entities through a set, whose order changes with every launch.
+    static func orderedUnion(_ first: [String], _ second: [String]) -> [String] {
+        var seen = Set<String>()
+        return (first + second).filter { seen.insert($0).inserted }
+    }
+
     /// Also extracts capitalized multi-word phrases (e.g., "Record Button", "Note Recording")
     /// ENHANCED: Also extracts specification values (SAE 0W-20, API SN, etc.) via SpecificationDetector
     private func extractKeywords(_ text: String, topN: Int) -> [String] {
@@ -2065,44 +2212,53 @@ nonisolated class SemanticChunker {
             counts[specKey, default: 0] += 3 // Boost specs even higher than phrases
         }
 
-        // Return more keywords for richer corpus vocabulary (up to 2x requested)
-        return counts.sorted { $0.value > $1.value }
-.prefix(topN * 2)
-            .map { $0.key }
+        // Return more keywords for richer corpus vocabulary (up to 2x requested).
+        return Self.topKeywords(counts, limit: topN * 2)
     }
 
     /// Advance position with intelligent overlap that snaps to sentence boundaries.
     /// Instead of splitting overlap mid-sentence by raw word count, we find the
     /// nearest sentence boundary within the overlap region.
+    ///
+    /// The overlap is counted in the word tokenizer's words from 5.7, as the cap on a passage's size is (`maxSize`,
+    /// `tokenWordCount`); the passage's target size is still counted in runs of text between spaces. Through 5.6 the
+    /// overlap was counted in those runs too, so text with few spaces overlapped by several times the setting: in
+    /// `id:7,name:alpha` each run is three or more of the tokenizer's words. Only the passage is tokenized, so the cost
+    /// stays with the passage and not the whole text.
     private func advancePosition(
         from start: String.Index,
         chunkEnd: String.Index,
         overlap: Int,
         in text: String
     ) -> String.Index {
-        // Move back by overlap words from chunk end
-        let overlapRange = text[start..<chunkEnd]
-        let words = overlapRange.split(separator: " ")
+        guard overlap > 0, start < chunkEnd else { return chunkEnd }
+        // A passage that reaches the end of the text, or all of it but a short tail with no letter or digit (spaces,
+        // punctuation, symbols), leaves nothing to cut. Stepping back for the overlap there made one more passage of the
+        // overlap alone, wholly inside the one before it, at the end of nearly every document (5.7, measured
+        // 2026-10-17). At most 64 characters are looked at, so this is no pass over the rest of the text.
+        if text.index(chunkEnd, offsetBy: 64, limitedBy: text.endIndex) == nil,
+            !text[chunkEnd...].contains(where: { $0.isLetter || $0.isNumber })
+        {
+            return text.endIndex
+        }
+        let passage = String(text[start..<chunkEnd])
+        cachedWordTokenizer.string = passage
+        let words = cachedWordTokenizer.tokens(for: passage.startIndex..<passage.endIndex)
+        guard words.count > overlap else { return chunkEnd }
 
-        if words.count > overlap {
-            let overlapWords = words.suffix(overlap)
-            let overlapText = overlapWords.joined(separator: " ")
-            if let overlapStart = text.range(of: overlapText, options: [.backwards], range: start..<chunkEnd) {
-                // Snap to nearest sentence boundary within ±30 chars of the overlap point
-                // This ensures overlap regions start at clean sentence boundaries
-                if let sentenceStart = findNearestSentenceStart(in: text, near: overlapStart.lowerBound, within: 30) {
-                    // Only use sentence boundary if it's still within the overlap region
-                    if sentenceStart > start && sentenceStart < chunkEnd {
-                        return sentenceStart
-                    }
-                }
-                if overlapStart.lowerBound > start {
-                    return overlapStart.lowerBound
-                }
+        // Move back by overlap words from chunk end
+        let offset = passage.distance(from: passage.startIndex, to: words[words.count - overlap].lowerBound)
+        guard let overlapStart = text.index(start, offsetBy: offset, limitedBy: chunkEnd) else { return chunkEnd }
+
+        // Snap to nearest sentence boundary within ±30 chars of the overlap point
+        // This ensures overlap regions start at clean sentence boundaries
+        if let sentenceStart = findNearestSentenceStart(in: text, near: overlapStart, within: 30) {
+            // Only use sentence boundary if it's still within the overlap region
+            if sentenceStart > start && sentenceStart < chunkEnd {
+                return sentenceStart
             }
         }
-
-        return chunkEnd
+        return overlapStart > start ? overlapStart : chunkEnd
     }
 
     /// Print chunk statistics

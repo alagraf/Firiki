@@ -68,40 +68,40 @@ struct VerificationGatesOverlayView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             HStack {
                 Image(systemName: "shield.checkerboard")
                     .foregroundStyle(DSColors.accent)
                     .symbolEffect(.pulse, options: .repeating)
                 Text("Verification Pipeline")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .scaledFont(size: 11, weight: .bold, design: .monospaced)
                     .foregroundStyle(DSColors.primaryText)
                 
                 Spacer()
                 
                 if gates.contains(where: { if case .failed = $0.status { return true }; return false }) {
                     Text("ABSTAINED")
-                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                        .scaledFont(size: 9, weight: .black, design: .monospaced)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, DSSpacing.xs)
+                        .padding(.vertical, DSSpacing.xxs)
                         .background(Color.red.gradient)
-                        .cornerRadius(4)
+                        .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
                         .transition(.blurReplace)
                 }
             }
-            .padding(.bottom, 4)
+            .padding(.bottom, DSSpacing.xs)
 
             ForEach(gates) { gate in
                 GateRowView(gate: gate)
             }
         }
-        .padding(12)
+        .padding(DSSpacing.md)
         .background(DSColors.surface.opacity(0.6))
         .background(.ultraThinMaterial)
-        .cornerRadius(12)
+        .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .stroke(DSColors.accent.opacity(0.3), lineWidth: 1)
         )
         .onChange(of: events.count) { _, _ in
@@ -132,6 +132,16 @@ struct VerificationGatesOverlayView: View {
             let gate = newGates[i]
             
             if let index = events.firstIndex(where: { $0.kind == gate.kind || $0.kind == gate.secondaryKind }) {
+                // A step whose own event says it failed has failed (5.7): verification reports "Gates failed" and
+                // names the gates, with no warning after it, and this read it as passed.
+                if let failedOwn = events[index...].first(where: {
+                    ($0.kind == gate.kind || $0.kind == gate.secondaryKind)
+                        && $0.title.localizedCaseInsensitiveContains("failed")
+                }) {
+                    newGates[i].status = .failed(reason: failedOwn.detail ?? failedOwn.title)
+                    hasFailed = true
+                    continue
+                }
                 // Determine if it failed: look ahead for warnings immediately following
                 let subsequentEvents = events[index...]
                 
@@ -165,7 +175,7 @@ struct VerificationGatesOverlayView: View {
             }
         }
         
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation(DSAnimations.fastEase) {
             self.gates = newGates
         }
     }
@@ -175,19 +185,20 @@ struct GateRowView: View {
     let gate: VerificationGatesOverlayView.VerificationGate
     
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DSSpacing.sm) {
             statusIcon
                 .frame(width: 14, height: 14)
             
             Text("Gate \(gate.id): \(gate.title)")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .scaledFont(size: 10, weight: .medium, design: .monospaced)
+                .monospacedDigit()
                 .foregroundStyle(textColor)
             
             Spacer()
             
             if case .failed(let reason) = gate.status {
                 Text(reason)
-                    .font(.system(size: 8, weight: .regular, design: .monospaced))
+                    .scaledFont(size: 8, weight: .regular, design: .monospaced)
                     .foregroundStyle(.red.opacity(0.8))
                     .lineLimit(1)
                     .transition(.blurReplace)
@@ -213,21 +224,21 @@ struct GateRowView: View {
         switch gate.status {
         case .pending:
             Image(systemName: "circle.dotted")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(DSColors.secondaryText.opacity(0.3))
         case .processing:
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(DSColors.accent)
                 .symbolEffect(.rotate, options: .repeating)
         case .passed:
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(.green)
                 .symbolEffect(.bounce, value: gate.status == .passed)
         case .failed:
             Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundStyle(.red)
                 .symbolEffect(.pulse, value: isFailed(gate.status))
         }

@@ -10,7 +10,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 
 **Like less of an idiot.** Reciprocal rank fusion gives each chunk points for its rank in each list (1 over k plus rank, k = 60), weighted 0.50 for the vector list and 0.50 for keywords in a default library (the question's intent moves each weight, within 0.35 to 0.65), and needs no score calibration because the two arms produce scores on different scales. Keyword-only hits that fell below the cut are re-attached, so an exact part number is never buried by paraphrase. The cross-encoder is a small Core ML model reading 512-token query-passage pairs. Maximal marginal relevance trades a little relevance for coverage. Parent-document retrieval restores the paragraph around a precise hit and deduplicates by token overlap. For spec questions, a "sniper" path scores chunks that jointly match several concepts and contain numeric or key-value signals, then a deterministic extractor tries structured rows, then patterns, before any model is asked.
 
-**Average Joe.** The numbers for a Standard query: 30 is the target; the vector side gathers 90 and the keyword side up to 60; fusion merges; up to 90 are reranked; the floor at 0.28 and diversity at λ 0.60 cut from there. Deep Think starts at 35 with a 0.25 floor and λ 0.55; Maximum at 50, 0.20, 0.50. Lower floor and lower lambda mean "gather more, spread wider, let later stages sort it out." Why does the cross-encoder only see the shortlist? Because it can't precompute anything; every pair is a fresh inference.
+**Average Joe.** The numbers for a Standard query: 30 is the target; the vector side gathers 90 and the keyword side up to 60; fusion merges; up to 90 are reranked; the floor at 0.28 and diversity at λ 0.60 cut from there. Deep Think starts at 35 with a 0.25 floor and λ 0.55; Maximum at 50, 0.20, 0.50. Lower floor and lower lambda mean "gather more, spread wider, let later stages sort it out." Why does the cross-encoder only see the shortlist? Because it can't precompute anything; every pair is a fresh inference. **Corrected 2026-10-20:** the per-mode λ 0.60, 0.55 and 0.50 are in `RAGQualityMode.mmrLambda`, which nothing reads. Both Standard and the agentic pipeline use the library's λ, 0.6 in a default library, raised to at least 0.85 for a procedure. The floors and the starting counts are the modes' own (`RAGService.swift:13692-13708`, `:21990`, `KnowledgeContainer.swift:266-273`).
 
 **Dot-connector.** Recall first, precision second, and never the other way around: a reranker can only reorder what it received, so the first stage must be broad enough to contain the answer. That single sentence explains why top-K is multiplied by three before rerank, why the floor is dynamic rather than fixed, why there's an acceptance override, why lexical survivors exist, and why a retrieval cascade re-runs wider with more lexical weight when the first pass is weak. Also note the hardware: the vector arm is module 06's CPU-or-Metal scan; the reranker is Core ML with all units permitted; the MMR pairwise matrix goes to Metal above 50 candidates when the profile allows.
 
@@ -93,7 +93,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Extractive QA (Conditional, verified as the heuristic path)
 - **Idiot:** copy the answer out instead of writing one.
 - **Dot-connector:** the value must exist in the source, which kills a whole class of hallucination.
-- **Expert:** `ExtractiveQAService` heuristic scorer plus `SpecificationExtractor`; the neural span model is a stub.
+- **Expert:** `ExtractiveQAService` heuristic scorer plus `SpecificationExtractor`; the neural span model is a stub. `ExtractiveQAService` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Extractive summarization (Conditional, verified)
 - **Idiot:** pick the best sentences rather than writing new ones.
@@ -113,7 +113,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Heuristic extractive QA (Conditional, verified)
 - **Idiot:** the rule-based copy-out that actually runs.
 - **Dot-connector:** keyword overlap, entity types, proximity, passage rank, question type.
-- **Expert:** `ExtractiveQAService` when the span model is unavailable, which is always.
+- **Expert:** `ExtractiveQAService` when the span model is unavailable, which is always. `ExtractiveQAService` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Hybrid search (Core, verified)
 - **Idiot:** both searches, then merge.
@@ -153,7 +153,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Maximal marginal relevance (Core, verified), MMR lambda (Core, verified), Redundancy penalty (Core, verified), Pairwise similarity matrix (Support, verified)
 - **Idiot:** don't pick five cards that say the same thing; the dial says how much variety to insist on.
 - **Dot-connector:** greedy selection: relevance minus the max similarity to anything already chosen; lower lambda means more variety; the matrix precomputes the similarities.
-- **Expert:** `RAGEngine`; λ 0.60/0.55/0.50; matrix on Metal above 50 candidates when the profile allows and a GPU exists, else each similarity is computed on the CPU with vDSP as candidates are picked, inside `RAGEngine.applyMMR`; `BNNSGraphService.pairwiseSimilarityMatrix` exists but nothing calls it. Until 2026-09-29 this line named `BNNSGraphService` as the CPU path. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:155-160, 213-219, 247-258; BNNSGraphService.swift:275; git grep finds BNNSGraphService in no file but its own]`
+- **Expert:** `RAGEngine`; λ 0.60/0.55/0.50; matrix on Metal above 50 candidates when the profile allows and a GPU exists, else each similarity is computed on the CPU with vDSP as candidates are picked, inside `RAGEngine.applyMMR`; `BNNSGraphService.pairwiseSimilarityMatrix` existed but nothing called it, and the file was removed in 5.7 on 2026-10-20. Until 2026-09-29 this line named `BNNSGraphService` as the CPU path. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:155-160, 213-219, 247-258; BNNSGraphService.swift:275; git grep finds BNNSGraphService in no file but its own]` **Corrected 2026-10-20:** the λ is the library's, not 0.60, 0.55 or 0.50 by mode (see above). In the shipped 5.6 neither MMR call passed the passages' stored vectors, and the 5.7 notes record that every pair then measured 0 alike, so MMR removed no near-duplicate. From 5.7 both calls pass them (`RAGService.swift:13703-13708`, `:22014-22019`, the v5.6.0 tag, `Docs/RETRIEVAL_PIPELINE.md` lines 262-263).
 
 ### Metadata boost (Core, verified)
 - **Idiot:** extra credit for headings, names, tables, numbers.
@@ -173,7 +173,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Neural start/end span model (Dormant, verified as a stub)
 - **Idiot:** a reader that's on the blueprint shelf.
 - **Dot-connector:** would find exact answer spans; the placeholder returns nil.
-- **Expert:** `ExtractiveQAService` protocol and template; never active.
+- **Expert:** `ExtractiveQAService` protocol and template; never active. `ExtractiveQAService` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Parallel retrieval arms (Core, verified)
 - **Idiot:** both helpers run at once.
@@ -198,7 +198,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Reciprocal rank fusion (Core, verified) and RRF constant k (Core, verified)
 - **Idiot:** points for being near the top of either pile.
 - **Dot-connector:** ranks are comparable across arms; scores aren't. k smooths the top positions.
-- **Expert:** sum over lists of 1/(k + rank), k exactly 60, each list weighted by the fusion weights (0.50/0.50 by default, 0.35 to 0.65 after the intent delta); `HybridSearchService` through `RAGEngine.reciprocalRankFusion`; `BNNSGraphService` holds an unweighted version. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:963, 995, 1006; HybridSearchService.swift:297, 1189; BNNSGraphService.swift:249-259; corrected 2026-09-29 from "weighted 0.7/0.3"]`
+- **Expert:** sum over lists of 1/(k + rank), k exactly 60, each list weighted by the fusion weights (0.50/0.50 by default, 0.35 to 0.65 after the intent delta); `HybridSearchService` through `RAGEngine.reciprocalRankFusion`; `BNNSGraphService` held an unweighted version until the file was removed in 5.7 on 2026-10-20 (nothing referenced it). `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:963, 995, 1006; HybridSearchService.swift:297, 1189; BNNSGraphService.swift:249-259; corrected 2026-09-29 from "weighted 0.7/0.3"]`
 
 ### Rerank batch size (Core, verified) and Rerank score (Core, verified) and Reranker tokenizer (Core, verified)
 - **Idiot:** how many pairs the smart reader takes at once, the score it gives, and its own ruler.

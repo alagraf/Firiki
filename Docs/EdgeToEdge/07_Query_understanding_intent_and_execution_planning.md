@@ -8,15 +8,17 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 
 **Like an idiot.** The app profiles your question before it searches. Lookup, table lookup, procedure, comparison, summary, investigation, computation, findings: each wants different evidence and a different-shaped answer. It rates complexity, decides whether this is a one-pass job or a loop, may clean up your question, may expand it with the library's own vocabulary, and may write an imaginary answer just to search with. All of that gets resolved once, up front, into a plan.
 
-**Like less of an idiot.** Two objects matter. `QueryProfile` describes the question: word count, entities, answer intent, search intent, routing class, complexity. `QueryExecutionPlan` says what the engine will do about it: direct or decomposed, tools or not, escalate to agentic or not, which response strategy. The runtime coordinator resolves both plus quality mode, PCC eligibility and adaptive configuration before any search runs. There are exactly three ways a run becomes agentic: the mode is Deep Think or Maximum, the user pressed Go Deeper, or the planner escalated a Standard query. A `GroundedAnswerPolicy` then decides whether the answer should be extracted by rules, extracted by a tightly constrained prompt, or synthesised with citations.
+**Like less of an idiot.** Two objects matter. `QueryProfile` describes the question: word count, entities, answer intent, search intent, routing class, complexity. `QueryExecutionPlan` says what the engine will do about it: direct or decomposed, tools or not, escalate to agentic or not, which response strategy. The runtime coordinator resolves both plus quality mode, PCC eligibility and adaptive configuration before any search runs. There are exactly three ways a run becomes agentic: the mode is Deep Think or Maximum, the user pressed Go Deeper, or the planner escalated a Standard query. A `GroundedAnswerPolicy` then decides whether the answer should be extracted by rules, extracted by a tightly constrained prompt, or synthesised with citations. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 **Average Joe.** Why rewrite the question? Users type short, vague, conversational questions ("what about the other one?") and the index was built from long, specific text. A standalone rewrite resolves the pronouns from conversation memory. HyDE has the model write a plausible answer passage and searches with that, because passages land near passages on the map and questions don't; it's off in Standard on purpose, because a hypothetical can poison exact lookups. Corpus vocabulary expansion uses words that actually exist in your library instead of a generic thesaurus that would drag in unrelated meanings.
 
 **Dot-connector.** Two things people conflate. Query complexity (trivial, standard, complex, agentic) is about how much work is justified; answer intent is about the shape of the result. A trivial lookup and a trivial summary get different packing. Also: "touchy" is decided here in policy terms but consumed in module 12, where it raises the retrieval-confidence bar from 0.40 to 0.55. And the semantic query cache lives in module 05's territory but is checked here, before embedding, keyed on the normalised question.
 
-**Expert.** `QueryRuntimeCoordinator.resolveContext` is the first call in `queryInternal`: reads `SettingsStore` (summaries, HyDE, rewriting, compression flags), resolves `RAGQualityMode`, computes `QueryExecutionPath` (`.agentic`, `.forcedAgentic`, `.plannerEscalated`, `.standard`), checks the PCC suppression cooldown, builds `AdaptivePipelineConfig`. `QueryProfileService` builds the profile; `QueryComplexityAnalyzer` scores length, conjunctions, comparisons, reasoning markers, entities and intent; `QueryEnhancementService` classifies intent and expands; `QueryRewriterService` rewrites standalone; `HyDEService` generates the hypothetical only when `usesHyDE` is true (false in Standard); `ContainerVocabularyService` reads `documents_vocab`; `QueryRouterService` decides overview versus detail and hands overview to `RAPTORSummaryRouter`; `SpecificationExtractor` pulls the primary entity and descriptive keywords for spec-heavy questions; `GroundedAnswerPolicy` picks deterministic extraction, direct-extraction prompting, constrained synthesis or source-only verification. `[evidence_level: code_verified, confidence: exact, evidence_source: QueryRuntimeCoordinator.swift:25-34, 212-228; corrected 2026-09-29 from AgenticDecision, a name no commit on main declares]`
+**Expert.** `QueryRuntimeCoordinator.resolveContext` is the first call in `queryInternal`: reads `SettingsStore` (summaries, HyDE, rewriting, compression flags), resolves `RAGQualityMode`, computes `QueryExecutionPath` (`.agentic`, `.forcedAgentic`, `.plannerEscalated`, `.standard`), checks the PCC suppression cooldown, builds `AdaptivePipelineConfig`. `QueryProfileService` builds the profile; `QueryComplexityAnalyzer` scores length, conjunctions, comparisons, reasoning markers, entities and intent; `QueryEnhancementService` classifies intent and expands; `QueryRewriterService` rewrites standalone; `HyDEService` generates the hypothetical only when `usesHyDE` is true (false in Standard); `ContainerVocabularyService` reads `documents_vocab`; `QueryRouterService` decides overview versus detail and hands overview to `RAPTORSummaryRouter`; `SpecificationExtractor` pulls the primary entity and descriptive keywords for spec-heavy questions; `GroundedAnswerPolicy` picks deterministic extraction, direct-extraction prompting, constrained synthesis or source-only verification (removed in 5.7 on 2026-10-20: nothing referenced it). `[evidence_level: code_verified, confidence: exact, evidence_source: QueryRuntimeCoordinator.swift:25-34, 212-228; corrected 2026-09-29 from AgenticDecision, a name no commit on main declares]`
 
 **Expert's expert.** The rewrite and HyDE are the two generative steps before retrieval, and they can both mislead: a rewrite that drops a qualifier retrieves the wrong thing confidently. That is why the original user message is never replaced in the conversation, only the effective search string. The planner-escalation path is also the one most likely to surprise a user who chose Standard, because it changes the run from one pass to a loop without a mode change on screen; the diagnostics record it as `plannerEscalated`. And "Subquestion" is the one concept in the whole bank whose name does not appear as an identifier in code; the behaviour exists inside the orchestrator's decomposition under other names.
+
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** three statements in the ladder above do not hold for the current code. Planner escalation needs the answer writer not to be Apple's model, and no other model writes answers in this build (without Apple Intelligence a stand-in that only throws takes its place), so in practice a run becomes agentic only by the mode or by Go Deeper, and the escalation that would "surprise a user who chose Standard" does not happen. Go Deeper keeps the chat's mode, so from Standard it runs the orchestrator with mode Standard. HyDE runs in no user-selectable mode: its only construction is in Standard's pipeline behind `usesHyDE`, which is false for Standard, and Deep Think and Maximum leave for the agentic path before that step and embed without it. So, besides the on-device planning call every question gets (a guided generation that proposes search phrasings and sub-questions and says whether documents are needed, with a heuristic plan as its fallback), the rewrite is the only generative step before retrieval in Standard, and Deep Think and Maximum's are more planning calls and the search phrasings. The rewrite itself is on by default but keeps a lookup literal, and it calls the model only for a question the ambiguity check flags, a follow-up with conversation behind it or a pronoun. And an exact cache hit reuses the cached passages as well as the vector, so it skips rewriting, expansion, embedding and the hybrid search, not only the embedding. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/RAG/Orchestration/QueryRuntimeCoordinator.swift:202-229, OpenIntelligence/Services/Query/Analysis/QueryExecutionPlannerService.swift:67-99 and :330-418, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:11501, :2322-2346, :11374, :12278-12325, :21863-21866, :11982-11983, :11896-11910, :11994, :12117, :12356, :12496-12701, OpenIntelligence/Core/Models/RAGQualityMode.swift:189-195, OpenIntelligence/Services/Query/Rewriting/QueryRewriterService.swift:83-100, OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:1916-2060]`
 
 ## Every concept
 
@@ -48,7 +50,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Constrained-synthesis prompt mode (Core, verified)
 - **Idiot:** write it in your own words, but every sentence must point at a source.
 - **Dot-connector:** procedures, comparisons and explanations need composition, still bounded by retrieved context.
-- **Expert:** `GroundedAnswerPolicy` after packing, before structured generation.
+- **Expert:** `GroundedAnswerPolicy` after packing, before structured generation. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Container vocabulary expansion (Conditional, verified)
 - **Idiot:** use the library's own words to widen the search.
@@ -78,7 +80,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Direct-extraction prompt mode (Conditional, verified)
 - **Idiot:** copy the answer out, don't rephrase it.
 - **Dot-connector:** for lookup-style questions where rules couldn't decide, minimise paraphrase.
-- **Expert:** `GroundedAnswerPolicy` and the prompt compiler for extractive-first intents.
+- **Expert:** `GroundedAnswerPolicy` and the prompt compiler for extractive-first intents. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Entity extraction from query (Core, verified)
 - **Idiot:** notice the names and numbers in your question.
@@ -93,9 +95,9 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Forced agentic execution (Conditional, verified as `.forcedAgentic`)
 - **Idiot:** you pressed Go Deeper.
 - **Dot-connector:** user-requested extra search and reasoning even after the planner chose Standard.
-- **Expert:** overrides at `QueryRuntimeCoordinator` resolution.
+- **Expert:** overrides at `QueryRuntimeCoordinator` resolution. **Corrected 2026-10-20:** it keeps the chat's mode, so from Standard the orchestrator runs with mode Standard, the device's configuration and no Deep Think Self-RAG check (`RAGService.swift:11374`, `AgenticOrchestrator.swift:200-208`).
 
-### GroundedAnswerPolicy (Core, verified)
+### GroundedAnswerPolicy (Core, verified; removed in 5.7 on 2026-10-20: nothing referenced it)
 - **Idiot:** the rule for how careful the answer has to be.
 - **Dot-connector:** deterministic extraction, direct-extraction prompt, constrained synthesis, source-only verification; exact lookups don't get needlessly generated.
 - **Expert:** resolved after intent classification, before extraction or generation.
@@ -103,7 +105,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### HyDE (Conditional, verified) and Hypothetical document (Conditional, verified)
 - **Idiot:** write a fake answer, search with it, throw it away.
 - **Dot-connector:** a passage lands near passages; a short question doesn't. The hypothetical is a probe, never evidence.
-- **Expert:** `HyDEService`; `usesHyDE` is false in Standard "to prevent hypothetical hallucinations from poisoning exact lookups."
+- **Expert:** `HyDEService`; `usesHyDE` is false in Standard "to prevent hypothetical hallucinations from poisoning exact lookups." **Corrected 2026-10-20:** and Deep Think and Maximum embed without it, so no user-selectable mode runs HyDE. Read it as Dormant (`RAGService.swift:12278-12325`, `:21863-21866`).
 
 ### Investigate intent (Conditional, verified)
 - **Idiot:** "dig into this."
@@ -128,7 +130,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Planner escalation (Conditional, verified as `.plannerEscalated`)
 - **Idiot:** the app decided your easy setting wasn't enough.
 - **Dot-connector:** complexity, not the mode label, controls the work; the third agentic path.
-- **Expert:** resolved by the coordinator before retrieval; recorded in diagnostics.
+- **Expert:** resolved by the coordinator before retrieval; recorded in diagnostics. **Corrected 2026-10-20:** it requires `!isAppleFMService`, and no other model writes answers (without Apple Intelligence a stand-in that only throws takes its place), so read it as Dormant (`QueryRuntimeCoordinator.swift:211`, `RAGService.swift:11501`, `:2322-2346`).
 
 ### Primary entity (Core, verified)
 - **Idiot:** the main thing your question is about.
@@ -163,7 +165,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Query rewriting (Conditional, verified)
 - **Idiot:** rephrase the question so a search engine likes it.
 - **Dot-connector:** conversational phrasing lowers both lexical and dense quality; the rewrite is a generative step and can drop a qualifier.
-- **Expert:** `QueryRewriterService` after profiling and conversation context, before embedding.
+- **Expert:** `QueryRewriterService` after profiling and conversation context, before embedding. **Corrected 2026-10-20:** a lookup is kept literal, and the model is called only when `detectAmbiguity` flags the question (`RAGService.swift:11982-11983`, `QueryRewriterService.swift:83-100`).
 
 ### Query variation (Conditional, verified)
 - **Idiot:** try asking it a different way.
@@ -183,7 +185,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Response strategy (Core, verified)
 - **Idiot:** how the answer will be produced.
 - **Dot-connector:** deterministic extraction, constrained synthesis, extractive summarisation, agentic synthesis; falls back when a path lacks confidence.
-- **Expert:** `GroundedAnswerPolicy` and the planner.
+- **Expert:** `GroundedAnswerPolicy` and the planner. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Routing classification (Core, verified)
 - **Idiot:** direct, cross-topic, overview.

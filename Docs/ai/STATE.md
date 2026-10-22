@@ -1,151 +1,135 @@
 # Current State
 
-Updated: 2026-10-14, 20:15 PT (5.7 is open and unreleased, no 5.7 build in TestFlight; the 5.7 work of 2026-10-14 is in 13 commits through `86cc299`, each pushed with `[ci skip]`; 5.6 has been live on iPhone, iPad and Mac since 2026-10-08, build 485)
-Branch/worktree: `main`, primary checkout
-Last verified commit: 86cc299
+Updated: 2026-10-21, about 13:30 PT (5.7 is open and unreleased, no 5.7 build in TestFlight; 5.6 has been live on
+iPhone, iPad and Mac since 2026-10-08; every commit since then is pushed with `[ci skip]`)
+Branch/worktree: `main`, primary checkout, level with `origin/main`
+Last verified commit: 15b908a plus this session's commit (the planless route fix and the Settings heading style)
 
-Earlier detail is in git: `git show 9d3dcee:Docs/ai/STATE.md` (the afternoon of 2026-10-14), `git show 131f989:Docs/ai/STATE.md`
-(that morning), and the long record through 2026-10-10 is `Docs/Archive/STATE_record_through_2026-10-10.md`.
+Earlier detail is in git: `git show 1e379aa:Docs/ai/STATE.md` (late on 2026-10-20); the long record through 2026-10-10
+is `Docs/Archive/STATE_record_through_2026-10-10.md`.
 
 ## Objective
 
-**5.7: JSON Lines import and the Apple surfaces that carry the app to other apps and people, mainly for iPhone
-and iPad.** Named by the owner on 2026-10-08, widened on 2026-10-09 (the Apple model APIs) and 2026-10-10 (the
-whole import path, very large libraries). On 2026-10-14 he said "5.7 is to be massive" and, asked about each
-protected change, approved everything that upgrades the app, with best practice for consent. Everything that can be
-built inside the app is built. What is left waits on his Apple account in Xcode, his word for App Store Connect,
-or a device.
+**5.7 closes every open roadmap row** ("Everything into 5.7", 2026-10-18, his PROCEED: IMPLEMENT; decisions in auto
+memory `everything-into-5-7.md`). On 2026-10-19: "just go nuts and close all of the rest of the shit out please. like
+everything." On 2026-10-20: "if it can be added, then we add it if it needs to be fixed, then we fix it ... apply the
+absolute best practices using apples latest API frameworks." A row closes on a scripted iOS 27 Simulator check when the
+defect is not about the phone itself; memory, background tasks, iCloud, signing and Private Cloud Compute rows close
+only on his phone or Mac.
 
-## Status (2026-10-14, evening)
+## Status
 
 | What | Where it stands |
 |---|---|
-| 5.7 source | All pushed (`git rev-list --count origin/main..HEAD` prints 0). The evening's commits: `a873811` dictation on the Mac, Enhanced Security set up and held back; `63021fd` a file opened from another app shows before anything is added; `2afc9f2` a UI-testing target that runs actions through the system; `e7604f8` an action that needs the Private Cloud Compute consent sheet comes forward and asks; `b4618e0` conversations saved where iCloud sync reads them, a crash report the person can send, a question asked again searches what the libraries hold now; `86cc299` what a refuting review of that work found, fixed. The afternoon's seven are listed in `git show 9d3dcee:Docs/ai/STATE.md`. |
-| Tests | 1,003 run, 0 failures, 5 skipped (two need Core AI, one layout case, the two scale benchmarks), 2026-10-14 at 19:50 PT (cycle `i9c`) on `86cc299`'s tree before a test-only isolation fix in `EvidenceThreadStoreTests`, which then ran alone: 12, 0 failures. The two runs before it on the same build stopped before any test started ("The test runner hung before establishing connection"; `Docs/ai/RUNBOOK.md` has the note). UI tests (scheme `OpenIntelligenceUITests`): 2 run, 0 failures. Device and Mac builds succeeded. |
-| TestFlight | No 5.7 build. Every 5.7 push carried `[ci skip]`; a push whose newest commit lacks it starts one. The newest Xcode Cloud run is still #485 (2026-10-08). |
-| His iPhone | Not updated. The installer started at 11:30 PT gave up at 17:31 PT: every process listing that succeeded showed the app on the phone, and it never installs over a running app. `/private/tmp/oi-install/OpenIntelligence.app` is the build of `07c0cbb`, now stale. |
-| Roadmap | 113 rows on `v5.7`: 105 In Progress, 7 To Do (each waits on his Apple account in Xcode, App Store Connect or the website), 1 Completed (the action tests, closed on the Simulator as the row says). Moved to Future Backlog that day: one model profile per answer mode, and passages by reference. Pulled into 5.7: conversation sync (https://app.notion.com/p/3e649a74d54f811492b6d0d8f5e89f71) and the query cache (https://app.notion.com/p/3e749a74d54f810c86fefac905fa1d6f). |
-| Catalogue | https://claude.ai/artifact/Thu24syf3CbVtpwhjAm4mJ, version 10: 69 built, 13 partly, 4 not started, 8 needing him, 2 checked, 22 the app already had (118 rows). |
-| Test simulator | `OI 5.7 tests` `7652732F-FCEA-47A3-B345-7EC57B9EFE67` (iPhone 18 Pro, iOS 27.0), made 2026-10-14 at 17:02 after DeviceHub's deletion of every simulator at 16:49. Simulators on this Mac are deleted between sessions: check `xcrun simctl list devices` first. |
-
-## Completed (2026-10-14, evening)
-
-Built, compiled for iPhone and Mac, and in the suite; none of it seen on a device. `CHANGELOG.md`, section 5.7,
-has one entry per change with its evidence and what closes it.
-
-- `a873811`: the chat's microphone on the Mac (`com.apple.security.device.audio-input`, at his word). Enhanced
-  Security was switched on and the device build failed: the provisioning profile lacks the capability and Xcode here
-  has no Apple account to add it. Reverted; the exact settings are in `Docs/ai/DECISIONS.md` (2026-10-14).
-- `63021fd`: "Open in OpenIntelligence" shows `OpenedFilesSheet` first: Quick Look to read, then Add to Library
-  (the usual plan check and import review) or Don't Add (the copies are removed).
-- `2afc9f2`: `OpenIntelligenceUITests`, its own scheme, with Apple's AppIntentsTesting. It adds a note with Add to
-  Library and runs Ask My Documents' own `perform()` and Open Document through the system. Debug-only
-  `UITestSupport` gives the ask actions a stand-in model. Roadmap row for action tests: Completed.
-- `e7604f8`: the five ask actions run in the background and may come forward (`[.background,
-  .foreground(.dynamic)]`). When the system lets one come forward, its question counts as one a person can be asked
-  about; the consent gate brings the app forward and shows the sheet. A request from an action's engine is shown by
-  `ContentView` through `CloudConsentRelay`; one no window shows within 15 s is given up, nothing remembered. This
-  also ends a hang: with the app in front (on the Mac, whenever it was active), an action's question that reached
-  the consent step waited for good.
-- `b4618e0`: conversations (`EvidenceThreadStore`) saved in `baseDirectory()/EvidenceThreads`, the folder sync
-  reads, with old threads moved there; crash reports from MetricKit (`CrashReports`), offered once, emailed or
-  shared from Settings, About; the query cache keyed to the libraries' documents and the model, with a stale hit
-  refused and no lookup by similarity (it had replayed passages from deleted documents since 3.7.0).
-- `86cc299`, after a refuting review (reasons in `Docs/ai/DECISIONS.md`, 2026-10-14): no window could claim the relay's request, so the consent sheet never showed (now it does), only an action's engine uses the relay, and a stored choice comes first and is read again; deleted conversations sync as a list (`deleted_threads.json`); crash reports leave out the memory region, a crash delivered twice is kept once, and one window offers it; the opened-file sheet closes only with its two buttons and its copies wait outside the folder sync sweeps; the query cache's key carries the app's version; Settings says voice input on the Mac.
-- Roadmap housekeeping at his word ("whatever is best for this app"): the model-profile row and the
-  passages-by-reference row moved to Future Backlog with their reasons; the conversation-sync row and the
-  query-cache row (filed 2026-09-26) pulled into 5.7 under release test 2.
+| Commits 2026-10-20 evening to 2026-10-21 morning | `1e379aa` labels number the passages an answer keeps, Copy and Shortcuts list sources, plain words on the Database tab, Device & Performance, Atlas, Siri. `fa80e71` labels in reading order; the whole-passage assembler chooses what fits before placing it (rank 2 was cut), the graph packer leaves placing to it, the needle rescue reads what was not reached; Private Cloud Compute passages in the envelope's order; Deep Think and Maximum steps take their rendered evidence to Private Cloud Compute. `0b2174b` engine badges only with Technical Details on, "Vocabulary", a trace line naming the candidates a whole-passage context kept. `cbc3e48` `AnswerQualityEvaluationTests`. `c1e3147` the unused `AppleEvaluationsBridge` deleted, `Docs/EVALS.md` corrected. `79c359c` an empty library answers without its tools. The PostDesk session's doc passes (`4bde793` to `11c07db`, `780d801`) were checked and pushed; it has nothing pending. |
+| Rows closed 2026-10-21 | `40049a74d54f8113bb46eb9888627861` (label numbering), `40049a74d54f81f4b04ae5141899c808` (rank 2 cut), `3fe49a74d54f81ce84a1f0b59e2e1ec7` (Settings jargon, its last item: one heading style inside a card). |
+| Rows open from this work | `40049a74d54f81f3964fc8a7a0792cd5` Deep Think steps without evidence on Private Cloud Compute (fixed in `fa80e71`, closes on his device). `40049a74d54f81e0bd99fa0e5f5e4186` saved answers keep 12 passages (needs `ChatMessage.swift`). `40049a74d54f814eadbace9c62d87ef9` "Summarize my lease" put the Lisbon itinerary's flight table first, scored 0.980 (To Do). `3b549a74d54f814cbb06fa629417b657` Evaluations framework (see Blockers). |
+| Open in 5.7 overall | Query the data source: Target Release v5.7, Status not Completed. What only he can do: `~/.agents/oi-robot/scripts/asks-for-gunnar-draft.md`. |
+| Native Surfaces Catalogue | Version 28 at https://claude.ai/artifact/Thu24syf3CbVtpwhjAm4mJ (118 rows, 24 seen working). Source copy: `~/.agents/data/openintelligence-5.7-closeout/Native-Surfaces-Catalogue.html`; read the live one first (`Artifact` read) in case it changed. Before publishing: `node --check` its script and count 118 ROWS. |
 
 ## Active Constraints
 
+- **Done 2026-10-21 at his word ("do consent fix first"):** a request with no `ModelExecutionPlan` now runs on the
+  device (`FoundationModelRoutePolicy.determineRoute`), so nothing reaches Private Cloud Compute without the consent step.
+  `PlanlessRouteTests` pins it. Not run on a device. A question to an empty library longer than the device window now
+  stays on the device and may fail for length (read in code, not run). Still his call: whether a public roadmap row is
+  filed for it (none was). The developer diagnostics hub's "Maximum Reasoning" row can now only read N/A.
 - A push whose newest commit lacks `[ci skip]` starts the first 5.7 Xcode Cloud build. Ask him first.
-- Hard-boundary files only when he names them. Named for 5.7: `RAGAppIntents.swift` (10 of 10 App Shortcut
-  slots used; an eleventh breaks them all), `Info.plist`, `OpenIntelligence.entitlements`,
-  `EngineSDKCompatibility.swift`, `project.pbxproj`, `WorkspaceSyncService.swift`, `FoundationModelSessionFactory.swift`
-  (2026-10-14). Not named: `ChatMessage.swift`, the billing files, `SQLiteFullTextService.swift` (the preflight
-  protects the whole file, which is why the query cache's old rows stay in its table), `FoundationModelRoutePolicy.swift`,
-  `Package.swift`. He approved on 2026-10-14 the app group, extension targets, associated domains and Enhanced
-  Security; each is blocked only by provisioning (Blockers).
-- The provider internals (`CoreAISentenceEmbeddingProvider`, `CoreMLSentenceEmbeddingProvider`) are out of bounds.
-- App Store Connect writes only at his word, through `zsh -ic`; never copy the key id, issuer or key anywhere.
-  Asked on 2026-10-14 he said he had no idea, which is not a yes.
-- Public repository and site: no personal plans in public files or row titles. Never delete a doc, a benchmark run
-  directory or a Notion row (two duplicate rows wait for him to delete, under Blockers). No co-author or
-  attribution lines in commits.
-- One `xcodebuild` at a time on this 18 GB Mac, DerivedData outside `~/Documents`, `-jobs 1` with a memory guard.
-  Start long jobs with the Bash tool's background option, never `&`. Never edit the repository between a run's
-  start and its last copy of the tree (the scratchpad scripts copy it at the device build, the test build and the
-  UI tests).
-- Installing on his iPhone ends the running app: check `xcrun devicectl device info processes` first, never
-  launch it remotely.
-- Untracked and left alone: `.agents/skills/`, `.codex/hooks.json`, `.codex/hooks/`.
+- Protected files he named on 2026-10-18: `project.pbxproj`, `WorkspaceSyncService.swift`, `BNNSVectorDatabase.swift`,
+  `FoundationModelRoutePolicy.swift`, `FoundationModelSessionFactory.swift` ("Must be done flawlessly"). `ChatMessage.swift`,
+  `RAGAppIntents.swift`, `EntitlementStore.swift` and `KnowledgeContainer.swift`'s route were not named.
+- App Store Connect writes and public pages only at his word. Never delete docs, benchmark runs, Notion rows or agent
+  histories; no co-author lines; commit by name; leave `.agents/skills/`, `.codex/hooks*`, `.codex/config.toml` and
+  `scripts/run_quality_matrix.py` (uncommitted on purpose) alone; edit Swift by script.
+- Another session (PostDesk, "Demos") also commits docs in this checkout and does not push: before pushing, check every
+  commit since `origin/main` for `[ci skip]`, no co-author line and docs-only paths.
+- One `xcodebuild` at a time; stop only processes this session started. Don't build while World of Warcraft is open.
+  `build57.sh` stops its own build when free disk falls under `GUARD_DISK_MB` (pass 1500) or free memory under 15%.
 
 ## Working Set
 
-- Consent: `OpenIntelligence/Services/RAG/Orchestration/CloudConsentRelay.swift`; `RAGService.swift`
-  (`bringAppForwardForConsent`, `ensureCloudConsentIfNeeded`, `cloudConsentDecision`, `abandonCloudConsentRequest`,
-  `makePostRetrievalModelPlan`'s `canAskForConsent`); `RAGAppIntents.swift` (`AskControl.bringForward`,
-  `AskActionRunner.foregroundRequest`, the five `supportedModes`); `OpenIntelligence/App/ContentView.swift`.
-- Query cache: `RAGService.swift` (`queryCacheKey`, `appVersionForQueryCache`, `cachedResultsAreCurrent`, the
-  lookup and write in `queryInternal`).
-- Conversations: `OpenIntelligence/Services/Storage/EvidenceThreadStore.swift`.
-- Crash reports: `OpenIntelligence/App/CrashReports.swift`, `MetricDiagnostics.swift`, `ContentView.swift`
-  (`offerCrashReportIfAny`), `Features/Settings/AboutView.swift`, `Features/Billing/PrivacyPolicyView.swift`.
-- Opened files: `OpenIntelligence/Features/Documents/Components/OpenedFilesSheet.swift`, `DocumentLibraryView.swift`.
-- UI tests: `OpenIntelligenceUITests/ShortcutsSystemTests.swift`, `OpenIntelligence/App/UITestSupport.swift`,
-  `OpenIntelligence.xcodeproj/xcshareddata/xcschemes/OpenIntelligenceUITests.xcscheme`; how to run them is in
-  `Docs/ai/RUNBOOK.md`, "The actions through the system: the UI-testing target".
-- Tests added: `CloudConsentRelayTests`, `QueryCacheKeyTests` (`OpenIntelligenceTests/Services/RAG/Orchestration/`),
-  `CrashReportsTests` (`OpenIntelligenceTests/App/`), five in `EvidenceThreadStoreTests`.
+- Tools in `~/.agents/oi-robot/` (README inside): `~/.agents/oi-robot/scripts/build57.sh build-for-testing|test-without-building <log>
+  [xcodebuild args]` (hosted tests on the test simulator), `demo_from_tree.sh <udid>` (demo copy of the working tree, Apple's
+  model on), `setup_demo_device.sh`, `pvaudit.py <udid> <out> OpenIntelligenceScenes/<test>` (the robot, built in
+  `/private/tmp/demodriver-pv-dd`), `answer_detail.py <udid> <since HH:MM>` (saved answers), `label_truth.py <udid>
+  <since HH:MM>` (each saved label against full passage text from the app's FTS5 copy; a "doubtful" line is a lead:
+  memory `label-check-needs-full-passages.md`). Pipeline examples: `~/.agents/data/openintelligence-5.7-closeout/pipelines/`.
+- Robot scenes that worked on 2026-10-21: `testHouseholdStandard` (`TEST_RUNNER_OI_QSET=a`, 16 questions),
+  `testHouseholdLongMode` (`TEST_RUNNER_OI_Q=<question>`, one question in the household chat), `testAuditTour` (41
+  photos of every tab and Settings page), `testDatabaseTour`. `testShortcutsAskThenCopy` fails on the Shortcuts search
+  field ("Neither element nor any descendant has keyboard focus") after a new demo copy; it passed once on a retry.
+- Latest photos: `~/.agents/data/openintelligence-5.7-closeout/robot-2026-10-21/settings-tour/` (09 to 41 are Settings)
+  and `database-tour/`.
+- Simulators (check `xcrun simctl list devices` first; DeviceHub has deleted every simulator several times):
+  `OI 5.7 tests` `F1450853-CF0F-4E8D-87E2-F6B8F7E0241D` (made 2026-10-21 10:40, hosted tests, named in `build57.sh`; the
+  Debug app is installed on it past onboarding, used for the Settings tour). The A17 `A3DDC13D-...` and the old test
+  simulator were deleted at 10:31:20 with every other shut-down simulator (booted ones were kept; `~/.agents/MACHINE-MAP.md`),
+  so the demo copy and household library are gone. A new simulator's first suite run fails three AtlasLabelingTests until
+  it has fetched its language data (`com.apple.linguisticdata ... not entitled` in the log); the next run passes.
+- `OpenIntelligenceTests/Services/Evaluation/AnswerQualityEvaluationTests.swift`: opt-in, run with
+  `TEST_RUNNER_OI_MODEL_EVALS=1 GUARD_DISK_MB=1500 OI_SCRATCH=/private/tmp bash ~/.agents/oi-robot/scripts/build57.sh
+  test-without-building <log> -only-testing:OpenIntelligenceTests/AnswerQualityEvaluationTests` (about 7 minutes;
+  `TEST_RUNNER_OI_EVAL_TOPK=<1..12>` sets passages); the report is the `.xcevalresult` in the run's `.xcresult`.
 
-## Verification (2026-10-14, output read)
+## Verification (2026-10-21, output read)
 
-- `86cc299` (cycles `i9`, `i9b`, `i9c`, `i10b`): device `BUILD SUCCEEDED`, `TEST BUILD SUCCEEDED`, Mac `BUILD SUCCEEDED`;
-  test runs `i9` and `i9b` "The test runner hung before establishing connection" with no test run; `i9c` `Executed 1003 tests,
-  with 5 tests skipped and 0 failures` (19:50 PT); after the test-only fix, `-only-testing:OpenIntelligenceTests/EvidenceThreadStoreTests`
-  `Executed 12 tests, with 0 failures`; UI tests `Executed 2 tests, with 0 failures`.
-- `b4618e0` (cycle `i8`): `Executed 997 tests, with 5 tests skipped and 0 failures`, UI tests 2 and 0 failures, device and Mac
-  builds succeeded; `bash scripts/build_simulator_smoke.sh` from `/private/tmp/oi-src` -> `BUILD SUCCEEDED` (RUNBOOK has the command).
-- `e7604f8` (cycle `i6`): `Executed 986 tests, with 5 tests skipped and 0 failures`, UI tests 2 and 0 failures.
-- `2afc9f2` (cycle `i5`): `Executed 981 tests, with 5 tests skipped and 0 failures`; UI tests alone 2 and 0 failures.
-- `63021fd` (cycle `i4b`): `Executed 981 tests, with 6 tests skipped and 0 failures` (the sixth, the silent-audio test, waits and
-  skips on a newly made simulator).
-- `python3 scripts/verify_doc_claims.py` -> every claim matches; `python3 .claude/codemap/codemap.py check` -> 0 errors, 0 warnings;
-  `python3 scripts/secret_scan.py` -> nothing found; `grep -c "AppShortcut(" RAGAppIntents.swift` -> 10.
-- After every push the newest Xcode Cloud run was still #485: no 5.7 build started.
-- Not run: any of this on his iPhone or on a Mac in use.
+- About 13:20, the S-row fixes (Private Cloud Compute copy, claim coverage fallback, saved answers keep cited passages,
+  Find Passages clamp, Mac Vision thermal limit, real-speech test, `@rpath` install name, trace footer): full suite on the
+  build before the last edits -> `Executed 1356 tests, with 8 tests skipped and 1 failure` (GlossaryTests: the new
+  Private Cloud Compute entry ran 376 characters against 360); after shortening it and the reviewer's fixes,
+  `build-for-testing` -> `XCODEBUILD_EXIT=0` and GlossaryTests, ClaimCoverageFallbackTests, SavedAnswerPassagesTests,
+  VersionHistoryTests, SpotlightItemsTests, WhatsNewCoverageTests -> `Executed 38 tests, with 0 failures`.
+  `verify_doc_claims.py`, `codemap.py check` (0 errors), `secret_scan.py` clean.
+- About 11:00, on this session's tree (planless route fix, Settings headings): `build57.sh build-for-testing` ->
+  `TEST BUILD SUCCEEDED`, 0 errors, no warning in the changed files; full `test-without-building` -> `Executed 1341 tests,
+  with 7 tests skipped and 1 failure`, the one being VersionHistoryTests (the bundled `VersionHistory.md` had not been
+  copied from `Docs/USER_CHANGELOG.md`); after copying it and rebuilding, `-only-testing` VersionHistoryTests,
+  PlanlessRouteTests and AtlasLabelingTests -> `Executed 32 tests, with 0 failures`. `codemap.py check` -> 0 errors.
+  `testAuditTour` on the Debug build -> 41 photos in
+  `~/.agents/data/openintelligence-5.7-closeout/robot-2026-10-21/settings-tour-titles/` (16, 24, 25, 32, 33 show the
+  headings). A reviewer found no consented Private Cloud Compute call that arrives without a plan, and no other planless
+  Private Cloud Compute session.
+- On `79c359c`'s tree: `build57.sh build-for-testing` -> `TEST BUILD SUCCEEDED`, no warning near the change;
+  `test-without-building` -> `Executed 1338 tests, with 6 tests skipped and 0 failures` (06:51).
+- `python3 scripts/verify_doc_claims.py` -> every claim matches; `python3 .claude/codemap/codemap.py check` -> 0 errors;
+  `python3 scripts/secret_scan.py` -> clean.
+- Robot on demo copies of the tree: `testHouseholdStandard` -> trace with 49 queries and no "were numbered differently"
+  line; `testHouseholdLongMode` "Summarize my lease." -> "Whole-passage context keeps candidates [1, 3, 5, 6, 4, 2] of
+  6", and a lease-versus-gym notice comparison -> "[1, 3, 5, 7, 9, 11, 12, 10, 8, 6, 4, 2] of 17"; `testAuditTour` ->
+  no engine badges or Live System Monitor with Technical Details off, "Vocabulary" on the Apple Intelligence page.
+- `AnswerQualityEvaluationTests` -> "imported 25 of 25 fixtures", "correct: 0.3 over 20 cases" (0.25 with 12 passages),
+  passed on its 0.2 floor.
 
 ## Blockers / Unknowns
 
-- **Xcode on this Mac has no Apple account.** `xcodebuild -allowProvisioningUpdates` for the device build failed
-  with "No Accounts: Add a new account in Accounts settings." That one gap blocks every remaining row that needs a
-  new App ID capability or target: Enhanced Security, widgets, the Share Sheet entry (web clipper), Scan from the
-  Lock Screen, the app group, and associated domains for universal links (which also need a file on the website, a
-  public change made at his word). His approval for all of them was given on 2026-10-14.
-- **App Store Connect, at his word:** nominating 5.7 for featuring, the product page header and search image,
-  5.7's App Store notes on both records.
-- **Two duplicate roadmap rows wait for him to delete:** https://app.notion.com/p/3f949a74d54f819d9fddd5a90087fb1e
-  and https://app.notion.com/p/3fa49a74d54f815a98c9d84ea08d9287 (filed in error on 2026-10-14, retitled as a
-  duplicate).
-- **Nothing in 5.7 is closed on a device.** Each row's note and each CHANGELOG entry's evidence tag says what closes it.
-- **The Simulator cannot check:** Private Cloud Compute (never chosen there), Find Passages and Check a Claim
-  through the system (a library made there holds all-zero vectors, so their similarity floor drops everything), and
-  Visual Intelligence.
-- **A refuting review of the evening's work** (its findings are in the commit message of `86cc299`): each finding
-  was traced to code and is fixed or recorded (whole-file conflicts for conversations are accepted, as for the chat
-  history). One question it raised stays open: whether App Store validation accepts the audio-input entitlement key
-  in the iOS binary (a macOS sandbox key; the first Xcode Cloud archive answers it).
+- Private Cloud Compute is not reachable from the iOS Simulator, so `fa80e71`'s envelope-order and Deep Think evidence
+  fixes are code_verified only; his device closes row `40049a74d54f81f3964fc8a7a0792cd5`.
+- For him, from the PostDesk session's canonical pass (read in code, not verified here, no rows filed): `CLAUDE.md`
+  line 7 says only the final answer may reach Private Cloud Compute, while
+  `Docs/CANONICAL_OPENINTELLIGENCE_SOURCE_OF_TRUTH.md` section 8 says, from the code, that under Hybrid every synthesis
+  can be planned there; and three pieces of code look unreachable (the deterministic route rule in
+  `ModelExecutionPlanner.swift`, `VerificationGateService.checkRetrievalConfidence`, `muMargin`).
+- The answer evaluation's 0.3 is mostly its dataset's: the five synthetic exact fixtures never say what their value
+  measures ("| Primary answer | 14.3 US gal |"), and four references are bare keys. Row `3b549a74d54f814cbb06fa629417b657`
+  needs reference answers for the household sample set's questions, and him opening a report in Xcode
+  (`~/.agents/data/openintelligence-5.7-closeout/evals-2026-10-21/`); opening Xcode has made DeviceHub delete every
+  simulator before, so copy simulator data out first.
+- The answer card's own buttons from the Shortcuts app need a tap by hand (row `3f449a74d54f8193a750d1099b83a8c5`).
 
 ## Exact Next Action
 
-A device pass on his iPhone. Build the current tree for the device (`builddevice.sh` in the scratchpad, or the
-RUNBOOK's "Building to the owner's iPhone"), and install it with `xcrun devicectl device install app --device
-00008140-001130DA1863C01C <app>` only after `xcrun devicectl device info processes` shows OpenIntelligence is not
-running. Then, in this order: (1) ask a question in a library, add a document that answers it, and ask the same
-question again: the answer uses the new document (closes the query-cache row,
-https://app.notion.com/p/3e749a74d54f810c86fefac905fa1d6f, with step 2: delete that document and ask once more;
-nothing from it comes back); (2) open a PDF from Files with "Open in OpenIntelligence": the sheet shows it and Add to
-Library imports it (https://app.notion.com/p/3f449a74d54f8184a7f8ff4afb6abeea); (3) with Private Cloud Compute
-allowed in Settings and consent never given, ask Siri a Deep Think question across two documents: the app comes
-forward with the consent sheet, and nothing is sent before a choice
-(https://app.notion.com/p/3f449a74d54f81fdaac9e3f22ba32c84).
+Run the device session with him: `~/.agents/data/openintelligence-5.7-closeout/device-checklist-2026-10-21.md` sorts the 98
+In Progress v5.7 rows (65 iPhone, 16 Mac, 3 App Store Connect, 3 need engineering, 11 unclear), fastest first. After each
+group he does, copy the trace off the phone (`xcrun devicectl device copy from --device 00008140-001130DA1863C01C
+--domain-type appDataContainer --domain-identifier Gunndamental.OpenIntelligence --source Documents/pipeline_trace.log
+--destination <file>`; the phone has a development build, bundle version 150) and close the rows it proves. Rebuild to the
+phone first so it carries this afternoon's commit (`~/.agents/oi-robot/scripts/builddevice.sh <log>`, then `devicectl
+device install app`). Then the S-row fixes need their own closes: `SpeechTranscriptionTests` on the iPhone (skips in the
+Simulator; also proves the `@rpath` install-name change), a fanless-Mac import for the thermal limit.
+
+Decisions waiting for him: the Spotlight document tap (dropping the app item opens the document but cuts its Siri and
+Apple Intelligence link; row `3ff49a74d54f81fea954d76ff336595e`); the OCR render-scale patch, deferred unmeasured to
+`~/.agents/data/openintelligence-5.7-closeout/deferred-5.8/`; clearing the 519 iCloud conflict copies his phone's trace
+reports; whether the research To Do rows move to Future Backlog. Store notes (iOS ones at 4,038 characters, Apple's limit
+believed 4,000, unconfirmed) and the in-app What's New (one list for both platforms, 15 items, last edited 2026-10-15) are
+written once, at the end, from the final changelog.

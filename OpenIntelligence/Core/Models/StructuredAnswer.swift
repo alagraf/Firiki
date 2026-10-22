@@ -367,11 +367,12 @@ extension StructuredAnswer {
         let topScore = retrievedChunks.first?.similarityScore ?? 0
         _ = builder.setTopScore(topScore)
 
-        let claims: [StructuredRAGClaim]
+        // Headings go before the cut to six, so a heading among the first six doesn't cost a claim (review, 2026-10-18).
+        let candidateClaims: [StructuredRAGClaim]
         if let structuredGeneration, !structuredGeneration.claims.isEmpty {
-            claims = Array(structuredGeneration.claims.prefix(6))
+            candidateClaims = structuredGeneration.claims
         } else {
-            claims = extractClaims(from: answerText, answerIntent: answerIntent).prefix(6).map {
+            candidateClaims = extractClaims(from: answerText, answerIntent: answerIntent).map {
                 StructuredRAGClaim(
                     claim: $0,
                     citations: [],
@@ -379,6 +380,7 @@ extension StructuredAnswer {
                 )
             }
         }
+        let claims = Array(droppingHeadings(candidateClaims, of: answerText).prefix(6))
 
         var selectedEvidence: [RetrievedChunk] = []
         var claimsByEvidence: [UUID: [String]] = [:]
@@ -404,7 +406,7 @@ extension StructuredAnswer {
             let adjustedClaimConfidence = calibratedClaimConfidence(claimConfidence, verification: verification)
 
             if evidenceIds.isEmpty {
-                _ = builder.addMissing("Support not found for: \(String(claim.claim.prefix(72)))")
+                _ = builder.addMissing("Support not found for: \(gapQuote(claim.claim))")
             }
 
             _ = builder.addClaim(
@@ -435,7 +437,7 @@ extension StructuredAnswer {
         }
 
         for chunk in evidencePool.prefix(12) {  // Max 12 per spec
-            let quoteSource = chunk.chunk.parentContent ?? chunk.chunk.content
+            let quoteSource = chunk.chunk.contextText
             _ = builder.addEvidence(
                 id: chunk.chunk.id.uuidString,
                 page: chunk.chunk.metadata.pageNumber,
@@ -477,7 +479,7 @@ extension StructuredAnswer {
         _ = builder.setTopScore(retrievedChunks.first?.similarityScore ?? 0)
 
         let normalizedClaims: [StructuredRAGClaim] = {
-            let claims = structuredGeneration.claims.compactMap { claim -> StructuredRAGClaim? in
+            let candidates = structuredGeneration.claims.compactMap { claim -> StructuredRAGClaim? in
                 let claimText = cleanClaimText(claim.claim)
                 guard !claimText.isEmpty else { return nil }
                 return StructuredRAGClaim(
@@ -487,6 +489,18 @@ extension StructuredAnswer {
                 )
             }
             .filter { !isQuestionLikeClaim($0.claim) }
+            let headings = VerificationGateService.headingLines(in: answerText)
+            var claims = candidates.filter { !headings.contains(VerificationGateService.headingKey($0.claim)) }
+            if claims.isEmpty, !candidates.isEmpty {
+                // Every structured claim is one of the answer's headings. The answer's own sentences are listed, which
+                // are what Gate B checks then, and the headings only when it has none (second review, 2026-10-18).
+                // Each keeps the sources its line cites, or it read as a claim missing its citation (third review).
+                let cited = citationsBySentence(in: answerText)
+                let sentences = extractClaims(from: answerText, answerIntent: answerIntent)
+                    .filter { !headings.contains(VerificationGateService.headingKey($0)) }
+                    .map { StructuredRAGClaim(claim: $0, citations: cited[normalizeForMatch($0)] ?? [], isExtracted: false) }
+                claims = sentences.isEmpty ? candidates : sentences
+            }
 
             if claims.isEmpty {
                 return [StructuredRAGClaim(
@@ -522,13 +536,13 @@ extension StructuredAnswer {
                 claimConfidence = min(1.0, max(0.25, (evidenceConfidence * 0.6) + (structuredConfidence * 0.4)))
             } else if !claim.citations.isEmpty {
                 claimConfidence = min(0.55, max(0.2, evidenceConfidence))
-                _ = builder.addMissing("Citation could not be resolved for: \(String(claim.claim.prefix(72)))")
+                _ = builder.addMissing("Citation could not be resolved for: \(gapQuote(claim.claim))")
             } else if !supportingChunks.isEmpty {
                 claimConfidence = min(0.6, max(0.2, (evidenceConfidence * 0.7) + (structuredConfidence * 0.3)))
-                _ = builder.addMissing("Claim missing citation: \(String(claim.claim.prefix(72)))")
+                _ = builder.addMissing("Claim missing citation: \(gapQuote(claim.claim))")
             } else {
                 claimConfidence = min(0.35, max(0.15, structuredConfidence * 0.5))
-                _ = builder.addMissing("Support not found for: \(String(claim.claim.prefix(72)))")
+                _ = builder.addMissing("Support not found for: \(gapQuote(claim.claim))")
             }
 
             let verification = claimVerification(for: claim.claim, in: verificationResult)
@@ -580,15 +594,19 @@ extension StructuredAnswer {
 
         let filteredBulletClaims = uniqueClaims(bulletClaims).filter { !isQuestionLikeClaim($0) }
 
+        // Not cut to six here (5.7): the caller cuts after taking out the answer's headings (review, 2026-10-18).
         if filteredBulletClaims.count >= 2 {
-            return filteredBulletClaims.prefix(6).map { $0 }
+            return filteredBulletClaims
         }
 
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.string = response
         var sentences: [String] = []
         tokenizer.enumerateTokens(in: response.startIndex..<response.endIndex) { range, _ in
+            // A list's dash or bullet is not part of a sentence read from a one-item list (5.7). It stays in
+            // `cleanClaimText`, because the list above is found by its dashes after each line is cleaned.
             let sentence = cleanClaimText(String(response[range]))
+                .replacingOccurrences(of: #"^[-\u2022]\s+"#, with: "", options: .regularExpression)
             if sentence.count >= minimumClaimLength(for: answerIntent) {
                 sentences.append(sentence)
             }
@@ -597,7 +615,7 @@ extension StructuredAnswer {
 
         let extracted = uniqueClaims(sentences).filter { !isQuestionLikeClaim($0) }
         if !extracted.isEmpty {
-            return Array(extracted.prefix(6))
+            return extracted
         }
 
         return [cleanClaimText(response)]
@@ -607,7 +625,7 @@ extension StructuredAnswer {
         let claimTokens = keywordTokens(from: claim)
 
         let scored = retrievedChunks.map { chunk -> (RetrievedChunk, Float) in
-            let content = chunk.chunk.parentContent ?? chunk.chunk.content
+            let content = chunk.chunk.contextText
             let contentTokens = keywordTokens(from: content)
             let overlapCount = claimTokens.intersection(contentTokens).count
             let overlapScore = claimTokens.isEmpty ? 0 : Float(overlapCount) / Float(max(claimTokens.count, 1))
@@ -650,7 +668,7 @@ extension StructuredAnswer {
     nonisolated private static func confidence(for claim: String, evidence: [RetrievedChunk]) -> Float {
         guard !evidence.isEmpty else { return 0.15 }
         let topEvidence = evidence[0]
-        let content = topEvidence.chunk.parentContent ?? topEvidence.chunk.content
+        let content = topEvidence.chunk.contextText
         let claimTokens = keywordTokens(from: claim)
         let contentTokens = keywordTokens(from: content)
         let overlap = claimTokens.isEmpty ? 0 : Float(claimTokens.intersection(contentTokens).count) / Float(max(claimTokens.count, 1))
@@ -661,7 +679,7 @@ extension StructuredAnswer {
         guard answerIntent.isExtractiveFirst else { return false }
         let normalizedClaim = normalizeForMatch(claim)
         return evidence.contains { chunk in
-            let content = chunk.chunk.parentContent ?? chunk.chunk.content
+            let content = chunk.chunk.contextText
             return normalizeForMatch(content).contains(normalizedClaim)
         }
     }
@@ -680,15 +698,120 @@ extension StructuredAnswer {
     }
 
     nonisolated private static func cleanClaimText(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: #"\[S\d+\]"#, with: "", options: .regularExpression)
+        // A range of citations is read as one, with the word that led to it, as Gate B reads it: "are present in [S1]
+        // through [S15]." is "are present." (`VerificationGateService.collapsingCitationRanges`, 5.7).
+        let cleaned = VerificationGateService.collapsingCitationRanges(text)
+            // A run of citations after an abbreviation's full stop and before the sentence's own keeps one of them:
+            // "11:00 a.m. [S2]." is "11:00 a.m." (review, 2026-10-18), and so it does after a bold or an italic that ends
+            // there: "by **9:00 a.m.** [S9]." read "by 9:00 a.m.." in Fact Check (demo copy of 3a9fcb8, 2026-10-20).
+            .replacingOccurrences(of: #"\.(\*{1,3})?"# + citationRun + #"\s*\."#, with: ".$1", options: .regularExpression)
+            // A comma, semicolon or colon a citation leaves before the sentence's last mark goes with it: "is
+            // refundable, [S1]." is "is refundable." (second review, 2026-10-18).
+            .replacingOccurrences(
+                of: #"\s*[,;:]"# + citationRun + #"(?=\s*[.!?](?:\s|\*|$))"#, with: "", options: .regularExpression)
+            // A run of citations goes with the space before it where a mark, a dash, a slash, an ellipsis, a space or
+            // the end follows: "an emergency [S1]." read "an emergency ." in Fact Check (demo copy of 9c0d1dd,
+            // 2026-10-18), and "the 5th [S1], [S2]." is "the 5th.". Before anything else it leaves one space. Nothing
+            // else in the claim is touched, so "8000..8100" and an ellipsis stay as written (two reviews, 2026-10-18).
+            .replacingOccurrences(
+                of: citationRun + #"(?=[\s.,;:!?)\]*_"'\u201D\u2019\u2014\u2013\u2026/]|$)"#, with: "",
+                options: .regularExpression)
+            .replacingOccurrences(of: citationRun, with: " ", options: .regularExpression)
             .replacingOccurrences(of: #"^#{1,6}\s*"#, with: "", options: .regularExpression)
+            // Parentheses left with nothing in them: "(in [S2]\u2013[S4])" (review, 2026-10-20).
+            .replacingOccurrences(of: #"\s*\(\s*\)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            // The same with no citation: "by **9:00 a.m.**." keeps the abbreviation's full stop alone (5.7).
+            .replacingOccurrences(of: #"\.(\*{1,3})\s*\.(?=\s|$)"#, with: ".$1", options: .regularExpression)
+        return withoutUnpairedBold(cleaned)
+    }
+
+    /// A claim quoted in Information Gaps: tidied as Fact Check tidies a claim, without bold markers (the line is drawn
+    /// as plain text, and one quoting Gate B's claim showed them), and cut at the last word that fits in `limit`
+    /// characters, with an ellipsis (5.7). The cut at 72 characters read "...about painting a bedroo" (demo copy of
+    /// 3a9fcb8, 2026-10-20).
+    nonisolated static func gapQuote(_ text: String, limit: Int = 72) -> String {
+        let claim = cleanClaimText(text).replacingOccurrences(
+            of: #"(?<![\p{L}\p{N}])\*\*|\*\*(?![\p{L}\p{N}])"#, with: "", options: .regularExpression)
+        guard claim.count > limit else { return claim }
+        let cut = claim.index(claim.startIndex, offsetBy: limit)
+        // A cut that lands on a space keeps the word that ends there (review, 2026-10-20).
+        let end = claim[cut] == " " ? cut : (claim[..<cut].lastIndex(of: " ") ?? cut)
+        return claim[..<end].trimmingCharacters(in: CharacterSet(charactersIn: " ,;:")) + "\u{2026}"
+    }
+
+    /// A claim cut out of a bold phrase keeps one of its two markers, and Fact Check showed it as typed: the answer's
+    /// "The action is to **Unplug. Contact Kestrel support; the unit needs service.**" became the claim "The action is
+    /// to **Unplug." (demo copy of 3a9fcb8 in the iOS 27 Simulator, 2026-10-20), because the sentences are cut from the
+    /// Markdown. A claim with an odd number of `**` is shown without them; a claim whose bold is whole keeps it (5.7).
+    nonisolated static func withoutUnpairedBold(_ text: String) -> String {
+        // Only a marker with a space, a mark or an end on one side can open or close bold: "2**10" is not bold and
+        // keeps its asterisks (review, 2026-10-20).
+        guard let marker = try? NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])\*\*|\*\*(?![\p{L}\p{N}])"#) else {
+            return text
+        }
+        let whole = NSRange(text.startIndex..., in: text)
+        guard marker.numberOfMatches(in: text, range: whole) % 2 == 1 else { return text }
+        return marker.stringByReplacingMatches(in: text, range: whole, withTemplate: "")
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// One or more citation markers in a row with the space before them, as "[S1]", "[S1, S2]" or "[S1], [S2]" (5.7).
+    nonisolated private static let citationRun =
+        #"\s*"# + VerificationGateService.citationMarkerPattern + #"(?:\s*[,;]?\s*"#
+        + VerificationGateService.citationMarkerPattern + ")*"
+
+    /// The claims that are not one of the answer's own headings (5.7), matched as Gate B matches them
+    /// (`VerificationGateService.headingLines` and `headingKey`), so Fact Check neither lists a heading as
+    /// "Not checked" nor counts it. A right answer read "1 of 2 Verified" for its heading "Notice to Enter" in 2 of 4
+    /// takes of one question (demo copy of 9c0d1dd, 2026-10-18). When every claim would go, the list stays as it was:
+    /// an answer is never left with no claims, which with the checks on turns it into a refusal (review, 2026-10-18).
+    nonisolated private static func droppingHeadings(
+        _ claims: [StructuredRAGClaim], of answerText: String
+    ) -> [StructuredRAGClaim] {
+        let headings = VerificationGateService.headingLines(in: answerText)
+        guard !headings.isEmpty else { return claims }
+        let kept = claims.filter { !headings.contains(VerificationGateService.headingKey($0.claim)) }
+        return kept.isEmpty ? claims : kept
+    }
+
     nonisolated private static func citationIndex(from citation: String) -> Int? {
         StructuredAnswerParsing.citationIndex(from: citation)
+    }
+
+    /// The citation labels each of the answer's lines and sentences carries ("S1", "S2"), keyed as `normalizeForMatch`
+    /// keys its text once cleaned as `extractClaims` cleans it, so a sentence listed from the answer keeps the sources
+    /// it cites (5.7).
+    nonisolated private static func citationsBySentence(in answerText: String) -> [String: [String]] {
+        var pieces = answerText.components(separatedBy: .newlines)
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = answerText
+        tokenizer.enumerateTokens(in: answerText.startIndex..<answerText.endIndex) { range, _ in
+            pieces.append(String(answerText[range]))
+            return true
+        }
+        guard let marker = try? NSRegularExpression(pattern: VerificationGateService.citationMarkerPattern) else {
+            return [:]
+        }
+        var citations: [String: [String]] = [:]
+        for piece in pieces {
+            let nsPiece = piece as NSString
+            var labels: [String] = []
+            for match in marker.matches(in: piece, range: NSRange(location: 0, length: nsPiece.length)) {
+                for number in nsPiece.substring(with: match.range).split(whereSeparator: { !$0.isNumber })
+                where !labels.contains("S\(number)") {
+                    labels.append("S\(number)")
+                }
+            }
+            guard !labels.isEmpty else { continue }
+            let text = cleanClaimText(piece)
+                .replacingOccurrences(of: #"^([-\u2022]\s+|\d+[\.)]\s+)"#, with: "", options: .regularExpression)
+            let key = normalizeForMatch(text)
+            if !key.isEmpty, citations[key] == nil { citations[key] = labels }
+        }
+        return citations
     }
 
     nonisolated private static func normalizeForMatch(_ text: String) -> String {
@@ -774,7 +897,7 @@ extension StructuredAnswer {
         }
 
         for chunk in evidencePool.prefix(12) {
-            let quoteSource = chunk.chunk.parentContent ?? chunk.chunk.content
+            let quoteSource = chunk.chunk.contextText
             _ = builder.addEvidence(
                 id: chunk.chunk.id.uuidString,
                 page: chunk.chunk.metadata.pageNumber,
@@ -845,7 +968,7 @@ extension StructuredAnswer {
         }
 
         for claim in verificationResult.claimResults where claim.verdict == .unsupported {
-            _ = builder.addMissing("Verification could not support claim: \(String(claim.claim.prefix(72)))")
+            _ = builder.addMissing("Verification could not support claim: \(gapQuote(claim.claim))")
         }
 
         if verificationResult.shouldAbstain, let reason = verificationResult.abstainReason {
@@ -1100,9 +1223,9 @@ extension StructuredAnswer {
         return lines.contains { isQuestionLikeClaim($0) }
     }
 
-    nonisolated private static func isQuestionLikeClaim(_ text: String) -> Bool {
+    nonisolated static func isQuestionLikeClaim(_ text: String) -> Bool {
         let stripped = text
-            .replacingOccurrences(of: #"\[S\d+\]"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: VerificationGateService.citationMarkerPattern, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !stripped.isEmpty else { return false }
@@ -1224,12 +1347,28 @@ extension StructuredAnswer {
         let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let lastCharacter = trimmed.last else { return citations.joined(separator: " ") }
 
+        // A sentence that ends on an abbreviation keeps that full stop, and the citation gets a full stop of its own,
+        // the way the model writes it: "Check-out is at 11:00 a.m. [S1]." Taking the last mark off gave
+        // "11:00 a.m [S1]." (review, 2026-10-18).
+        if lastCharacter == ".", endsWithAbbreviation(trimmed) {
+            return "\(trimmed) \(citations.joined(separator: " "))."
+        }
+
         if [".", "!", "?"].contains(lastCharacter) {
             let body = String(trimmed.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
             return "\(body) \(citations.joined(separator: " "))\(lastCharacter)"
         }
 
         return "\(trimmed) \(citations.joined(separator: " "))."
+    }
+
+    /// Whether a sentence's last word is an abbreviation with its own full stop: "a.m.", "p.m.", "e.g.", "U.S.",
+    /// "etc.", "Inc." (5.7).
+    nonisolated static func endsWithAbbreviation(_ sentence: String) -> Bool {
+        guard let last = sentence.split(separator: " ").last else { return false }
+        let word = String(last).trimmingCharacters(in: CharacterSet(charactersIn: "\"'\u{201D}\u{2019})]*_"))
+        if word.range(of: #"^(?:[A-Za-z]\.){2,}$"#, options: .regularExpression) != nil { return true }
+        return ["etc.", "inc.", "ltd.", "co.", "corp.", "jr.", "sr.", "vs."].contains(word.lowercased())
     }
 
     nonisolated private static func punctuatedSentence(_ text: String) -> String {

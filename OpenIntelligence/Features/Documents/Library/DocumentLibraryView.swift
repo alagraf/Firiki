@@ -18,8 +18,13 @@ struct DocumentLibraryView: View {
     @ObservedObject var ragService: RAGService
     @ObservedObject var containerService: ContainerService
     @State private var showingFilePicker = false
-    /// True while a Finder drag hovers the library, driving the drop outline.
-    @State private var isDropTargeted = false
+    @Environment(\.undoManager) private var undoManager
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// A document in an iCloud library that a swipe asked to delete, waiting for the answer (5.7).
+    @State private var swipeDeleteCandidate: Document?
+    /// The parts of the library area a Finder drag is over, driving the drop outline (`takingDroppedFiles(as:)`).
+    @State private var dropTargetedParts: Set<LibraryDropPart> = []
+    private var isDropTargeted: Bool { !dropTargetedParts.isEmpty }
     @State private var showingProcessingSummary = false
     @State private var lastProcessedSummary: ProcessingSummary?
     @State private var showingContainerSettings = false
@@ -69,12 +74,16 @@ struct DocumentLibraryView: View {
     /// `actor`, so this cannot be read synchronously from the menu body and is refreshed instead.
     @State private var cachedDocumentCount = 0
     @State private var pendingImportURLs: [URL] = []
+    /// The library a reviewed import goes to: the one chosen in the Opened File sheet, or nil for the open one.
+    @State private var pendingImportLibraryId: UUID?
     @State private var pendingImportReview: DocumentImportReview?
     @State private var showingImportReview = false
     /// Files "Open in" handed over, shown before anything is added (`OpenedFilesSheet`).
     @State private var openedFiles: [URL] = []
     @State private var showingOpenedFiles = false
     @State private var addOpenedFiles = false
+    /// The library chosen in the Opened File sheet (5.7).
+    @State private var openedFilesLibraryId: UUID?
     @State private var isRefreshingSharedWorkspace = false
     @State private var sharedWorkspaceRefreshMessage: String?
     @State private var showingSharedSyncReviewDialog = false
@@ -200,24 +209,30 @@ struct DocumentLibraryView: View {
     /// leading edge, which is why switching to or from an empty library made the library picker
     /// visibly jump back to the first pill and the whole screen flash, even though
     /// `containerService.activeContainerId` never actually changed. `documentHeader` is now
-    /// rendered once, by `libraryContentView`, above this branch entirely.
+    /// rendered once, by `libraryContentView`, above this branch entirely, and since 5.7 so is the row of
+    /// libraries, `libraryPicker`, which is no longer part of it.
     private var emptyStateContent: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                EmptyDocumentsView(
-                    isImportingSamples: isImportingSamples,
-                    hasImportedSamples: onboardingStore.hasImportedSamples,
-                    isAtDocumentLimit: isAtDocumentLimit,
-                    documentLimit: documentLimit,
-                    statusMessage: sampleImportStatusMessage,
-                    onImportSamples: importSampleWorkspace,
-                    onPickFiles: presentDocumentPickerOrUpgrade
-                )
-                .padding(.horizontal)
-            }
-            .padding(.bottom, 24)
+            emptyStateStack
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The empty state itself, scrolled by `emptyStateContent`, or with the header at accessibility text sizes (5.7).
+    private var emptyStateStack: some View {
+        VStack(spacing: DSSpacing.lg) {
+            EmptyDocumentsView(
+                isImportingSamples: isImportingSamples,
+                hasImportedSamples: onboardingStore.hasImportedSamples,
+                isAtDocumentLimit: isAtDocumentLimit,
+                documentLimit: documentLimit,
+                statusMessage: sampleImportStatusMessage,
+                onImportSamples: importSampleWorkspace,
+                onPickFiles: presentDocumentPickerOrUpgrade
+            )
+            .padding(.horizontal, DSSpacing.lg)
+        }
+        .padding(.bottom, DSSpacing.xl)
     }
 
     /// Content shown below the persistent `documentHeader`, for a library with documents.
@@ -225,39 +240,87 @@ struct DocumentLibraryView: View {
     private var documentListContent: some View {
         Group {
             // Document list with modern styling
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(filteredDocuments) { document in
-                        NavigationLink(destination: DocumentDetailsView(
-                            document: document,
-                            embeddingProviderId: containerService.activeContainer?.embeddingProviderId
-                        )) {
-                            ModernDocumentCard(document: document, ragService: ragService)
-                        }
-                        .buttonStyle(.plain)
-                        // Each card names its document, so Siri and Apple Intelligence know which
-                        // documents are on screen (5.7).
-                        .appEntityIdentifier(.document(document.id))
-                    }
+            withSwipeDeleteAlert(
+                ScrollView {
+                    documentCards
                 }
-                .padding()
-
-                // Stats footer with Auto Intelligence indicator
-                StatsFooter(
-                    totalDocuments: filteredDocuments.count,
-                    totalChunks: filteredTotalChunks,
-                    autoIntelligenceEnabled: containerService.activeContainer?.autoAdaptDimension ?? true
-                )
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
-            }
+                // The cards carry swipe actions from iOS and macOS 27 (`DocumentSwipeToDelete`).
+                .modifier(SwipeActionsContainerOn27())
+            )
         }
     }
 
+    /// The document cards and the stats footer, scrolled by `documentListContent`, or with the header at
+    /// accessibility text sizes (5.7).
+    @ViewBuilder
+    private var documentCards: some View {
+        LazyVStack(spacing: DSSpacing.md) {
+            ForEach(filteredDocuments) { document in
+                NavigationLink(destination: DocumentDetailsView(
+                    document: document,
+                    embeddingProviderId: containerService.activeContainer?.embeddingProviderId
+                )) {
+                    ModernDocumentCard(document: document, ragService: ragService)
+                }
+                .buttonStyle(.plain)
+                // Each card names its document, so Siri and Apple Intelligence know which
+                // documents are on screen (5.7).
+                .appEntityIdentifier(.document(document.id))
+                .modifier(DocumentSwipeToDelete { swipeDelete(document) })
+            }
+        }
+        .padding(DSSpacing.lg)
+
+        // Stats footer with Auto Intelligence indicator
+        StatsFooter(
+            totalDocuments: filteredDocuments.count,
+            totalChunks: filteredTotalChunks,
+            autoIntelligenceEnabled: containerService.activeContainer?.autoAdaptDimension ?? true
+        )
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.bottom, DSSpacing.lg)
+
+        // The Siri phrase that finds passages in the open library, the one listed above (5.7).
+        SiriPhraseTip(.findPassages)
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.bottom, DSSpacing.lg)
+    }
+
+    /// The confirmation a swipe asks for before it deletes a document in an iCloud library (`swipeDelete`), on the
+    /// list's scroll view in either layout.
+    private func withSwipeDeleteAlert<Content: View>(_ content: Content) -> some View {
+        content.alert(
+            "Delete Document?",
+            isPresented: Binding(
+                get: { swipeDeleteCandidate != nil },
+                set: { if !$0 { swipeDeleteCandidate = nil } }),
+            presenting: swipeDeleteCandidate
+        ) { document in
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                ragService.scheduleRemoval(of: [document], undoManager: undoManager)
+            }
+        } message: { document in
+            Text(ModernDocumentCard.sharedDeleteMessage(for: document.filename))
+        }
+    }
+
+    /// A swipe deletes a document only this device has at once, because the deletion can be undone for a few
+    /// seconds; one in an iCloud library asks first, as Delete in its menu does (5.7).
+    private func swipeDelete(_ document: Document) {
+        if ragService.syncMode(for: document) == .iCloudShared {
+            swipeDeleteCandidate = document
+        } else {
+            ragService.scheduleRemoval(of: [document], undoManager: undoManager)
+        }
+    }
+
+    /// The header above the row of libraries: the title, the storage picker and the action buttons. It takes dropped
+    /// files, and the row of libraries below it does not (`takingDroppedFiles(as:)`).
     private var documentHeader: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: DSSpacing.md) {
             documentSectionHeader
-                .padding(.horizontal)
+                .padding(.horizontal, DSSpacing.lg)
 
             documentActionStrip
                 // This action empties a library and keeps the library itself, which is exactly
@@ -307,88 +370,95 @@ struct DocumentLibraryView: View {
                 } message: {
                     Text("This library's copy in iCloud is removed, and it stops appearing on your other devices. The documents stay on this device. Switching back to iCloud Sync uploads them again.")
                 }
+        }
+    }
 
-            ContainerPickerStrip(
-                containerService: containerService,
-                allowsCreation: true,
-                onCreateLibrary: handleNewLibraryTapped,
-                onDeleteLibrary: handleDeleteLibrary,
-                // Wrapped rather than passed by reference. `handleSetLibrarySyncMode` gained a
-                // defaulted `confirmed:` parameter, and Swift does not apply default arguments
-                // when a function is used as a value, so the bare reference no longer matches
-                // the two-parameter closure this expects.
-                onSetLibraryStorage: { container, syncMode in
-                    handleSetLibrarySyncMode(container, syncMode)
+    /// The row of libraries, in none of the library area's file drop targets (`takingDroppedFiles(as:)`, 5.7).
+    private var libraryPicker: some View {
+        ContainerPickerStrip(
+            containerService: containerService,
+            allowsCreation: true,
+            onCreateLibrary: handleNewLibraryTapped,
+            onDeleteLibrary: handleDeleteLibrary,
+            // Wrapped rather than passed by reference. `handleSetLibrarySyncMode` gained a
+            // defaulted `confirmed:` parameter, and Swift does not apply default arguments
+            // when a function is used as a value, so the bare reference no longer matches
+            // the two-parameter closure this expects.
+            onSetLibraryStorage: { container, syncMode in
+                handleSetLibrarySyncMode(container, syncMode)
+            }
+        )
+        .alert("New Library", isPresented: $showingNewLibraryPrompt) {
+            TextField("Library name", text: $newLibraryName)
+            Button("Cancel", role: .cancel) {
+                newLibraryName = ""
+                pendingNewLibraryName = ""
+            }
+            Button("Create") {
+                pendingNewLibraryName = newLibraryName.trimmingCharacters(in: .whitespacesAndNewlines)
+                shouldShowStorageChoiceAfterDismissal = true
+            }
+        } message: {
+            Text("Enter a name for your new library")
+        }
+        .confirmationDialog("Choose Library Storage", isPresented: $showingNewLibraryStorageChoice, titleVisibility: .visible) {
+            Button("Local Only") {
+                createNewLibrary(syncMode: .localOnly)
+            }
+            Button("iCloud Sync") {
+                createNewLibrary(syncMode: .iCloudShared)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingNewLibraryName = ""
+            }
+        } message: {
+            Text("Local Only keeps the library only on this device. iCloud Sync makes iCloud the shared copy for that library across your devices.")
+        }
+        // Names the library, matching the remove-all-documents alert above, so the two
+        // destructive confirmations read as clearly different actions rather than as two
+        // similar red dialogs.
+        .alert("Delete the \"\(libraryToDelete?.name ?? "selected")\" library?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {
+                libraryToDelete = nil
+            }
+            if libraryToDelete?.syncMode == .iCloudShared {
+                Button("Delete from iCloud", role: .destructive) {
+                    confirmDeleteLibrary()
                 }
+            } else {
+                Button("Delete Locally", role: .destructive) {
+                    confirmDeleteLibrary()
+                }
+            }
+        } message: {
+            if let lib = libraryToDelete {
+                let docCount = ragService.documents.filter { $0.containerId == lib.id }.count
+                if lib.syncMode == .iCloudShared {
+                    Text("This will permanently delete \"\(lib.name)\" from iCloud Sync and remove it from every device using that shared library, along with all \(docCount) document\(docCount == 1 ? "" : "s"). This cannot be undone.")
+                } else {
+                    Text("This will permanently delete \"\(lib.name)\" only on this device, along with all \(docCount) document\(docCount == 1 ? "" : "s") inside it. This cannot be undone.")
+                }
+            } else {
+                Text("This will permanently delete this library and all documents inside it.")
+            }
+        }
+    }
+
+    /// The banners below the row of libraries, shown above the documents and taking dropped files with them.
+    @ViewBuilder
+    private var documentBanners: some View {
+        sharedWorkspaceBanner
+            .padding(.horizontal, DSSpacing.lg)
+
+        if shouldShowQuotaBanner {
+            DocumentQuotaBanner(
+                currentCount: ragService.documents.count,
+                limit: documentLimit,
+                tierName: entitlementStore.currentPlanDisplayName,
+                addOnPacks: entitlementStore.addOnPacks,
+                onUpgrade: { presentPlanSheet(for: .quotaBanner) }
             )
-            .alert("New Library", isPresented: $showingNewLibraryPrompt) {
-                TextField("Library name", text: $newLibraryName)
-                Button("Cancel", role: .cancel) {
-                    newLibraryName = ""
-                    pendingNewLibraryName = ""
-                }
-                Button("Create") {
-                    pendingNewLibraryName = newLibraryName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    shouldShowStorageChoiceAfterDismissal = true
-                }
-            } message: {
-                Text("Enter a name for your new library")
-            }
-            .confirmationDialog("Choose Library Storage", isPresented: $showingNewLibraryStorageChoice, titleVisibility: .visible) {
-                Button("Local Only") {
-                    createNewLibrary(syncMode: .localOnly)
-                }
-                Button("iCloud Sync") {
-                    createNewLibrary(syncMode: .iCloudShared)
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingNewLibraryName = ""
-                }
-            } message: {
-                Text("Local Only keeps the library only on this device. iCloud Sync makes iCloud the shared copy for that library across your devices.")
-            }
-            // Names the library, matching the remove-all-documents alert above, so the two
-            // destructive confirmations read as clearly different actions rather than as two
-            // similar red dialogs.
-            .alert("Delete the \"\(libraryToDelete?.name ?? "selected")\" library?", isPresented: $showingDeleteConfirmation) {
-                Button("Cancel", role: .cancel) {
-                    libraryToDelete = nil
-                }
-                if libraryToDelete?.syncMode == .iCloudShared {
-                    Button("Delete from iCloud", role: .destructive) {
-                        confirmDeleteLibrary()
-                    }
-                } else {
-                    Button("Delete Locally", role: .destructive) {
-                        confirmDeleteLibrary()
-                    }
-                }
-            } message: {
-                if let lib = libraryToDelete {
-                    let docCount = ragService.documents.filter { $0.containerId == lib.id }.count
-                    if lib.syncMode == .iCloudShared {
-                        Text("This will permanently delete \"\(lib.name)\" from iCloud Sync and remove it from every device using that shared library, along with all \(docCount) document\(docCount == 1 ? "" : "s"). This cannot be undone.")
-                    } else {
-                        Text("This will permanently delete \"\(lib.name)\" only on this device, along with all \(docCount) document\(docCount == 1 ? "" : "s") inside it. This cannot be undone.")
-                    }
-                } else {
-                    Text("This will permanently delete this library and all documents inside it.")
-                }
-            }
-
-            sharedWorkspaceBanner
-                .padding(.horizontal)
-
-            if shouldShowQuotaBanner {
-                DocumentQuotaBanner(
-                    currentCount: ragService.documents.count,
-                    limit: documentLimit,
-                    tierName: entitlementStore.currentPlanDisplayName,
-                    addOnPacks: entitlementStore.addOnPacks,
-                    onUpgrade: { presentPlanSheet(for: .quotaBanner) }
-                )
-                .padding(.horizontal)
-            }
+            .padding(.horizontal, DSSpacing.lg)
         }
     }
 
@@ -406,21 +476,30 @@ struct DocumentLibraryView: View {
     }
 
     private var documentSectionHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
+        // At accessibility text sizes the picker goes under the title, which beside it broke as "Docu-ments" (5.7).
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout =
+            stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.sm))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: DSSpacing.md))
+        return layout {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text("Documents")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(DSColors.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(documentSectionSubtitle)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(DSColors.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 8)
+            if !stacked {
+                Spacer(minLength: DSSpacing.sm)
+            }
 
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 if activeLibrary != nil {
                     Picker("Sync Mode", selection: syncModeBinding) {
                         Text("Local").tag(LibrarySyncMode.localOnly)
@@ -441,17 +520,19 @@ struct DocumentLibraryView: View {
                             ProgressView()
                                 .progressViewStyle(.circular)
                                 .scaleEffect(0.8)
-                                .frame(width: 32, height: 32)
+                                .frame(minWidth: DSSpacing.tapTarget, minHeight: DSSpacing.tapTarget)
                         } else {
                             Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.accentColor)
+                                .scaledFont(size: 14, weight: .bold)
+                                .foregroundStyle(Color.accentColor)
                                 .frame(width: 32, height: 32)
                                 .background(
                                     Circle()
                                         .fill(Color.accentColor.opacity(0.08))
                                 )
                                 .glassCircleEffectHelper()
+                                .frame(minWidth: DSSpacing.tapTarget, minHeight: DSSpacing.tapTarget)
+                                .contentShape(Rectangle())
                         }
                     }
                     .buttonStyle(.plain)
@@ -459,6 +540,8 @@ struct DocumentLibraryView: View {
                 }
             }
         }
+        // Stacked, the block is only as wide as its widest line, and the header's stack would center it.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var documentSectionSubtitle: String {
@@ -485,7 +568,7 @@ struct DocumentLibraryView: View {
     /// that tab renders `AdaptiveVisualizationsView()` which takes no parameters. The chip was a
     /// second button for the Atlas tab sitting two inches above the Atlas tab.
     private var documentActionStrip: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSSpacing.md) {
             DocumentActionChip(
                 title: "Add Document",
                 systemImage: "plus",
@@ -595,16 +678,16 @@ struct DocumentLibraryView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
     }
 
     @ViewBuilder
     private var sharedWorkspaceBanner: some View {
         if let bootstrapConflict = workspaceSyncService.pendingBootstrapConflict,
            hasConfiguredICloudLibraries {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                HStack(spacing: DSSpacing.sm) {
                     Image(systemName: "icloud.trianglebadge.exclamationmark")
                         .font(.subheadline)
                         .foregroundStyle(Color.accentColor)
@@ -651,13 +734,13 @@ struct DocumentLibraryView: View {
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .minimumScaleFactor(0.9)
-                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .frame(maxWidth: .infinity, minHeight: DSSpacing.tapTarget)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isRefreshingSharedWorkspace)
                 } else {
                     ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 10) {
+                        HStack(spacing: DSSpacing.sm) {
                             Button {
                                 resolvePendingBootstrap(.mergeLibraries)
                             } label: {
@@ -669,7 +752,7 @@ struct DocumentLibraryView: View {
                                     .multilineTextAlignment(.center)
                                     .lineLimit(2)
                                     .minimumScaleFactor(0.9)
-                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .frame(maxWidth: .infinity, minHeight: DSSpacing.tapTarget)
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(isRefreshingSharedWorkspace)
@@ -685,13 +768,13 @@ struct DocumentLibraryView: View {
                                     .multilineTextAlignment(.center)
                                     .lineLimit(2)
                                     .minimumScaleFactor(0.9)
-                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .frame(maxWidth: .infinity, minHeight: DSSpacing.tapTarget)
                             }
                             .buttonStyle(.bordered)
                             .disabled(isRefreshingSharedWorkspace)
                         }
 
-                        VStack(spacing: 10) {
+                        VStack(spacing: DSSpacing.sm) {
                             Button {
                                 resolvePendingBootstrap(.mergeLibraries)
                             } label: {
@@ -703,7 +786,7 @@ struct DocumentLibraryView: View {
                                     .multilineTextAlignment(.center)
                                     .lineLimit(2)
                                     .minimumScaleFactor(0.9)
-                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .frame(maxWidth: .infinity, minHeight: DSSpacing.tapTarget)
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(isRefreshingSharedWorkspace)
@@ -719,7 +802,7 @@ struct DocumentLibraryView: View {
                                     .multilineTextAlignment(.center)
                                     .lineLimit(2)
                                     .minimumScaleFactor(0.9)
-                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .frame(maxWidth: .infinity, minHeight: DSSpacing.tapTarget)
                             }
                             .buttonStyle(.bordered)
                             .disabled(isRefreshingSharedWorkspace)
@@ -737,23 +820,23 @@ struct DocumentLibraryView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            .padding(12)
+            .padding(DSSpacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.surface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .stroke(Color.accentColor.opacity(0.16), lineWidth: 1)
             )
         } else if shouldShowCompactSharedWorkspaceBanner {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                HStack(spacing: DSSpacing.sm) {
                     Image(systemName: compactSharedWorkspaceBannerIcon)
                         .font(.subheadline)
                         .foregroundStyle(compactSharedWorkspaceBannerIconColor)
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                         Text(compactSharedWorkspaceBannerTitle)
                             .font(.subheadline.weight(.semibold))
                         Text(compactSharedWorkspaceSummary)
@@ -766,8 +849,8 @@ struct DocumentLibraryView: View {
 
                     Text(compactSharedWorkspaceModeLabel)
                         .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, DSSpacing.sm)
+                        .padding(.vertical, DSSpacing.xs)
                         .background(compactSharedWorkspaceModeColor.opacity(0.15))
                         .foregroundStyle(compactSharedWorkspaceModeColor)
                         .clipShape(Capsule())
@@ -780,13 +863,13 @@ struct DocumentLibraryView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(12)
+            .padding(DSSpacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.surface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .stroke(compactSharedWorkspaceBannerIconColor.opacity(0.16), lineWidth: 1)
             )
         }
@@ -976,14 +1059,14 @@ struct DocumentLibraryView: View {
 
     @ViewBuilder
     private func syncBenefitRow(icon: String, text: String, color: Color) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DSSpacing.xs) {
             Image(systemName: icon)
                 .font(.caption)
-                .foregroundColor(color)
+                .foregroundStyle(color)
                 .frame(width: 16)
             Text(text)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -1124,6 +1207,8 @@ struct DocumentLibraryView: View {
             sampleRefreshBanner
             libraryAlertView
         }
+        .overlay(alignment: .bottom) { pendingRemovalBar }
+        .animation(DSAnimations.snappySpring, value: ragService.pendingRemovals.map(\.id))
         // Runs once per appearance and returns immediately when nothing has drifted:
         // `staleImportedSamples` compares a recorded hash per sample and exits on the
         // first mismatch check. Deliberately not run during onboarding, which is
@@ -1175,7 +1260,7 @@ struct DocumentLibraryView: View {
             let samplesMs = Date().timeIntervalSince(samplesStarted) * 1000
 
             if !refreshed.isEmpty {
-                withAnimation { refreshedSampleNames = refreshed }
+                withAnimation(DSAnimations.snappySpring) { refreshedSampleNames = refreshed }
             }
 
             Log.info(
@@ -1204,13 +1289,13 @@ struct DocumentLibraryView: View {
         if ragService.librariesNeedingIndexRebuild.contains(containerId) {
             HStack(alignment: .top, spacing: DSSpacing.sm) {
                 Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                     .foregroundStyle(.orange)
-                    .padding(.top, 2)
+                    .padding(.top, DSSpacing.xxs)
 
                 VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text("This library needs its search index rebuilt")
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold)
                         .foregroundStyle(DSColors.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("Your documents are intact. Answers here can miss information until the index is rebuilt, which takes a moment and does not re-import anything.")
@@ -1233,6 +1318,39 @@ struct DocumentLibraryView: View {
         }
     }
 
+    /// The last deletion that can still be undone (5.7, `PendingDocumentRemoval`), at the bottom of the
+    /// library until its seconds run out or it is undone. Styled as the chat's stage notices
+    /// (`EventToastView`), with this screen's own banner button.
+    @ViewBuilder
+    private var pendingRemovalBar: some View {
+        if let removal = ragService.pendingRemovals.last {
+            HStack(spacing: DSSpacing.sm) {
+                Image(systemName: "trash")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(.red)
+                Text(removal.summary)
+                    .scaledFont(size: 15, weight: .semibold)
+                    .foregroundStyle(DSColors.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: DSSpacing.xs)
+                Button("Undo") {
+                    ragService.undoRemoval(removal.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.vertical, DSSpacing.sm)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.red.opacity(0.3), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.bottom, DSSpacing.md)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
     /// Explains an automatic sample refresh after the fact.
     ///
     /// Without this the user watches three documents they did not touch disappear and
@@ -1244,13 +1362,13 @@ struct DocumentLibraryView: View {
         if let names = refreshedSampleNames, !names.isEmpty {
             HStack(alignment: .top, spacing: DSSpacing.sm) {
                 Image(systemName: "checkmark.seal")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.blue)
-                    .padding(.top, 2)
+                    .scaledFont(size: 16, weight: .semibold)
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.top, DSSpacing.xxs)
 
                 VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(names.count == 1 ? "Updated a sample document" : "Updated \(names.count) sample documents")
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold)
                         .foregroundStyle(DSColors.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("\(names.joined(separator: ", ")) described things this app does not actually do. Because the app answers questions out of these documents, a wrong sentence in one becomes a wrong answer. They were re-imported with the corrections. Nothing you imported yourself was touched.")
@@ -1262,13 +1380,13 @@ struct DocumentLibraryView: View {
                 Spacer(minLength: DSSpacing.xs)
 
                 Button("OK") {
-                    withAnimation { refreshedSampleNames = nil }
+                    withAnimation(DSAnimations.snappySpring) { refreshedSampleNames = nil }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
             .padding(DSSpacing.md)
-            .background(Color.blue.opacity(0.12))
+            .background(Color.accentColor.opacity(0.12))
             .accessibilityElement(children: .combine)
         }
     }
@@ -1305,8 +1423,11 @@ struct DocumentLibraryView: View {
             .sheet(isPresented: $showingOpenedFiles, onDismiss: finishOpenedFiles) {
                 OpenedFilesSheet(
                     files: openedFiles,
-                    libraryName: containerService.activeContainer?.name ?? "Library",
-                    onAdd: {
+                    libraries: containerService.pickableContainers,
+                    initialLibraryId: containerService.activeContainerId,
+                    documentCount: { containerService.documentCount(for: $0) },
+                    onAdd: { libraryId in
+                        openedFilesLibraryId = libraryId
                         addOpenedFiles = true
                         showingOpenedFiles = false
                     },
@@ -1489,34 +1610,68 @@ struct DocumentLibraryView: View {
             }
     }
 
+    /// The parts of the library area that take dropped files, such as files dragged from Finder.
+    enum LibraryDropPart: Hashable {
+        case header
+        case documents
+        case importQueue
+    }
+
+    /// Makes `content`, one part of the library area, take dropped files (5.7).
+    ///
+    /// Three parts, the header above the row of libraries, everything below the row and the import panel, instead of one
+    /// target around the whole area as through 5.6. A drop target around the row keeps SwiftUI's reorderable chips from following a drag
+    /// on iOS 27.0: the move reported the dragged chip's own place, so no library moved. Measured 2026-10-19 with a probe
+    /// app in the iOS 27.0 Simulator: a target around the row broke the reorder with either of SwiftUI's drop APIs and
+    /// with the target switched off for the drag, and with a target above the row and one below it the chips reordered
+    /// and files dropped on either part were taken. A file dropped on the row of libraries itself is not taken.
+    ///
+    /// Each part takes a drop anywhere in its frame, as the one target did through its background, and not only on
+    /// what it draws. A part leaves the outline when it has no area, as the import panel does when it hides, or
+    /// leaves the screen, because a drag over it then may never be told it left.
+    private func takingDroppedFiles<Content: View>(as part: LibraryDropPart, @ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .contentShape(Rectangle())
+            .dropDestination(for: URL.self) { urls, _ in
+                handleDroppedFiles(urls)
+            } isTargeted: { targeted in
+                if targeted {
+                    dropTargetedParts.insert(part)
+                } else {
+                    dropTargetedParts.remove(part)
+                }
+            }
+            .onGeometryChange(for: Bool.self) { $0.size == .zero } action: { hasNoArea in
+                if hasNoArea { dropTargetedParts.remove(part) }
+            }
+            .onDisappear { dropTargetedParts.remove(part) }
+    }
+
     private var libraryChromeView: some View {
         ZStack(alignment: .bottomTrailing) {
             libraryContentView
             ingestionQueueOverlay
         }
-            // The whole library area is the drop target, so a Finder drag does
-            // not have to be aimed at the list or at the empty state.
-            .dropDestination(for: URL.self) { urls, _ in
-                handleDroppedFiles(urls)
-            } isTargeted: { targeted in
-                isDropTargeted = targeted
-            }
+            // The outline goes around the whole library area. The parts that take the files, everything but the row of
+            // libraries, are in `libraryContentView` and the import panel (`takingDroppedFiles(as:)`).
             .overlay {
                 if isDropTargeted {
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                         .strokeBorder(
                             Color.accentColor,
                             style: StrokeStyle(lineWidth: 3, dash: [8])
                         )
-                        .padding(8)
+                        .padding(DSSpacing.sm)
                         .allowsHitTesting(false)
                         .transition(.opacity)
                 }
             }
-            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .animation(DSAnimations.fastEase, value: isDropTargeted)
             .navigationTitle("Documents")
             #if os(iOS)
-            .navigationBarTitleDisplayMode(.large)
+            // Inline at accessibility text sizes (5.7): there the large title wrapped to "Docu-" and "ments" and took a
+            // fifth of the screen above the header, which carries the same name.
+            .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
             .ignoresSafeArea(.keyboard, edges: .bottom)
             #endif
             .onAppear {
@@ -1562,15 +1717,20 @@ struct DocumentLibraryView: View {
     }
 
     private var ingestionQueueOverlay: some View {
-        IngestionQueueOverlay(
-            items: ragService.ingestionItems,
-            onCancelItem: { ragService.cancelIngestionItem($0) },
-            onCancelAll: { ragService.cancelAllIngestion() },
-            onContinuePaused: { ragService.continuePausedIngestionQueue() },
-            onDiscardPaused: { ragService.discardPausedIngestionQueue() },
-            onStopAndDismiss: { ragService.stopAndDismissIngestionQueue() }
-        )
-        .padding(.horizontal, 16)
+        // The panel takes dropped files as the area under it does (`takingDroppedFiles(as:)`); it has no area while hidden.
+        takingDroppedFiles(as: .importQueue) {
+            IngestionQueueOverlay(
+                items: ragService.ingestionItems,
+                onCancelItem: { ragService.cancelIngestionItem($0) },
+                onCancelAll: { ragService.cancelAllIngestion() },
+                onContinuePaused: { ragService.continuePausedIngestionQueue() },
+                onDiscardPaused: { ragService.discardPausedIngestionQueue() },
+                onStopAndDismiss: { ragService.stopAndDismissIngestionQueue() },
+                onPause: { ragService.pauseIngestionQueue() },
+                pausedByPerson: ragService.ingestionPausedByPerson
+            )
+        }
+        .padding(.horizontal, DSSpacing.lg)
         .padding(.bottom, ingestionQueueBottomPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
     }
@@ -1579,7 +1739,7 @@ struct DocumentLibraryView: View {
 #if os(iOS)
         72
 #else
-        16
+        DSSpacing.lg
 #endif
     }
 
@@ -1595,13 +1755,55 @@ struct DocumentLibraryView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 12) {
-                documentHeader
+            if dynamicTypeSize.isAccessibilitySize {
+                // At accessibility text sizes the header alone is taller than the screen. Outside a scroll view
+                // its stack was centered and spilled up under the status and navigation bars, so there the header
+                // scrolls with the documents (5.7). The header still sits above the branch, for the reason given
+                // at `emptyStateContent`. Crossing into or out of the accessibility sizes builds the header again,
+                // which closes an alert it had open if the text size changes while one is up.
+                withSwipeDeleteAlert(
+                    ScrollView {
+                        VStack(spacing: DSSpacing.md) {
+                            takingDroppedFiles(as: .header) {
+                                documentHeader
+                            }
 
-                if filteredDocuments.isEmpty {
-                    emptyStateContent
-                } else {
-                    documentListContent
+                            libraryPicker
+
+                            takingDroppedFiles(as: .documents) {
+                                VStack(spacing: DSSpacing.md) {
+                                    documentBanners
+
+                                    if filteredDocuments.isEmpty {
+                                        emptyStateStack
+                                    } else {
+                                        documentCards
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .modifier(SwipeActionsContainerOn27())
+                )
+            } else {
+                VStack(spacing: DSSpacing.md) {
+                    takingDroppedFiles(as: .header) {
+                        documentHeader
+                    }
+
+                    libraryPicker
+
+                    takingDroppedFiles(as: .documents) {
+                        VStack(spacing: DSSpacing.md) {
+                            documentBanners
+
+                            if filteredDocuments.isEmpty {
+                                emptyStateContent
+                            } else {
+                                documentListContent
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1691,14 +1893,14 @@ struct DocumentLibraryView: View {
     /// and import review as a picked or dropped file. When the plan has no room, the copies are
     /// removed so they do not stay in the app's storage unimported.
     @MainActor
-    private func importOpenedFiles(_ staged: [URL]) {
+    private func importOpenedFiles(_ staged: [URL], into library: UUID? = nil) {
         guard !staged.isEmpty else { return }
         guard entitlementStore.canAddDocument(currentCount: ragService.documents.count) else {
             staged.forEach { try? FileManager.default.removeItem(at: $0) }
             presentPlanSheet(for: .documentLimit)
             return
         }
-        reviewAndEnqueueDocuments(staged)
+        reviewAndEnqueueDocuments(staged, into: library)
     }
 
     /// Files "Open in" handed over: the plan check first, as for any import, then the viewer. Files
@@ -1721,8 +1923,10 @@ struct DocumentLibraryView: View {
     private func finishOpenedFiles() {
         let files = openedFiles
         let add = addOpenedFiles
+        let library = openedFilesLibraryId
         openedFiles = []
         addOpenedFiles = false
+        openedFilesLibraryId = nil
         guard add else {
             ImportedFileStaging.discardViewingCopies(files)
             return
@@ -1736,41 +1940,44 @@ struct DocumentLibraryView: View {
                     "[OpenIn] \(files.count - inWorkspace.count) opened file(s) could not be copied into the library; the copies are kept",
                     category: .ingestion)
             }
-            importOpenedFiles(inWorkspace)
+            importOpenedFiles(inWorkspace, into: library)
         }
     }
 
     /// Ingests a picked document and unlocks the onboarding step once any content exists.
-    private func enqueueDocumentIngestion(_ urls: [URL]) {
+    private func enqueueDocumentIngestion(_ urls: [URL], into library: UUID? = nil) {
         guard !urls.isEmpty else { return }
         DSHaptics.drop()  // Files dropped/selected feedback
-        ragService.enqueueDocuments(urls)
+        ragService.enqueueDocuments(urls, containerId: library)
         Task { @MainActor in
             onboardingStore.markSamplesImported()
         }
     }
 
     @MainActor
-    private func reviewAndEnqueueDocuments(_ urls: [URL]) {
+    private func reviewAndEnqueueDocuments(_ urls: [URL], into library: UUID? = nil) {
         guard !urls.isEmpty else { return }
 
         let review = DocumentImportReview(urls: urls)
         if review.needsReview {
             pendingImportURLs = urls
+            pendingImportLibraryId = library
             pendingImportReview = review
             showingImportReview = true
             return
         }
 
-        enqueueDocumentIngestion(urls)
+        enqueueDocumentIngestion(urls, into: library)
     }
 
     @MainActor
     private func confirmPendingImport() {
         let urls = pendingImportURLs
+        let library = pendingImportLibraryId
         pendingImportURLs = []
+        pendingImportLibraryId = nil
         pendingImportReview = nil
-        enqueueDocumentIngestion(urls)
+        enqueueDocumentIngestion(urls, into: library)
     }
 
     @MainActor
@@ -1780,6 +1987,7 @@ struct DocumentLibraryView: View {
             try? fileManager.removeItem(at: url)
         }
         pendingImportURLs = []
+        pendingImportLibraryId = nil
     }
 
     /// Imports the curated onboarding workspace so the document list is not empty.
@@ -1954,6 +2162,8 @@ struct DocumentLibraryView: View {
                 isRefreshingSharedWorkspace = true
                 sharedWorkspaceRefreshMessage = nil
             }
+            // A deletion still in its undo seconds runs first (5.7): its documents are out of the list.
+            await ragService.commitPendingRemovals()
 
             let docsToRemove = await MainActor.run {
                 ragService.documents.filter { document in
@@ -2077,21 +2287,21 @@ struct DocumentLibraryView: View {
         var iconOnly: Bool = false
 
         var body: some View {
-            HStack(spacing: 6) {
+            HStack(spacing: DSSpacing.xs) {
                 Image(systemName: systemImage)
-                    .font(.system(size: iconOnly ? 15 : 11, weight: .bold))
+                    .scaledFont(size: iconOnly ? 15 : 11, weight: .bold)
 
                 if !iconOnly {
                     Text(title)
-                        .font(.system(size: 11, weight: .bold))
+                        .scaledFont(size: 11, weight: .bold)
                         .lineLimit(1)
                 }
             }
             // 44pt minimum touch target in icon-only form. An unreliable tap reads as a slow
             // app, so the target stays full size even though the chip looks smaller.
-            .frame(minWidth: iconOnly ? 44 : 0, minHeight: iconOnly ? 44 : 0)
-            .padding(.horizontal, iconOnly ? 0 : 12)
-            .padding(.vertical, iconOnly ? 0 : 8)
+            .frame(minWidth: iconOnly ? DSSpacing.tapTarget : 0, minHeight: iconOnly ? DSSpacing.tapTarget : 0)
+            .padding(.horizontal, iconOnly ? 0 : DSSpacing.md)
+            .padding(.vertical, iconOnly ? 0 : DSSpacing.sm)
             .background(.ultraThinMaterial)
             .foregroundStyle(isEnabled ? tint : .secondary)
             .clipShape(Capsule())
@@ -2136,22 +2346,22 @@ private struct DocumentUtilityChipLabel: View {
     var showsProgress: Bool = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DSSpacing.xs) {
             if showsProgress {
                 ProgressView()
                     .controlSize(.small)
             } else {
                 Image(systemName: systemImage)
-                    .font(.system(size: 10, weight: .semibold))
+                    .scaledFont(size: 10, weight: .semibold)
             }
 
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
                 .lineLimit(1)
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xs)
         .background(
             Capsule()
                 .fill(tint.opacity(0.1))
@@ -2274,3 +2484,33 @@ private enum DocumentImportReadiness {
         func restorePurchases() async {}
     }
 #endif
+
+/// Swipe a document to delete it, where a scroll view's rows can carry swipe actions: iOS and macOS 27, with
+/// `SwipeActionsContainerOn27` on the list (5.7).
+private struct DocumentSwipeToDelete: ViewModifier {
+    let delete: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 27.0, macOS 27.0, *) {
+            content.swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive, action: delete) {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Lets a scroll view's rows carry swipe actions, one row open at a time, the way a List's rows do
+/// (`swipeActionsContainer()`, iOS and macOS 27; developer.apple.com, read 2026-10-15).
+private struct SwipeActionsContainerOn27: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 27.0, macOS 27.0, *) {
+            content.swipeActionsContainer()
+        } else {
+            content
+        }
+    }
+}

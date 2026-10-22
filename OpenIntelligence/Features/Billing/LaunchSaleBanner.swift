@@ -16,29 +16,34 @@ struct LaunchSaleBanner: View {
     @EnvironmentObject private var entitlementStore: EntitlementStore
     @AppStorage("launchSaleBanner.dismissedWindowEnd") private var dismissedWindowEnd: Double = 0
     @State private var showPlans = false
+    /// The storefront's country, for the sale's regular price (5.7). The app reads it when it comes to the front.
+    @ObservedObject private var storefront = StorefrontTerritory.shared
 
     var body: some View {
         if let offer = currentOffer, dismissedWindowEnd != offer.endDate.timeIntervalSince1970 {
             HStack(spacing: DSSpacing.sm) {
                 Image(systemName: "tag.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.orange)
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(DSColors.warning)
                 Text("Lifetime is \(offer.percentOff)% off until \(LaunchSale.deadlineText(for: offer.endDate)). One payment, no renewal.")
                     .font(DSTypography.caption)
+                    .monospacedDigit()
                     .foregroundStyle(DSColors.primaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: DSSpacing.xs)
                 Button {
-                    withAnimation { dismissedWindowEnd = offer.endDate.timeIntervalSince1970 }
+                    withAnimation(DSAnimations.fastEase) { dismissedWindowEnd = offer.endDate.timeIntervalSince1970 }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
+                        .scaledFont(size: 12, weight: .semibold)
                         .foregroundStyle(DSColors.secondaryText)
+                        .frame(minWidth: DSSpacing.tapTarget, minHeight: DSSpacing.tapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss")
             }
-            .padding(.horizontal, DSSpacing.md)
+            .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.sm)
             .background(Color.orange.opacity(0.12))
             .contentShape(Rectangle())
@@ -55,6 +60,6 @@ struct LaunchSaleBanner: View {
     private var currentOffer: LaunchSaleOffer? {
         guard !entitlementStore.effectiveTier.isAtLeast(.pro) else { return nil }
         guard let product = entitlementStore.product(for: .lifetimeCohort) else { return nil }
-        return LaunchSale.offer(for: .lifetimeCohort, storeProduct: product)
+        return LaunchSale.offer(for: .lifetimeCohort, storeProduct: product, territory: storefront.code)
     }
 }

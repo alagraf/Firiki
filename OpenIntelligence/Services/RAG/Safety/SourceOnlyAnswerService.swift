@@ -352,28 +352,56 @@ final class SourceOnlyAnswerService {
         for warning in reviewAggregation.warnings {
             Log.warning("[SourceOnly] \(warning)", category: .llm)
         }
-        let verifiedClaims = draft.claims.map {
-            mergeClaimDraft(
-                $0,
-                review: reviewAggregation.byClaimId[normalizeClaimIdentifier($0.claimId)],
-                evidenceRecords: evidenceRecords
-            )
+        // Amounts of money and dates the evidence contradicts, read with Apple's detector (5.7, `DetectedValueCheck`).
+        let detectedEvidence = await DetectedValueCheck.evidence(
+            from: evidenceRecords.map { $0.chunk.chunk.contextText })
+        var verifiedClaims: [SourceOnlyVerifiedClaim] = []
+        for claim in draft.claims {
+            let contradiction = await DetectedValueCheck.contradictions(
+                in: claim.claimText, evidence: detectedEvidence
+            ).first
+            verifiedClaims.append(
+                mergeClaimDraft(
+                    claim,
+                    review: reviewAggregation.byClaimId[normalizeClaimIdentifier(claim.claimId)],
+                    evidenceRecords: evidenceRecords,
+                    detectedContradiction: contradiction
+                ))
         }
 
         let supportedClaims = verifiedClaims.filter { $0.isSupported }
         let unsupportedClaims = verifiedClaims.filter { !$0.isSupported }
+        // The draft's headings are not claims (5.7): they stay out of the rebuilt answer, Fact Check and the fidelity
+        // checks below, where a heading copied from the passage scored high and lifted a weak claim's average over the
+        // floor (second review, 2026-10-18). An unsupported heading still counts toward `criticalFailure`, and every
+        // claim toward the risk profile.
+        let listedClaims = Self.claimsToList(supportedClaims, candidateAnswer: candidateAnswer)
         let riskProfile = riskProfile(for: query, claims: verifiedClaims)
         let fidelityThreshold: Float = riskProfile == .high ? 0.88 : 0.78
         let criticalFailure = unsupportedClaims.contains { $0.isCritical }
-        let belowThresholdCritical = supportedClaims.contains { $0.isCritical && $0.fidelity < fidelityThreshold }
+        let belowThresholdCritical = listedClaims.contains { $0.isCritical && $0.fidelity < fidelityThreshold }
         let shouldAbstain = draft.shouldAbstain
             || supportedClaims.isEmpty
             || criticalFailure
             || belowThresholdCritical
 
+        // When every supported claim is one of the draft's headings, the answer rebuilt from them was only its title,
+        // which replaced the generated answer through 5.6. The check declines instead, as it does for a draft with no
+        // claims, and the generated answer stands (second review, 2026-10-18).
+        let draftHeadings = VerificationGateService.headingLines(in: candidateAnswer)
+        if !shouldAbstain, !listedClaims.isEmpty,
+            listedClaims.allSatisfy({
+                draftHeadings.contains(VerificationGateService.headingKey($0.claimText))
+                    && !VerificationGateService.makesStatement($0.claimText)
+            })
+        {
+            Log.info("[SourceOnly] Every supported claim is a heading of the draft; keeping the generated answer", category: .llm)
+            return nil
+        }
+
         let fidelityScore: Float = shouldAbstain
             ? 0.0
-            : (supportedClaims.isEmpty ? 0.0 : supportedClaims.map(\.fidelity).reduce(0, +) / Float(supportedClaims.count))
+            : (listedClaims.isEmpty ? 0.0 : listedClaims.map(\.fidelity).reduce(0, +) / Float(listedClaims.count))
 
         let abstentionReason: String?
         if shouldAbstain {
@@ -393,7 +421,7 @@ final class SourceOnlyAnswerService {
         let finalAnswer = shouldAbstain
             ? "⚠️ **[Needs Verification]** This answer was drafted but could not be strictly verified against the retrieved evidence:\n\n\(candidateAnswer)\n\n*(Reason: \(abstentionReason ?? "Insufficient evidence"))*"
             : renderVerifiedAnswer(
-                supportedClaims: supportedClaims,
+                supportedClaims: listedClaims,
                 missingFacets: draft.missingFacets,
                 evidenceRecords: evidenceRecords,
                 answerIntent: answerIntent,
@@ -404,7 +432,7 @@ final class SourceOnlyAnswerService {
             finalAnswer: finalAnswer,
             answerIntent: answerIntent,
             evidenceRecords: evidenceRecords,
-            supportedClaims: supportedClaims,
+            supportedClaims: listedClaims,
             unsupportedClaims: unsupportedClaims,
             missingFacets: draft.missingFacets,
             verificationResult: verificationResult,
@@ -473,7 +501,7 @@ final class SourceOnlyAnswerService {
         snippetLimit: Int = SourceOnlyAnswerService.maxSnippetChars
     ) -> [EvidenceRecord] {
         Array(chunks.prefix(Self.maxEvidenceRecords)).enumerated().map { index, chunk in
-            let snippet = String((chunk.chunk.parentContent ?? chunk.chunk.content)
+            let snippet = String(chunk.chunk.contextText
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .prefix(max(1, snippetLimit)))
             return EvidenceRecord(
@@ -623,7 +651,8 @@ final class SourceOnlyAnswerService {
     private func mergeClaimDraft(
         _ draft: SourceOnlyClaimDraft,
         review: SourceOnlyClaimReview?,
-        evidenceRecords: [EvidenceRecord]
+        evidenceRecords: [EvidenceRecord],
+        detectedContradiction: DetectedValueCheck.Contradiction? = nil
     ) -> SourceOnlyVerifiedClaim {
         let mappedEvidence = Dictionary(uniqueKeysWithValues: evidenceRecords.map { ($0.label, $0) })
         let rawLabels = review?.evidenceLabels.isEmpty == false ? review?.evidenceLabels ?? [] : draft.evidenceLabels
@@ -639,7 +668,7 @@ final class SourceOnlyAnswerService {
             notes.append(note)
         }
 
-        let citedTexts = validLabels.compactMap { mappedEvidence[$0]?.chunk.chunk.parentContent ?? mappedEvidence[$0]?.chunk.chunk.content }
+        let citedTexts = validLabels.compactMap { mappedEvidence[$0]?.chunk.chunk.contextText }
         let combinedEvidenceText = citedTexts.joined(separator: "\n")
         if validLabels.isEmpty {
             verdict = .unsupported
@@ -676,6 +705,14 @@ final class SourceOnlyAnswerService {
             verdict = .unsupported
             fidelity = min(fidelity, 0.2)
             notes.append("A figure is not stated in the cited evidence as a value: \(unstated.written).")
+        }
+
+        // An amount the evidence states only in another currency, or another day of a month it gives (5.7,
+        // `DetectedValueCheck`).
+        if let contradiction = detectedContradiction {
+            verdict = .unsupported
+            fidelity = min(fidelity, 0.2)
+            notes.append("The evidence states \(contradiction.stated), not \(contradiction.written).")
         }
 
         let exactClaimHasHardAnchor = !numericTokens.isEmpty
@@ -775,7 +812,7 @@ final class SourceOnlyAnswerService {
 
         let scored = claim.evidenceLabels.compactMap { label -> (label: String, score: Float)? in
             guard let record = evidenceMap[label] else { return nil }
-            let candidateText = record.chunk.chunk.parentContent ?? record.chunk.chunk.content
+            let candidateText = record.chunk.chunk.contextText
             let overlap = lexicalOverlap(claim: claimText, evidenceTexts: [candidateText])
             let normalizedClaim = normalize(claimText)
             let normalizedEvidence = normalize(candidateText)
@@ -831,6 +868,23 @@ final class SourceOnlyAnswerService {
         }
 
         return true
+    }
+
+    /// The supported claims the rebuilt answer is written from and Fact Check lists (5.7): not the draft's own
+    /// headings, as in `StructuredAnswer`, unless every supported claim is one. A supported heading was listed in Fact
+    /// Check and written into the rebuilt answer as a sentence ("Notice to Enter. [S1]"). The headings come from the
+    /// model's draft, because the rebuilt answer has none (review, 2026-10-18). A claim that states something stays even
+    /// when it matches a heading (`VerificationGateService.makesStatement`): every claim here is supported, so keeping
+    /// a title costs a sentence, and leaving out a statement costs what it said (fourth review, 2026-10-18).
+    static func claimsToList(
+        _ supportedClaims: [SourceOnlyVerifiedClaim], candidateAnswer: String
+    ) -> [SourceOnlyVerifiedClaim] {
+        let headings = VerificationGateService.headingLines(in: candidateAnswer)
+        let kept = supportedClaims.filter {
+            !headings.contains(VerificationGateService.headingKey($0.claimText))
+                || VerificationGateService.makesStatement($0.claimText)
+        }
+        return kept.isEmpty ? supportedClaims : kept
     }
 
     private func buildStructuredAnswer(

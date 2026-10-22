@@ -96,9 +96,90 @@ public enum DSColors {
     public static var primaryText: Color {
         Color.primary
     }
+    /// Secondary text that meets the 4.5:1 contrast Apple asks for on text (5.7): `systemGray` as iOS draws it with
+    /// Increase Contrast on, in light and dark (on the Mac, see `readable(platform:)`). `Color.secondary` measures
+    /// about 3.4:1 on white, and Apple's
+    /// accessibility audit called the small gray text on Chat, Documents and Settings "nearly passed" or "failed"
+    /// (2026-10-15, `BenchmarkRuns/2026-10-15-accessibility-audit-xray-off/`). Apple's criterion: "Sufficient
+    /// Contrast evaluation criteria", developer.apple.com, read 2026-10-16.
     public static var secondaryText: Color {
-        Color.secondary
+        #if canImport(UIKit)
+        return readable(platform: .systemGray)
+        #elseif canImport(AppKit)
+        return readable(platform: .systemGray)
+        #else
+        return Color.secondary
+        #endif
     }
+
+    /// A color as the system draws it with Increase Contrast on, in the current light or dark appearance (5.7):
+    /// Apple's own accessible variant on iOS, for colored text that has to meet 4.5:1, such as an orange warning.
+    /// On iOS 27 the high-contrast blue draws as (30, 110, 244): 4.57 to 1 on white, about 3.7 on a pale tint of
+    /// itself, which is why text on tinted chips uses the label color instead (2026-10-16).
+    public static func readable(_ color: Color) -> Color {
+        #if canImport(UIKit)
+        return readable(platform: UIColor(color))
+        #elseif canImport(AppKit)
+        return readable(platform: NSColor(color))
+        #else
+        return color
+        #endif
+    }
+
+    #if canImport(UIKit)
+    /// `readable(_:)` for a UIKit color, resolved with the high-contrast trait added to the view's own traits.
+    public static func readable(platform color: UIColor) -> Color {
+        Color(
+            UIColor { traits in
+                color.resolvedColor(with: traits.modifyingTraits { $0.accessibilityContrast = .high })
+            })
+    }
+    #elseif canImport(AppKit)
+    /// `readable(_:)` for an AppKit color. AppKit has no way to draw a color as Increase Contrast would:
+    /// `NSAppearance(named:)` returns nil for the high-contrast names ("Passing any of them to appearanceNamed: will
+    /// return NULL", NSAppearance.h in the macOS 27 SDK). So the color is resolved in the current appearance and
+    /// blended toward black in light or white in dark, in steps of 5%, until it reaches 4.5 to 1 against the window
+    /// background (#ECECEC in light, #323232 in dark). A color that already reaches it is returned as it is.
+    public static func readable(platform color: NSColor) -> Color {
+        Color(
+            NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                var resolved = color
+                appearance.performAsCurrentDrawingAppearance {
+                    resolved = color.usingColorSpace(.sRGB) ?? color
+                }
+                return legible(resolved, isDark: isDark)
+            })
+    }
+
+    /// The first blend of `color` toward black (light) or white (dark) that reaches 4.5 to 1 against the window
+    /// background.
+    static func legible(_ color: NSColor, isDark: Bool) -> NSColor {
+        let target = isDark ? NSColor.white : NSColor.black
+        // Relative luminance of #323232 and #ECECEC.
+        let background = isDark ? 0.0319 : 0.8388
+        var candidate = color
+        for step in 0...20 {
+            candidate = color.blended(withFraction: Double(step) / 20, of: target) ?? color
+            let luminance = relativeLuminance(candidate)
+            if (max(luminance, background) + 0.05) / (min(luminance, background) + 0.05) >= 4.5 {
+                return candidate
+            }
+        }
+        return candidate
+    }
+
+    /// WCAG relative luminance of a color in sRGB.
+    static func relativeLuminance(_ color: NSColor) -> Double {
+        guard let srgb = color.usingColorSpace(.sRGB) else { return 0 }
+        func channel(_ value: CGFloat) -> Double {
+            let v = Double(value)
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(srgb.redComponent) + 0.7152 * channel(srgb.greenComponent)
+            + 0.0722 * channel(srgb.blueComponent)
+    }
+    #endif
 
     // Accents
     public static var accent: Color {
@@ -148,6 +229,38 @@ public enum DSTypography {
     public static var code: Font { .system(.caption, design: .monospaced) }
 }
 
+/// A system font at a fixed design size that follows the text size on iPhone and iPad (5.7).
+///
+/// For text drawn at a point size of its own (the answer, its Fact Check, chat metadata), which Apple's audit read as
+/// "Dynamic Type font sizes are unsupported": `size` is what it draws at the default text size, and `@ScaledMetric`
+/// scales it with the setting relative to `relativeTo`, up and down. The Mac has no Dynamic Type, so there it stays
+/// `size`; a text style would have made it smaller there (the Mac's footnote is 10 points, its body 13).
+private struct ScaledSystemFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    private let weight: Font.Weight
+    private let design: Font.Design
+
+    init(size: CGFloat, weight: Font.Weight, design: Font.Design, relativeTo textStyle: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: textStyle)
+        self.weight = weight
+        self.design = design
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight, design: design))
+    }
+}
+
+public extension View {
+    /// `size` points at the default text size, scaled with Dynamic Type on iPhone and iPad (see `ScaledSystemFont`).
+    func scaledFont(
+        size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default,
+        relativeTo textStyle: Font.TextStyle = .body
+    ) -> some View {
+        modifier(ScaledSystemFont(size: size, weight: weight, design: design, relativeTo: textStyle))
+    }
+}
+
 // MARK: - Spacing
 
 /// A 4-point grid, matching the values the app actually reaches for.
@@ -166,6 +279,16 @@ public enum DSSpacing {
     public static let lg: CGFloat = 16
     public static let xl: CGFloat = 24
     public static let xxl: CGFloat = 32
+    /// What a control takes to tap: 44 by 44 points on iPhone and iPad, Apple's default control size there (Human
+    /// Interface Guidelines, Accessibility, read 2026-10-15). The Mac is clicked with a pointer and keeps 28, the size
+    /// the import panel's circles are drawn at (5.7).
+    public static let tapTarget: CGFloat = {
+#if os(macOS)
+        28
+#else
+        44
+#endif
+    }()
 }
 
 // MARK: - Corners
@@ -317,6 +440,10 @@ public extension View {
     }
 
     /// Apply Liquid Glass pill styling for iOS 26+
+    ///
+    /// Its `if`s return a different view for each state. Never use it on a row of a `reorderable()` `ForEach`: its
+    /// branch then holds all of the row's content, even with other modifiers after it, and dragging the row stops the
+    /// app on iOS 27.0 (`ContainerPill`, 2026-10-19). Apply `glassEffect` once with the glass picked by value there.
     @ViewBuilder
     func glassEffectHelper(isSelected: Bool = false, tintColor: Color = .accentColor, interactive: Bool = true) -> some View {
         if #available(iOS 26.0, *) {

@@ -145,6 +145,19 @@ enum GlossaryTermID: String, CaseIterable, Identifiable, Sendable {
 // MARK: - Definitions
 
 extension GlossaryTermID {
+    /// The window Apple's on-device model reports on this device (5.7). Through 5.6 the Glossary said 4,096 tokens
+    /// for every device, the figure in Apple's documentation, while a Mac on macOS 27 reports 8,192 (measured
+    /// 2026-10-05 on an M3 Pro, `SystemLanguageModel.default.contextSize`, and a longer prompt was refused).
+    fileprivate static var onDeviceWindow: String {
+        if let size = FoundationModelTokenBudget.reportedOnDeviceContextSize {
+            return "\(size.formatted(.number)) tokens on this device"
+        }
+        return "a size the device reports, and none here, where Apple's model isn't available"
+    }
+
+    /// Where the figures come from, for the technical register.
+    fileprivate static let documentedWindows = "Apple documents 4,096 tokens (TN3193); an iPhone 16 Pro Max on iOS 27 reports 4,096 and a Mac (M3 Pro) on macOS 27 8,192."
+
     var definition: GlossaryTerm {
         switch self {
 
@@ -208,7 +221,7 @@ extension GlossaryTermID {
                 // providers by `settings.defaultEmbeddingProvider` — 384D (MiniLM-L6-v2, the
                 // default), 512D (NLContextual or NLEmbedding), or 1024D (Apple FM) — so a fixed
                 // number here was accurate for one configuration and wrong for the other three.
-                technical: "384 dimensions per passage by default, from MiniLM-L6-v2 through Core ML or Core AI. The app also supports three other embedding providers at 512 or 1024 dimensions, and which one is active for a given library is shown under Settings → About. Retrieval compares your question's vector against stored passage vectors by cosine similarity, which is the semantic half of the search regardless of which provider produced them.",
+                technical: "384 dimensions per passage by default, from MiniLM-L6-v2 through Core ML or Core AI. The app also supports three other embedding providers at 512 or 1024 dimensions, Settings → About shows the default for a new library, and each library's Library Settings shows its own. Retrieval compares your question's vector against stored passage vectors by cosine similarity, which is the semantic half of the search regardless of which provider produced them.",
                 seeAlso: [.chunk, .hybridSearch, .neuralEngine],
                 synonyms: ["embedding", "embeddings", "vectors", "semantic", "dimension"]
             )
@@ -383,8 +396,8 @@ extension GlossaryTermID {
                 term: "GPU profile",
                 icon: "gauge.with.needle",
                 section: .hardware,
-                plain: "How hard the app is allowed to push the graphics cores. Higher settings import faster and use more battery. There is also a per-device ceiling it will not cross, because going past it caused crashes.",
-                technical: "Four discrete profiles rather than a percentage, because Apple's frameworks keep final hardware scheduling control and a percentage would imply precision the app cannot deliver. `maxSafeGPUAccelerationLevel` clamps the request per form factor and tier.",
+                plain: "Which parts of the chip the app's own work may use: its embedding model, searches of a large library, and an extra cleanup pass over scanned PDF pages. Settings, Device & Performance, lists what each profile changes on your device. Apple's frameworks make the final choice. A higher profile isn't automatically faster.",
+                technical: "Four discrete profiles rather than a percentage, because Apple's frameworks keep final hardware scheduling control and a percentage would imply precision the app cannot deliver. `GPUExecutionProfile.engagement` builds the Settings list from the rules the app runs. `maxSafeGPUAccelerationLevel` is the device's ceiling; with `BackgroundGPUAllowance` it decides which profiles let an import keep the GPU in the background. The per-device batch sizes and embedding concurrency were lowered after Metal command-buffer crashes (`DeviceCapabilityService`). On an M3 Pro Mac the app's Metal search was slower than Accelerate's `vDSP_mmul` at every size measured (2026-10-19), which is why Balanced, which keeps search on the CPU, is the default. Answers from Apple's model work the same way in every profile.",
                 seeAlso: [.unifiedMemory, .chip, .neuralEngine],
                 synonyms: ["gpu", "metal", "acceleration", "efficiency", "performance", "maximum"]
             )
@@ -398,7 +411,7 @@ extension GlossaryTermID {
                 icon: "text.bubble",
                 section: .answering,
                 plain: "The part that turns found passages into sentences. Everything before it is search. It sees your question and the passages the search returned, and nothing else from your library.",
-                technical: "Apple's on-device Foundation Model by default, through the FoundationModels framework. Every session it runs is capped at 4,096 tokens, which is why what retrieval selects matters more than the size of the model.",
+                technical: "Apple's on-device Foundation Model by default, through the FoundationModels framework. Each session has a fixed window (\(Self.onDeviceWindow)), which is why what retrieval selects matters more than the size of the model.",
                 seeAlso: [.rag, .contextWindow, .token, .temperature],
                 synonyms: ["llm", "model", "foundation model", "apple intelligence", "generation"]
             )
@@ -409,12 +422,12 @@ extension GlossaryTermID {
                 term: "Token",
                 icon: "number",
                 section: .answering,
-                plain: "The unit a language model reads and writes in, roughly three quarters of a word. It matters because a model can only hold so many at a time, so a limit of 4,096 is a real ceiling on how much can be considered at once.",
+                plain: "The unit a language model reads and writes in, roughly three quarters of a word. It matters because a model can only hold so many at a time, and that ceiling (\(Self.onDeviceWindow)) limits how much can be considered at once.",
                 technical: DeviceCapabilities.pccRoutingCompiledIn
-                    ? "Apple's on-device model caps a session at 4,096 tokens (Apple TN3193); Private Cloud Compute reports its own window at runtime and Settings shows the live figure. Either budget covers the instructions, the retrieved passages, your question and the answer together."
-                    : "Apple's on-device model caps a session at 4,096 tokens (Apple TN3193). That single budget covers the instructions, the retrieved passages, your question and the answer together.",
+                    ? "Apple's on-device model holds a fixed number of tokens per session: \(Self.onDeviceWindow). \(Self.documentedWindows) Private Cloud Compute reports its own window at runtime and Settings shows the live figure. Either budget covers the instructions, the retrieved passages, your question and the answer together."
+                    : "Apple's on-device model holds a fixed number of tokens per session: \(Self.onDeviceWindow). \(Self.documentedWindows) That one budget covers the instructions, the retrieved passages, your question and the answer together.",
                 seeAlso: [.contextWindow, .languageModel],
-                synonyms: ["tokens", "4096", "budget", "limit"]
+                synonyms: ["tokens", "4096", "8192", "budget", "limit"]
             )
 
         case .contextWindow:
@@ -425,10 +438,10 @@ extension GlossaryTermID {
                 section: .answering,
                 plain: "The most a model can hold in mind at once: instructions, the passages found in your files, your question and its answer, all sharing the same space. When a question needs more than fits, something has to be left out, which is why finding the right passages matters more than having a bigger model.",
                 technical: DeviceCapabilities.pccRoutingCompiledIn
-                    ? "4,096 tokens on the device (Apple TN3193); Private Cloud Compute reports its own window at runtime. `ContextPackingService` selects and truncates retrieved passages to fit the active budget before generation begins."
-                    : "Fixed at 4,096 tokens on the device (Apple TN3193). `ContextPackingService` selects and truncates retrieved passages to fit that budget before generation begins.",
+                    ? "A fixed size per session: \(Self.onDeviceWindow). \(Self.documentedWindows) Private Cloud Compute reports its own window at runtime. Retrieved passages are selected and trimmed to fit the active window before generation begins."
+                    : "A fixed size per session: \(Self.onDeviceWindow). \(Self.documentedWindows) Retrieved passages are selected and trimmed to fit it before generation begins.",
                 seeAlso: [.token, .languageModel, .privateCloudCompute],
-                synonyms: ["context", "window", "context length", "4096", "packing"]
+                synonyms: ["context", "window", "context length", "4096", "8192", "packing"]
             )
 
         case .onDevice:
@@ -442,7 +455,7 @@ extension GlossaryTermID {
                 // path, iCloud sync for libraries you deliberately share, and an
                 // unqualified "nothing uses the network" would be false for it. This is the
                 // same framing `HowItWorksView` uses, verified 2026-08-10.
-                technical: "Reading, splitting, embedding, indexing, retrieval and ranking have no network path. The only outbound call in the answer path is Private Cloud Compute, gated on per-request consent. Sharing a library through iCloud is separate, opt in, and not part of answering a question.",
+                technical: "Reading, splitting, embedding, indexing, retrieval and ranking have no network path. The only outbound call in the answer path is Private Cloud Compute, gated on your permission. Sharing a library through iCloud is separate, opt in, and not part of answering a question.",
                 seeAlso: [.privateCloudCompute, .routing, .index, .languageModel],
                 synonyms: ["local", "offline", "private", "no server", "no upload", "airplane mode"]
             )
@@ -453,7 +466,7 @@ extension GlossaryTermID {
                 term: "Private Cloud Compute",
                 icon: "cloud",
                 section: .answering,
-                plain: (DeviceCapabilities.pccRoutingCompiledIn ? "" : "Not in this version: support is built and arrives with iOS and macOS 27; every answer is written on this device. When it is on: ") + "Apple's servers, for the one case where a question needs more room than this device's model has. It is used for the writing step only, one request at a time, and only after you approve that request. Your files are not uploaded. The passages the answer needs are.",
+                plain: (DeviceCapabilities.pccRoutingCompiledIn ? "" : "Not in this version: support is built and arrives with iOS and macOS 27; every answer is written on this device. When it is on: ") + "Apple's servers. They can write an answer too big for this device, a Deep Think or Maximum answer from more than one document, or every answer if you pick them in the model picker. Only the writing step, and only with your permission, unless you allowed it without asking. Your files aren't uploaded; the passages the answer needs are.",
                 technical: "`CloudEvidenceMinimizer` bounds the payload to a selected set of source IDs, names, page numbers and passage text. The consent sheet shows the provider, the model, prompt size, context size, chunk count and total estimated bytes before anything leaves. Setting routing to On-Device means this path is never taken.",
                 seeAlso: [.onDevice, .routing, .contextWindow, .languageModel],
                 synonyms: ["pcc", "cloud", "apple", "consent", "routing", "escalate"]
@@ -490,7 +503,7 @@ extension GlossaryTermID {
                 icon: "arrow.triangle.2.circlepath",
                 section: .answering,
                 plain: "The app grading its own draft before showing it to you, and trying again if it doesn't hold up. Deep Think and Maximum can retrieve, write, check what they wrote against the evidence, and search again several times rather than answering on the first attempt.",
-                technical: "An agentic loop bounded by a session count and a confidence threshold set from device capability, not a fixed number. Each pass can retrieve more evidence, rewrite the query, or accept the draft; `AgenticPolicyService.verificationAction` decides accept, retry, or abstain after every pass.",
+                technical: "An agentic loop bounded by a session count and a confidence threshold. Deep Think's chain stops at 8 sessions on every device and Maximum's at 50, and research rounds can follow Deep Think's chain; the confidence Deep Think aims for is set by the device's tier, from 85% to 95%. Each pass can retrieve more evidence, rewrite the query, or accept the draft; `AgenticPolicyService.verificationAction` decides to accept, retry or escalate once the chain has run.",
                 seeAlso: [.qualityMode, .verificationGates, .confidence],
                 synonyms: ["agentic", "agentic orchestrator", "self-rag", "iterative retrieval", "agentic loop"]
             )
@@ -502,7 +515,7 @@ extension GlossaryTermID {
                 icon: "signpost.right.and.left",
                 section: .answering,
                 plain: DeviceCapabilities.pccRoutingCompiledIn
-                    ? "The decision behind every answer about where it gets written: on this device, or on Apple's Private Cloud Compute, only after you approve it. You can pin it to always stay on-device in Settings."
+                    ? "The decision behind every answer about where it gets written: on this device, or on Apple's Private Cloud Compute, only with your permission. You can pin it to always stay on-device in Settings."
                     : "The decision behind every answer about where it gets written. In this version the answer is always on this device; Private Cloud Compute is built and arrives with iOS and macOS 27, and the picker already lets you pin routing to On-Device for then.",
                 technical: "On-Device, Private Cloud Compute, and Hybrid (decided per query from the evidence actually retrieved) are the three routes most people see. Setting routing to On-Device removes Private Cloud Compute as an option entirely rather than merely preferring the other path.",
                 seeAlso: [.onDevice, .privateCloudCompute],

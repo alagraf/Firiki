@@ -56,7 +56,7 @@ enum SamplePCCCopy {
 
     /// Product Guide, "What makes OpenIntelligence different", point 3.
     static let productGuideBullet: String = compiledIn
-        ? "**It runs on your device, and asks before it ever leaves.** Reading, indexing, searching and answering happen on Apple silicon, and the app works with no connection at all. On iOS, iPadOS and macOS 27, a question too large for the on-device model can be written on Apple's Private Cloud Compute, but only after a sheet shows you how much would be sent and why, and you approve it. The guide \"Apple Intelligence and Private Cloud Compute\" in this library explains it."
+        ? "**It runs on your device, and asks before it ever leaves.** Reading, indexing, searching and answering happen on Apple silicon, and the app works with no connection at all. On iOS, iPadOS and macOS 27, an answer too large for the on-device model, or a Deep Think or Maximum answer from more than one document, can be written on Apple's Private Cloud Compute (every answer, if you pick it in the model picker), but only with your permission: by default a sheet shows you how much would be sent and why, and you approve it. The guide \"Apple Intelligence and Private Cloud Compute\" in this library explains it."
         : "**It runs on your device.** Reading, indexing, searching and answering all happen on Apple silicon. In this version every answer is produced on-device, and the app works with no connection at all. Support for Apple's Private Cloud Compute is built into the app and arrives with iOS and macOS 27; the guide \"Apple Intelligence and Private Cloud Compute\" in this library explains what that will add."
 
     /// Product Guide, "Reading an answer", metrics bar bullet fragment.
@@ -66,7 +66,7 @@ enum SamplePCCCopy {
 
     /// Architecture guide, "Where the work runs", second bullet and the paragraph after it.
     static let architectureStatus: String = compiledIn
-        ? "- **Private Cloud Compute** is Apple's server-side inference on Apple silicon servers, with no data retention and no access for the developer. This build includes it, on iOS, iPadOS and macOS 27. It is used for one step only, writing the answer, and only when the packed evidence will not fit the on-device window. Measured on an iPhone with the A18 Pro: roughly 86 tokens per second from Private Cloud Compute with 2.2 to 2.5 seconds to first token.\n\nNothing is sent without asking. A consent sheet shows the request that would leave the device and its estimated size, and offers Always Allow or Just Once. Pin routing to On-Device in Settings and the sheet never appears. The metrics bar under every answer names the route it actually took."
+        ? "- **Private Cloud Compute** is Apple's server-side inference on Apple silicon servers, with no data retention and no access for the developer. This build includes it, on iOS, iPadOS and macOS 27. It is used for one step only, writing the answer, and only when the packed evidence will not fit the on-device window, or for a Deep Think or Maximum answer drawn from more than one document, or for every answer when it is picked in the model picker. Measured on an iPhone with the A18 Pro: roughly 86 tokens per second from Private Cloud Compute with 2.2 to 2.5 seconds to first token.\n\nNothing is sent without your permission. By default a consent sheet shows the request that would leave the device and its estimated size, and offers Always Allow or Just Once; after Always Allow, later answers are sent without asking. Pin routing to On-Device in Settings and the sheet never appears. The metrics bar under every answer names the route it actually took."
         : "- **Private Cloud Compute** is Apple's server-side inference on Apple silicon servers, with no data retention and no access for the developer. Support for it is built into this app and is compiled out of App Store builds by the toolchain those builds use, so nothing escalates today and every answer is produced on this device. It arrives with iOS and macOS 27. On a local build with that toolchain, the same iPhone measured roughly 86 tokens per second from Private Cloud Compute with 2.2 to 2.5 seconds to first token. That measurement is real, and it was taken on a build that is not the one you are running.\n\nWhen Private Cloud Compute is enabled, nothing is sent without asking. A consent sheet shows the request that would leave the device and its estimated size, and offers Always Allow or Just Once. The metrics bar under every answer names the route it actually took."
 
     /// PCC guide, "What stays on the device?" heading line.
@@ -81,7 +81,7 @@ enum SamplePCCCopy {
 
     /// PCC guide, the section that used to be "When does Private Cloud Compute arrive?".
     static let availabilitySection: String = compiledIn
-        ? "## When is Private Cloud Compute used?\n\n**Only when you allow it, and only for the writing step.** On iOS, iPadOS and macOS 27 this build can route a request there when the packed evidence will not fit the on-device model:\n\n- **Nothing is sent without asking.** A consent sheet appears before anything leaves the device, showing the request that would be sent and its estimated size, with Always Allow and Just Once.\n- **You can switch it off.** Pin routing to On-Device in Settings and every answer stays here; the sheet never appears.\n- **Every answer names its route.** Expand the metrics bar to see whether it ran on the device or on Private Cloud Compute.\n- **It is fast.** Measured on an iPhone with the A18 Pro, roughly 86 tokens per second from Private Cloud Compute, against 27 on the device.\n\nOn a system older than 27, every answer is produced on this device and the metrics bar says so."
+        ? "## When is Private Cloud Compute used?\n\n**Only when you allow it, and only for the writing step.** On iOS, iPadOS and macOS 27 this build can route a request there when the packed evidence will not fit the on-device model, and for a Deep Think or Maximum answer drawn from more than one document, and for every answer when you pick it in the model picker:\n\n- **Nothing is sent without your permission.** By default a consent sheet appears before anything leaves the device, showing the request that would be sent and its estimated size, with Always Allow and Just Once. After Always Allow, later answers are sent without asking.\n- **You can switch it off.** Pin routing to On-Device in Settings and every answer stays here; the sheet never appears.\n- **Every answer names its route.** Expand the metrics bar to see whether it ran on the device or on Private Cloud Compute.\n- **It is fast.** Measured on an iPhone with the A18 Pro, roughly 86 tokens per second from Private Cloud Compute, against 27 on the device.\n\nOn a system older than 27, every answer is produced on this device and the metrics bar says so."
         : "## When does Private Cloud Compute arrive?\n\n**Not in this build.** Support is built into the app and is compiled out of App Store builds by the toolchain they use, so every answer today is produced on this device, and the metrics bar under each answer will say so. It arrives with iOS and macOS 27.\n\nWhen it is enabled, this is what changes:\n\n- **Nothing is sent without asking.** A consent sheet appears before anything leaves the device, showing the request that would be sent and its estimated size, with Always Allow and Just Once.\n- **Routing becomes a choice the app can make** for questions that need more than the device can give: complex multi-step reasoning across several files, synthesis that exceeds the on-device token budget, or Deep Think and Maximum runs with heavy context.\n- **Every answer still names its route.** Expand the metrics bar to see whether it ran on the device or on Private Cloud Compute.\n- **It is fast.** Measured on a local build with the iOS 27 toolchain, an iPhone with the A18 Pro received roughly 86 tokens per second from Private Cloud Compute, against 27 on the device."
 
     /// PCC guide, privacy summary lines two and three.
@@ -136,7 +136,7 @@ If a file is messy, scanned, or in a legacy format, exporting it to PDF usually 
 ## How to add documents
 
 - **The Add Documents button** opens the system file picker. You can select several files at once.
-- **On the Mac, drag files from Finder** anywhere onto the library. Dropped files go through the same size and plan checks as picked ones. Folders are not accepted yet; drop the files from inside them.
+- **On the Mac, drag files or a folder from Finder** onto the Documents screen, anywhere but the row of libraries. A folder brings in the files inside it that the app can read, from the folders inside it too. Dropped files go through the same size and plan checks as picked ones.
 - **In a chat,** the attachment button adds a file to the current library and to the conversation.
 
 ---
@@ -190,7 +190,7 @@ It is weakest on questions your library says nothing about. When the evidence is
 - **Source cards** under the answer open the passages it was built from.
 - **The metrics bar** expands to show \#(SamplePCCCopy.routeFragment), the token budget it used against the model's window, the execution steps that ran, and the passages that were retrieved.
 - **Response details** list each claim in the answer with its verification verdict.
-- **The Silicon HUD** is a small floating readout of live CPU, GPU and Neural Engine activity. It is on by default, can be turned off in Settings under Appearance, and can be dragged anywhere. It sits over the place on the board where that silicon physically is.
+- **The Silicon HUD** is a small floating readout of the work on the CPU, GPU and Neural Engine. The CPU figure is measured from the system; the GPU and Neural Engine figures show the work the app has started, because Apple doesn't report their load. It is off on a new install, is switched on in Settings under Appearance, and can be dragged anywhere. It sits over the place on the board where that silicon physically is.
 
 ---
 
@@ -227,14 +227,14 @@ The model is the same in every plan: Apple Intelligence on your device, Deep Thi
 
 Every stage of OpenIntelligence runs on your device: parsing, text recognition, chunking, embedding, indexing, retrieval, re-ranking, packing, generation and verification.
 
-- **Answer generation** uses Apple's on-device Foundation Model through the FoundationModels framework. Measured on an iPhone with the A18 Pro: roughly 27 tokens per second, with 2.2 to 3.2 seconds before the first token appears. The app asks the system for the model's real context window rather than assuming one. On current hardware that window is 4,096 tokens, which is the figure the rest of this document uses.
+- **Answer generation** uses Apple's on-device Foundation Model through the FoundationModels framework. Measured on an iPhone with the A18 Pro: roughly 27 tokens per second, with 2.2 to 3.2 seconds before the first token appears. The app asks the system for the model's context window rather than assuming one, because it differs by device: Apple documents 4,096 tokens, and a Mac on macOS 27 reports 8,192.
 \#(SamplePCCCopy.architectureStatus)
 
 ---
 
 ## Why retrieval matters
 
-Paste an entire manual into a 4,096-token window and three things happen: most of it does not fit, what does fit buries the sentence that matters, and the answer degrades. Retrieval-augmented generation solves this by finding the handful of passages that answer the question and giving the model only those. A precise retriever beats a bigger model for this job.
+Paste an entire manual into a window of 4,096 or 8,192 tokens and three things happen: most of it does not fit, what does fit buries the sentence that matters, and the answer degrades. Retrieval-augmented generation solves this by finding the handful of passages that answer the question and giving the model only those. A precise retriever beats a bigger model for this job.
 
 ---
 
@@ -250,7 +250,7 @@ Text is split into passages along headings and natural boundaries, and every pas
 Each passage becomes a semantic vector using the all-MiniLM-L6-v2 sentence model. A new library on iPhone and iPad runs it through Core ML, which schedules it on the Neural Engine where the device has one. A new library on a Mac with macOS 27 runs it through Apple's Core AI framework, on the GPU. Query embeddings use the same model.
 
 ### 4. Store
-Vectors live in a memory-mapped file. Similarity search runs through Accelerate's vDSP routines on the CPU for libraries under 1,000 passages, and switches to a Metal compute shader for cosine similarity across larger libraries. The keyword index is SQLite FTS5.
+Vectors live in a memory-mapped file. Similarity search runs through Accelerate's vDSP routines on the CPU. With the GPU setting on Performance or Maximum, a library of 1,000 passages or more is searched with a Metal compute shader on the GPU instead. The keyword index is SQLite FTS5.
 
 ### 5. Hybrid search
 The vector search and the BM25 keyword search run independently on every question and are merged by reciprocal rank fusion, so a passage that only one of them found still gets a fair score. Identifiers, part numbers and exact phrases come through the keyword arm; paraphrases come through the vector arm.
@@ -259,7 +259,7 @@ The vector search and the BM25 keyword search run independently on every questio
 The merged candidates are re-scored by a cross-encoder, the ms-marco-TinyBERT-L2-v2 model run through Core ML, which reads the question and each passage together rather than comparing two vectors. Maximal marginal relevance then removes near-duplicates so the evidence covers more of the document instead of repeating one paragraph.
 
 ### 7. Pack
-The top passages are selected and trimmed to fit the 4,096-token budget alongside the instructions, the question and room for the answer.
+The top passages are selected and trimmed to fit the device's window alongside the instructions, the question and room for the answer.
 
 ### 8. Generate and verify
 The answer is generated from the packed evidence. Verification gates then check the answer's claims against the passages, and each claim's verdict is shown in the response details. Every mode runs the gates; the modes differ in how strict the confidence bar is.
@@ -282,7 +282,7 @@ Two surfaces show what happened, and they are easy to confuse.
 
 **Under each answer** is the metrics bar. Expand it for the route the query took, the token budget it used against the active window, the execution steps that ran, and the passages it retrieved. Response details list every claim with its verification verdict.
 
-**The Silicon HUD** is the small floating readout of live CPU, GPU and Neural Engine activity. It is on by default, can be switched off in Settings under Appearance, and can be dragged anywhere. It sits over the place on the board where that silicon physically is.
+**The Silicon HUD** is the small floating readout of the work on the CPU, GPU and Neural Engine. The CPU figure is measured from the system; the GPU and Neural Engine figures show the work the app has started, because Apple doesn't report their load. It is off on a new install, is switched on in Settings under Appearance, and can be dragged anywhere. It sits over the place on the board where that silicon physically is.
 """#
         ),
         SampleDocumentDescriptor(
@@ -306,7 +306,7 @@ This matters because the product runs on Apple's own AI infrastructure, on hardw
 - document parsing and text recognition
 - chunking and indexing
 - semantic and keyword retrieval
-- embedding on the Neural Engine or the GPU, and vector math through Accelerate on the CPU with Metal for larger libraries
+- embedding on the Neural Engine or the GPU, and vector math through Accelerate on the CPU, with Metal for a library of 1,000 passages or more when the GPU setting is on Performance or Maximum
 - evidence packing
 \#(SamplePCCCopy.staysOnDeviceGeneration)
 - verification of the answer against the evidence
@@ -354,6 +354,12 @@ OpenIntelligence never sends your documents to a developer-operated backend.
 
     /// Total number of sample documents, used for quota calculations.
     var sampleCount: Int { samples.count }
+
+    /// Each sample's text by the name it is listed under. A test reads it to check that the
+    /// hand-written questions for the samples still name headings these guides have.
+    var sampleBodiesByName: [String: String] {
+        Dictionary(uniqueKeysWithValues: samples.map { ($0.filename, $0.body) })
+    }
 
     /// Writes curated samples to disk and ingests them into the active RAG pipeline.
     /// Uses `.onboarding` context to prevent self-tuning rebuilds during initial setup.

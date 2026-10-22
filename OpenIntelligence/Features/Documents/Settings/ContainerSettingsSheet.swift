@@ -199,10 +199,7 @@ struct ContainerSettingsSheet: View {
                 privateCloudComputeSection
                 chunkingSection
                 aiFeatureOverridesSection
-                // Search behavior presets removed — auto-tuned by AdaptivePipelineOptimizer
-                if settings.developerRAGTuningEnabled {
-                    retrievalTuningSection
-                }
+                searchSection
                 embeddingProviderSection
                 // Vector database section hidden — always uses persistent JSON storage
                 // vectorDatabaseSection
@@ -424,7 +421,7 @@ struct ContainerSettingsSheet: View {
                 badgeText: EmbeddingProviderDefaults.preferredSentenceProviderId == EmbeddingProviderDefaults.coreML ? "✓ Default" : nil,
                 supportedDimensions: [384],
                 metrics: [
-                    OptionMetric(icon: "bolt.fill", text: "ANE accelerated", tint: .orange),
+                    OptionMetric(icon: "bolt.fill", text: "ANE accelerated", tint: .accentColor),
                     // "High semantic accuracy" was an unmeasured superlative, and the first
                     // measurement contradicts it: over 25 QASPER cases the dense arm ranked
                     // the gold document first in 8% of cases against BM25's 60%. Replaced
@@ -494,7 +491,7 @@ let coreAIDetail = "The same all-MiniLM-L6-v2 weights as the Neural Engine optio
                     // failure, and its rate against CPU-only puts it on the GPU (iPhone 16 Pro Max
                     // 2026-10-10: 88.5 passages a second against 5.4; M3 Pro Mac 2026-10-12: 4.71 ms
                     // a passage against 112.26).
-                    OptionMetric(icon: "bolt.fill", text: "Runs on the GPU", tint: .indigo),
+                    OptionMetric(icon: "bolt.fill", text: "Runs on the GPU", tint: .accentColor),
                     OptionMetric(icon: "memorychip", text: "Zero-copy memory"),
                     // Was "40%+ faster". That figure is a goal from
                     // AppleIntelligenceTransitionPlan.md:16, never measured here.
@@ -517,10 +514,12 @@ let coreAIDetail = "The same all-MiniLM-L6-v2 weights as the Neural Engine optio
                 value: 384,
                 icon: "cpu.fill",
                 title: "384D • MiniLM-L6-v2",
-                caption: "Neural Engine optimized",
+                caption: "Bundled MiniLM model",
                 detail: "Native output of the bundled all-MiniLM-L6-v2 sentence-transformer. Mean-pooled token embeddings produce dense 384-dim vectors optimized for cosine similarity.",
                 metrics: [
-                    OptionMetric(icon: "bolt.fill", text: "ANE accelerated", tint: .orange),
+                    // The 384D option serves the Core ML and the Core AI copy. Core ML plans the model onto the Neural
+                    // Engine and Core AI runs it on the GPU (BenchmarkRuns/2026-10-18-compute-plan; 5.7).
+                    OptionMetric(icon: "bolt.fill", text: "Neural Engine with Core ML, GPU with Core AI", tint: .accentColor),
                     OptionMetric(icon: "cube.fill", text: "~0.58 MB / 100 docs"),
                     OptionMetric(icon: "checkmark.seal.fill", text: "Native format"),
                 ]
@@ -964,64 +963,64 @@ struct SelectableOptionCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: DSSpacing.md) {
                 Image(systemName: icon)
                     .font(.title3)
-                    .foregroundColor(iconColor)
+                    .foregroundStyle(iconColor)
                     .frame(width: 32)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    HStack(spacing: DSSpacing.sm) {
                         Text(title)
                             .font(.headline)
-                            .foregroundColor(primaryTextColor)
+                            .foregroundStyle(primaryTextColor)
 
                         if isActive {
                             Pill(text: "ACTIVE", color: .accentColor)
                         } else if let badge = badgeText {
-                            Pill(text: badge, color: .orange)
+                            Pill(text: badge, color: .secondary)
                         }
                     }
 
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundColor(secondaryTextColor)
+                        .foregroundStyle(secondaryTextColor)
 
                     Text(detail)
                         .font(.caption2)
-                        .foregroundColor(secondaryTextColor)
+                        .foregroundStyle(secondaryTextColor)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if !metrics.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xs) {
                             ForEach(metrics) { metric in
-                                HStack(spacing: 6) {
+                                HStack(spacing: DSSpacing.xs) {
                                     Image(systemName: metric.icon)
                                         .font(.caption2)
-                                        .foregroundColor(metric.tint)
+                                        .foregroundStyle(metric.tint)
                                     Text(metric.text)
                                         .font(.caption2)
-                                        .foregroundColor(metric.tint)
+                                        .foregroundStyle(metric.tint)
                                 }
                             }
                         }
-                        .padding(.top, 2)
+                        .padding(.top, DSSpacing.xxs)
                     }
                 }
 
                 Spacer()
 
                 Image(systemName: isActive ? "checkmark.circle.fill" : (isDisabled ? "lock.circle" : "circle"))
-                    .foregroundColor(trailingIconColor)
+                    .foregroundStyle(trailingIconColor)
                     .imageScale(.large)
             }
-            .padding(12)
+            .padding(DSSpacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(backgroundColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .stroke(borderColor, lineWidth: 1)
             )
         }
@@ -1060,8 +1059,8 @@ struct SelectableOptionCard: View {
 
     private var borderColor: Color {
         if isActive { return Color.accentColor.opacity(0.6) }
-        if isDisabled { return Color.gray.opacity(0.2) }
-        return Color.gray.opacity(0.15)
+        if isDisabled { return Color.secondary.opacity(0.2) }
+        return Color.secondary.opacity(0.15)
     }
 
     private struct Pill: View {
@@ -1071,10 +1070,9 @@ struct SelectableOptionCard: View {
         var body: some View {
             Text(text.uppercased())
                 .font(.caption2)
-                .fontWeight(.bold)
-                .foregroundColor(color)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
+                .foregroundStyle(color)
+                .padding(.horizontal, DSSpacing.xs)
+                .padding(.vertical, DSSpacing.xxs)
                 .background(color.opacity(0.12))
                 .clipShape(Capsule())
         }
@@ -1096,35 +1094,35 @@ struct SettingHelpCallout: View {
     var accent: Color = .accentColor
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(spacing: DSSpacing.sm) {
                 Image(systemName: icon)
-                    .foregroundColor(accent)
+                    .foregroundStyle(accent)
                 Text(title)
                     .font(.headline)
             }
 
             Text(description)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 ForEach(Array(bullets.enumerated()), id: \.offset) { _, bullet in
-                    HStack(alignment: .top, spacing: 6) {
+                    HStack(alignment: .top, spacing: DSSpacing.xs) {
                         Text("•")
                             .font(.caption)
-                            .foregroundColor(accent)
-                            .padding(.top, 1)
+                            .foregroundStyle(accent)
+                            .padding(.top, DSSpacing.xxs)
                         Text(bullet)
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(accent.opacity(0.08))
         )
     }
@@ -1136,9 +1134,9 @@ struct AutoIntelligencePanel: View {
     var onToggleAuto: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Label(
                         isAutoEnabled ? "Auto Intelligence is orchestrating" : "Latest intelligence snapshot",
                         systemImage: "wand.and.stars"
@@ -1151,7 +1149,7 @@ struct AutoIntelligencePanel: View {
 
                     Text(relationshipSummary)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
@@ -1160,7 +1158,7 @@ struct AutoIntelligencePanel: View {
                     Button(isAutoEnabled ? "Switch to manual" : "Use Auto Intelligence", action: onToggleAuto)
                         .buttonStyle(.borderedProminent)
                         .font(.caption)
-                        .tint(isAutoEnabled ? .gray : .accentColor)
+                        .tint(isAutoEnabled ? .secondary : .accentColor)
                 }
             }
 
@@ -1204,25 +1202,25 @@ struct AutoIntelligencePanel: View {
             }
 
             if !report.alerts.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     ForEach(report.alerts, id: \.self) { alert in
-                        HStack(alignment: .top, spacing: 6) {
+                        HStack(alignment: .top, spacing: DSSpacing.xs) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
                             Text(alert)
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.orange.opacity(0.08)))
+                .padding(DSSpacing.sm)
+                .background(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous).fill(Color.orange.opacity(0.08)))
             }
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(Color.accentColor.opacity(0.08))
         )
     }
@@ -1290,6 +1288,10 @@ struct AutoIntelligencePanel: View {
         switch providerId {
         case "coreml_sentence_embedding":
             return "Core ML Sentence"
+        // A Core AI library fell to the default and read "Apple Natural Language" on every Mac with macOS 27,
+        // where Core AI is the default for a new library (5.7).
+        case "coreai_sentence_embedding":
+            return "Core AI Sentence"
         case "apple_fm_embed":
             return "Apple Foundation Model"
         default:
@@ -1310,22 +1312,22 @@ private struct InsightLine: View {
     let detail: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            HStack(alignment: .center, spacing: DSSpacing.sm) {
                 Image(systemName: icon)
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(Color.accentColor)
                 Text(title)
                     .font(.subheadline.weight(.semibold))
             }
 
             Text(value)
                 .font(.callout)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
 
             if let detail, !detail.isEmpty {
                 Text(detail)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1339,7 +1341,7 @@ private struct DocumentContextSummary: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             Label("Document context", systemImage: "books.vertical")
                 .font(.subheadline.weight(.semibold))
 
@@ -1353,7 +1355,7 @@ private struct DocumentContextSummary: View {
             if documents.count > featuredDocuments.count {
                 Text("+\(documents.count - featuredDocuments.count) more captured in this library")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1363,7 +1365,7 @@ private struct DocumentProfileRow: View {
     let profile: LibraryIntelligenceCenter.DocumentProfile
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
             HStack(alignment: .firstTextBaseline) {
                 Text(profile.name)
                     .font(.subheadline.weight(.semibold))
@@ -1373,10 +1375,10 @@ private struct DocumentProfileRow: View {
 
             Text(profile.descriptor)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             if !profile.keyTopics.isEmpty {
-                HStack(spacing: 6) {
+                HStack(spacing: DSSpacing.xs) {
                     ForEach(profile.keyTopics.prefix(3), id: \.self) { topic in
                         TopicChip(text: topic)
                     }
@@ -1386,7 +1388,7 @@ private struct DocumentProfileRow: View {
             if !profile.preview.isEmpty {
                 Text(profile.preview)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
         }
@@ -1399,13 +1401,13 @@ private struct TopicChip: View {
     var body: some View {
         Text(text)
             .font(.caption2)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.xs)
             .background(
                 Capsule()
                     .fill(Color.accentColor.opacity(0.15))
             )
-            .foregroundColor(.accentColor)
+            .foregroundStyle(Color.accentColor)
     }
 }
 
@@ -1443,7 +1445,7 @@ struct ReembedStatusBanner: View {
     let progress: ReembedProgress
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             HStack {
                 Label("Rebuilding embeddings", systemImage: "arrow.triangle.2.circlepath")
                     .font(.subheadline.weight(.semibold))
@@ -1451,7 +1453,7 @@ struct ReembedStatusBanner: View {
                 if progress.total > 0 {
                     Text("\(progress.completed)/\(progress.total)")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -1461,17 +1463,17 @@ struct ReembedStatusBanner: View {
             if !progress.currentFilename.isEmpty {
                 Text(progress.currentFilename)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Text("We’ll refresh embeddings so retrieval quality matches your new configuration.")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(Color.orange.opacity(0.08))
         )
     }

@@ -27,7 +27,8 @@ struct ModelStatusIndicator: View {
                         if hasEntitlement {
                             pickerLabel(for: preference).tag(preference)
                         } else {
-                            Text("\(preference.pickerDisplayName) (Requires Entitlement)")
+                            // Plain words for a build without the Private Cloud Compute entitlement (5.7 UI cleanup).
+                            Text("\(preference.pickerDisplayName) (not available)")
                                 .tag(preference)
                                 .disabled(true)
                         }
@@ -55,7 +56,9 @@ struct ModelStatusIndicator: View {
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
             }
-            .foregroundStyle(statusColor)
+            // The words in the label color, the status color in the icon and the tint (5.7, the owner's choice):
+            // "Unavailable" in red on the red-tinted capsule measured 3.5 to 1 even in Apple's high-contrast red.
+            .foregroundStyle(DSColors.primaryText)
             .padding(.horizontal, DSSpacing.sm)
             .padding(.vertical, DSSpacing.xs)
             // Matches the quality pill: same capsule, same material, same padding scale,
@@ -64,6 +67,8 @@ struct ModelStatusIndicator: View {
             .glassEffect(.regular.tint(statusColor.opacity(0.18)).interactive(), in: Capsule())
         }
         .buttonStyle(.plain)
+        // Fixed size like the quality pill (5.7), so the two keep one height; the row stacks them at large text sizes.
+        .fixedSize()
         .accessibilityLabel("Model routing")
         .accessibilityValue("\(settings.fmPreference.pickerDisplayName), \(statusText)")
         .accessibilityHint("Choose whether answers run on device, in Private Cloud Compute, or automatically")
@@ -78,10 +83,10 @@ struct ModelStatusIndicator: View {
         let value: String
         
         var body: some View {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text(label)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                 Text(value)
                     .font(.subheadline.weight(.medium))
@@ -93,13 +98,13 @@ struct ModelStatusIndicator: View {
         let text: String
         
         var body: some View {
-            HStack(alignment: .top, spacing: 4) {
+            HStack(alignment: .top, spacing: DSSpacing.xs) {
                 Text("•")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
                 Text(text)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -117,11 +122,12 @@ struct ModelStatusIndicator: View {
                 .fill(statusColor.opacity(0.14))
                 .frame(width: 20, height: 20)
             Image(systemName: preferenceIcon(for: settings.fmPreference))
-                .font(.system(size: 10, weight: .semibold))
+                .scaledFont(size: 10, weight: .semibold)
+                .foregroundStyle(statusColor)
         }
         .scaleEffect(modelResolution.isProcessing ? pulseScale : 1.0)
         .onAppear {
-            withAnimation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+            withAnimation(DSAnimations.stagePulse) {
                 pulseScale = 1.15
             }
         }
@@ -132,7 +138,7 @@ struct ModelStatusIndicator: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(settings.fmPreference.pickerDisplayName)
                 .font(.caption.weight(.semibold))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
             // The second line is unconditional. It carries the live route while a query
             // runs, and otherwise a short description of where this preference sends
             // work. Making it conditional is what let the pill collapse to one line and
@@ -143,16 +149,30 @@ struct ModelStatusIndicator: View {
             // who cannot separate red from green, because the label above names the
             // selected *preference*, never the *status*.
             if modelResolution.isProcessing {
-                Text("Using \(modelResolution.currentState.executionPath.displayName)")
+                // The route's short name (5.7): the pill is fixed size, and "Using Private Cloud Compute" (154
+                // points at the default size) made the row wider than the screen. These are never wider than the
+                // line they replace, so the row does not change shape when an answer starts.
+                Text(Self.routeName(of: modelResolution.currentState.executionPath))
                     .font(.caption2)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             } else {
+                // One line at its full width, not shrunk (5.7): the shrink is what Apple's audit called partial Dynamic
+                // Type, and the pill is fixed size like the quality pill beside it, so it is never cut.
                 Text(statusText)
                     .font(.caption2)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
+        }
+    }
+
+    /// Where a running query went, in the names the pill's first line gives the preferences.
+    private static func routeName(of path: ModelResolutionState.ExecutionPath) -> String {
+        switch path {
+        case .onDevice: return "On-Device"
+        case .privateCloudCompute: return "PCC"
+        case .hybridAutomatic: return "Hybrid"
+        case .localServer: return "Local Server"
+        case .cloudAPI: return "Cloud API"
         }
     }
 
@@ -162,7 +182,7 @@ struct ModelStatusIndicator: View {
     /// worth reading rather than a redundant "Ready" — these describe where each
     /// preference actually sends work, which is the thing the one-word names elide.
     private var statusText: String {
-        switch modelResolution.currentState.status {
+        switch shownStatus {
         case .loading: return "Preparing"
         case .unavailable: return "Unavailable"
         case .ready:
@@ -182,26 +202,36 @@ struct ModelStatusIndicator: View {
         }
     }
 
+    /// The status the pill shows. In a DEBUG build's App Store scenes (`--screenshot-store`) it is the one an iPhone
+    /// with Apple Intelligence shows, `.ready`: the Simulator always reports `.unavailable`, which put "Unavailable"
+    /// on a red pill in the store images (5.7).
+    private var shownStatus: ModelResolutionState.ModelStatus {
+        #if DEBUG
+            if LaunchArguments.valueEither(for: "screenshot-store") != nil { return .ready }
+        #endif
+        return modelResolution.currentState.status
+    }
+
     private var statusColor: Color {
         if modelResolution.isProcessing {
             switch modelResolution.currentState.executionPath {
             case .onDevice:
                 return .green
             case .privateCloudCompute:
-                return .blue
+                return .accentColor
             default:
-                return .purple
+                return .accentColor
             }
         }
-        switch modelResolution.currentState.status {
+        switch shownStatus {
         case .ready:
             switch settings.fmPreference.canonical {
-            case .automatic: return .purple
+            case .automatic: return .accentColor
             case .core3B, .advanced20B: return .green
-            case .privateCloudCompute: return .blue
+            case .privateCloudCompute: return .accentColor
             }
         case .loading:
-            return .blue
+            return .accentColor
         case .unavailable:
             return .red
         }
@@ -221,23 +251,23 @@ struct ModelQuickSelector: View {
         Button {
             showSelector = true
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: DSSpacing.sm) {
                 modelIcon
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(settings.selectedModel.displayName)
                         .font(.subheadline.weight(.semibold))
                     Text(statusText)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
-            .padding(12)
+            .padding(DSSpacing.md)
             .background(DSColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showSelector) {
@@ -249,15 +279,15 @@ struct ModelQuickSelector: View {
     private var modelIcon: some View {
         Image(systemName: settings.selectedModel.iconName)
             .font(.title2)
-            .foregroundColor(iconColor)
+            .foregroundStyle(iconColor)
             .frame(width: 40, height: 40)
             .background(iconColor.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
     }
 
     private var iconColor: Color {
         switch settings.selectedModel {
-        case .appleIntelligence: return .blue
+        case .appleIntelligence: return .accentColor
         case .onDeviceAnalysis: return .orange
         }
     }
@@ -312,19 +342,19 @@ struct QuickModelPickerSheet: View {
                 dismiss()
             }
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: DSSpacing.md) {
                 Image(systemName: type.iconName)
                     .font(.title3)
-                    .foregroundColor(isAvailable ? .accentColor : .secondary)
+                    .foregroundStyle(isAvailable ? Color.accentColor : .secondary)
                     .frame(width: 32)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(type.displayName)
                         .font(.body)
-                        .foregroundColor(isAvailable ? .primary : .secondary)
+                        .foregroundStyle(isAvailable ? .primary : .secondary)
                     Text(type.description)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
@@ -332,7 +362,7 @@ struct QuickModelPickerSheet: View {
 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(DSColors.accent)
                 }
             }
         }
@@ -344,11 +374,11 @@ struct QuickModelPickerSheet: View {
     let rag = RAGService()
     let settings = SettingsStore(ragService: rag)
     let resolution = ModelResolutionService(ragService: rag, settingsStore: settings)
-    return VStack(spacing: 20) {
+    return VStack(spacing: DSSpacing.lg) {
         ModelStatusIndicator()
         ModelQuickSelector(deviceCapabilities: DeviceCapabilities())
     }
-    .padding()
+    .padding(DSSpacing.lg)
     .environmentObject(settings)
     .environmentObject(resolution)
 }

@@ -9,6 +9,7 @@ import QuickLook
 import SwiftUI
 
 struct DocumentDetailsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let document: Document
     let embeddingProviderId: String?
     let highlightedChunk: RetrievedChunk?
@@ -64,7 +65,7 @@ struct DocumentDetailsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 18, pinnedViews: []) {
+            LazyVStack(spacing: DSSpacing.lg, pinnedViews: []) {
                 documentHeaderCard
 
                 if let chunk = highlightedChunk {
@@ -90,13 +91,13 @@ struct DocumentDetailsView: View {
 
                 technicalDetailsCard
             }
-            .padding(.vertical, 22)
-            .padding(.horizontal, 18)
+            .padding(.vertical, DSSpacing.lg)
+            .padding(.horizontal, DSSpacing.lg)
         }
         .background(DSColors.background.ignoresSafeArea())
         .navigationTitle("Document Intelligence")
         #if os(iOS)
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             // The document itself, in Quick Look, when its file is on this device. Quick Look
@@ -123,40 +124,42 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private var documentHeaderCard: some View {
         DocumentDetailCardView(icon: iconName(for: document.contentType), title: document.filename, caption: "Document Overview") {
-            VStack(alignment: .leading, spacing: 12) {
-                // Type badge
-                HStack {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                // Type badge, and the time at the trailing edge, or under it when the two do not fit across: at the
+                // largest sizes the badge broke into "MARK-" and "DOWN" (5.7).
+                WrappingRowLayout(spacing: DSSpacing.sm, lineSpacing: DSSpacing.sm, lastAtTrailingEdge: true) {
                     Text(document.contentType.rawValue.uppercased())
                         .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, DSSpacing.md)
+                        .padding(.vertical, DSSpacing.xs)
                         .background(
                             LinearGradient(
                                 colors: [Color.accentColor.opacity(0.2), Color.accentColor.opacity(0.1)],
                                 startPoint: .leading,
                                 endPoint: .trailing
-                            )
+                            ),
+                            in: RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                         )
-                        .foregroundColor(.accentColor)
-                        .cornerRadius(8)
-
-                    Spacer()
+                        // The word in the label color on the accent tint (5.7): accent on it measured 4.49 to 1.
+                        .foregroundStyle(DSColors.primaryText)
 
                     Text(document.addedAt, style: .relative)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(DSColors.secondaryText)
                 }
 
                 Divider()
 
-                // Quick stats
-                HStack(spacing: 20) {
+                // Quick stats: across, and one under the other at accessibility sizes, where a third of the row
+                // broke "7.1K" into "7.1" and "K" (5.7).
+                let statLayout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.md)) : AnyLayout(HStackLayout(spacing: DSSpacing.lg))
+                statLayout {
                     QuickStatView(
                         icon: "cube.box.fill",
                         value: "\(document.totalChunks)",
                         label: "Chunks",
-                        color: .blue
+                        color: .accentColor
                     )
 
                     if let metadata = document.processingMetadata {
@@ -164,14 +167,14 @@ struct DocumentDetailsView: View {
                             icon: "doc.text",
                             value: formatNumber(metadata.totalCharacters),
                             label: "Characters",
-                            color: .green
+                            color: .accentColor
                         )
 
                         QuickStatView(
                             icon: "text.word.spacing",
                             value: formatNumber(metadata.totalWords),
                             label: "Words",
-                            color: .orange
+                            color: .accentColor
                         )
                     }
                 }
@@ -184,15 +187,14 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private func highlightedChunkCard(_ chunk: RetrievedChunk) -> some View {
         DocumentDetailCardView(icon: "text.quote", title: "Cited Excerpt", caption: "Source of the generated answer") {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 Text(chunk.chunk.content)
-                    .font(.system(size: 14))
+                    .scaledFont(size: 14)
                     .foregroundStyle(DSColors.primaryText)
-                    .padding(12)
-                    .background(Color.accentColor.opacity(0.1))
-                    .cornerRadius(8)
+                    .padding(DSSpacing.md)
+                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
                             .stroke(Color.accentColor.opacity(0.3), lineWidth: 1)
                     )
                 
@@ -200,12 +202,12 @@ struct DocumentDetailsView: View {
                     Spacer()
                     if let page = chunk.pageNumber {
                         Text("Page \(page)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(DSColors.secondaryText)
                     }
                     Text("Relevance Score: \(Int(chunk.similarityScore * 100))%")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .scaledFont(size: 11, weight: .semibold)
+                        .foregroundStyle(DSColors.secondaryText)
                 }
             }
         }
@@ -216,21 +218,21 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private func contentTagsCard(tags: [String]) -> some View {
         DocumentDetailCardView(icon: "tag.fill", title: "Content Tags", caption: "Auto-generated by Apple Intelligence") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
                 // Info text
-                HStack(spacing: 6) {
+                HStack(spacing: DSSpacing.xs) {
                     Image(systemName: "sparkles")
-                        .foregroundColor(.purple)
+                        .foregroundStyle(Color.accentColor)
                         .font(.caption)
                     Text("Topics, actions, and themes identified in this document")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(DSColors.secondaryText)
                 }
 
                 Divider()
 
                 // Tags flow layout
-                FlowLayout(spacing: 8) {
+                FlowLayout(spacing: DSSpacing.sm) {
                     ForEach(Array(tags.enumerated()), id: \.offset) { index, tag in
                         ContentTagPill(tag: tag, colorIndex: index)
                     }
@@ -244,13 +246,13 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private var vectorStorageCard: some View {
         DocumentDetailCardView(icon: "cylinder.fill", title: "Vector Storage", caption: "Embedding metrics") {
-            VStack(spacing: 8) {
+            VStack(spacing: DSSpacing.sm) {
                 VectorMetricRow(
                     icon: isHighAccuracyProvider ? "sparkles" : "brain.head.profile",
                     label: "Embedding Model",
                     value: embeddingProviderDisplayName,
                     detail: embeddingProviderDescription,
-                    valueColor: isHighAccuracyProvider ? .purple : .primary
+                    valueColor: isHighAccuracyProvider ? DSColors.readable(.accentColor) : .primary
                 )
 
                 VectorMetricRow(
@@ -271,8 +273,7 @@ struct DocumentDetailsView: View {
                     icon: "externaldrive.fill",
                     label: "Storage Status",
                     value: "Persisted",
-                    detail: "Auto-saved to disk",
-                    valueColor: .green
+                    detail: "Auto-saved to disk"
                 )
             }
         }
@@ -283,10 +284,10 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private func contentAnalysisCard(_ metadata: ProcessingMetadata) -> some View {
         DocumentDetailCardView(icon: "text.magnifyingglass", title: "Content Analysis", caption: "Document structure breakdown") {
-            VStack(spacing: 8) {
+            VStack(spacing: DSSpacing.sm) {
                 ContentMetricRow(
                     icon: "doc.on.doc",
-                    iconColor: .blue,
+                    iconColor: .accentColor,
                     label: "File Size",
                     value: String(format: "%.2f MB", metadata.fileSizeMB),
                     detail: formatBytes(Int(metadata.fileSizeMB * 1024 * 1024))
@@ -295,7 +296,7 @@ struct DocumentDetailsView: View {
                 if let pages = metadata.pagesProcessed {
                     ContentMetricRow(
                         icon: "doc.plaintext",
-                        iconColor: .purple,
+                        iconColor: .accentColor,
                         label: "Pages Processed",
                         value: "\(pages)",
                         detail: pages > 1 ? "Multi-page document" : "Single page"
@@ -304,7 +305,7 @@ struct DocumentDetailsView: View {
 
                 ContentMetricRow(
                     icon: "character.book.closed",
-                    iconColor: .green,
+                    iconColor: .accentColor,
                     label: "Total Characters",
                     value: formatNumber(metadata.totalCharacters),
                     detail: "\(formatNumber(metadata.totalWords)) words"
@@ -312,7 +313,7 @@ struct DocumentDetailsView: View {
 
                 ContentMetricRow(
                     icon: "chart.line.uptrend.xyaxis",
-                    iconColor: .orange,
+                    iconColor: .accentColor,
                     label: "Content Density",
                     value: String(format: "%.1f", contentDensity(metadata)),
                     detail: "Words per 100 characters"
@@ -326,7 +327,7 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private func chunkingStrategyCard(_ metadata: ProcessingMetadata) -> some View {
         DocumentDetailCardView(icon: "scissors", title: "Chunking Strategy", caption: "Semantic boundary detection") {
-            VStack(spacing: 8) {
+            VStack(spacing: DSSpacing.sm) {
                 ChunkMetricRow(
                     icon: "cube.box",
                     label: "Total Chunks",
@@ -351,23 +352,23 @@ struct DocumentDetailsView: View {
                 Divider()
 
                 // Silicon-Native info
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     Image(systemName: "bolt.horizontal.fill")
-                        .foregroundColor(.cyan)
+                        .foregroundStyle(Color.accentColor)
                         .font(.caption)
                     Text("Semantic boundaries detected via embedding similarity • vDSP accelerated")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(DSColors.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     Image(systemName: "info.circle.fill")
-                        .foregroundColor(.blue)
+                        .foregroundStyle(Color.accentColor)
                         .font(.caption)
                     Text("280-400 word target with ~17% overlap for optimal retrieval")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(DSColors.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -379,10 +380,10 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private func performanceMetricsCard(_ metadata: ProcessingMetadata) -> some View {
         DocumentDetailCardView(icon: "speedometer", title: "Performance Metrics", caption: "Silicon-native pipeline timing") {
-            VStack(spacing: 8) {
+            VStack(spacing: DSSpacing.sm) {
                 PerformanceRow(
                     icon: "doc.text.magnifyingglass",
-                    iconColor: .blue,
+                    iconColor: .accentColor,
                     label: "Text Extraction",
                     time: metadata.extractionTimeSeconds,
                     detail: extractionMethod(metadata)
@@ -390,7 +391,7 @@ struct DocumentDetailsView: View {
 
                 PerformanceRow(
                     icon: "scissors",
-                    iconColor: .orange,
+                    iconColor: .accentColor,
                     label: "Semantic Chunking",
                     time: metadata.chunkingTimeSeconds,
                     detail: "\(document.totalChunks) chunks via embeddings"
@@ -398,7 +399,7 @@ struct DocumentDetailsView: View {
 
                 PerformanceRow(
                     icon: "brain.head.profile",
-                    iconColor: .purple,
+                    iconColor: .accentColor,
                     label: "Vector Embedding",
                     time: metadata.embeddingTimeSeconds,
                     detail: String(format: "%.0f ms/chunk", (metadata.embeddingTimeSeconds / Double(document.totalChunks)) * 1000)
@@ -408,20 +409,20 @@ struct DocumentDetailsView: View {
 
                 PerformanceRow(
                     icon: "clock.fill",
-                    iconColor: .green,
+                    iconColor: .accentColor,
                     label: "Total Pipeline Time",
                     time: metadata.totalProcessingTimeSeconds,
                     detail: throughputRate(metadata),
                     highlight: true
                 )
 
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     Image(systemName: "bolt.horizontal.fill")
-                        .foregroundColor(.cyan)
+                        .foregroundStyle(.secondary)
                         .font(.caption)
                     Text("Accelerate vDSP • Device-optimized batch sizes")
                         .font(.caption2)
-                        .foregroundColor(.cyan)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -433,21 +434,20 @@ struct DocumentDetailsView: View {
     private func ocrDetailsCard(_ metadata: ProcessingMetadata) -> some View {
         if let ocrPages = metadata.ocrPagesCount, ocrPages > 0 {
             DocumentDetailCardView(icon: "text.viewfinder", title: "OCR Processing", caption: "Vision framework text recognition") {
-                VStack(spacing: 8) {
-                    HStack(spacing: 12) {
+                VStack(spacing: DSSpacing.sm) {
+                    HStack(spacing: DSSpacing.md) {
                         Image(systemName: "eye.fill")
                             .font(.title2)
-                            .foregroundColor(.blue)
+                            .foregroundStyle(Color.accentColor)
                             .frame(width: 32)
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xs) {
                             Text("Optical Character Recognition")
                                 .font(.subheadline)
-                                .fontWeight(.semibold)
 
                             Text("\(ocrPages) page\(ocrPages == 1 ? "" : "s") processed with Vision framework")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(DSColors.secondaryText)
                         }
 
                         Spacer()
@@ -455,13 +455,13 @@ struct DocumentDetailsView: View {
 
                     Divider()
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: DSSpacing.sm) {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
+                            .foregroundStyle(Color.accentColor)
                             .font(.caption)
                         Text("OCR was used for scanned pages or images without embedded text")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(DSColors.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -474,7 +474,7 @@ struct DocumentDetailsView: View {
     @ViewBuilder
     private var technicalDetailsCard: some View {
         DocumentDetailCardView(icon: "info.circle", title: "Technical Details", caption: "Pipeline configuration") {
-            VStack(spacing: 8) {
+            VStack(spacing: DSSpacing.sm) {
                 TechnicalRow(label: "Document ID", value: document.id.uuidString.prefix(8) + "...")
                 TechnicalRow(label: "Added", value: document.addedAt.formatted(date: .abbreviated, time: .standard))
                 TechnicalRow(label: "File Type", value: document.contentType.rawValue)
@@ -583,16 +583,16 @@ struct DetailRow: View {
         HStack {
             Image(systemName: icon)
                 .frame(width: 24)
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
 
             Text(label)
-                .foregroundColor(.secondary)
+                .foregroundStyle(DSColors.secondaryText)
 
             Spacer()
 
             Text(value)
                 .fontWeight(highlight ? .semibold : .regular)
-                .foregroundColor(highlight ? .accentColor : .primary)
+                .foregroundStyle(highlight ? Color.accentColor : .primary)
         }
         .font(.subheadline)
     }
@@ -614,25 +614,26 @@ private struct DocumentDetailCardView<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             if icon != nil || !title.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
                     if let icon {
                         Image(systemName: icon)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.accentColor)
-                            .frame(width: 20)
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundStyle(Color.accentColor)
+                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                            .frame(minWidth: 20)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                         Text(title)
                             .font(.footnote)
-                            .fontWeight(.semibold)
-                            .textCase(.uppercase)
-                            .tracking(0.8)
+                            // Read as written: the capitals are only drawn, and VoiceOver was given
+                            // "OPENINTELLIGENCE-PRODUCT-GUIDE.MD" for a file's name (5.7).
+                            .accessibilityLabel(title)
                         if let caption, !caption.isEmpty {
                             Text(caption)
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(DSColors.secondaryText)
                         }
                     }
                     Spacer(minLength: 0)
@@ -640,9 +641,9 @@ private struct DocumentDetailCardView<Content: View>: View {
             }
             content
         }
-        .padding(18)
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(DSColors.surface)
                 .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
         )
@@ -654,20 +655,30 @@ private struct QuickStatView: View {
     let value: String
     let label: String
     let color: Color
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(spacing: 4) {
+        // The icon over the figure and its name, and at accessibility sizes the icon beside them (5.7).
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let outer = isAccessibilitySize
+            ? AnyLayout(HStackLayout(alignment: .center, spacing: DSSpacing.md)) : AnyLayout(VStackLayout(spacing: DSSpacing.xs))
+        let inner = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.xxs)) : AnyLayout(VStackLayout(spacing: DSSpacing.xs))
+        return outer {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundColor(color)
-            Text(value)
-                .font(.title3)
-                .fontWeight(.bold)
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            inner {
+                Text(value)
+                    .font(.title3)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(DSColors.secondaryText)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: isAccessibilitySize ? .leading : .center)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -679,24 +690,24 @@ private struct VectorMetricRow: View {
     var valueColor: Color = .primary
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: DSSpacing.md) {
             Image(systemName: icon)
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .font(.title3)
                 .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(label)
                     .font(.subheadline)
                 Text(value)
                     .font(.headline)
-                    .foregroundColor(valueColor)
+                    .foregroundStyle(valueColor)
                 Text(detail)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(DSColors.secondaryText)
             }
             Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DSSpacing.xs)
     }
 }
 
@@ -708,23 +719,23 @@ private struct ContentMetricRow: View {
     let detail: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: DSSpacing.md) {
             Image(systemName: icon)
-                .foregroundColor(iconColor)
+                .foregroundStyle(iconColor)
                 .font(.title3)
                 .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(label)
                     .font(.subheadline)
                 Text(value)
                     .font(.headline)
                 Text(detail)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(DSColors.secondaryText)
             }
             Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DSSpacing.xs)
     }
 }
 
@@ -735,13 +746,13 @@ private struct ChunkMetricRow: View {
     let badge: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSSpacing.md) {
             Image(systemName: icon)
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .font(.title3)
                 .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text(label)
                     .font(.subheadline)
                 Text(value)
@@ -752,14 +763,12 @@ private struct ChunkMetricRow: View {
 
             Text(badge)
                 .font(.caption2)
-                .fontWeight(.medium)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.accentColor.opacity(0.15))
-                .foregroundColor(.accentColor)
-                .cornerRadius(6)
+                .padding(.horizontal, DSSpacing.sm)
+                .padding(.vertical, DSSpacing.xxs)
+                .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
+                .foregroundStyle(Color.accentColor)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DSSpacing.xs)
     }
 }
 
@@ -772,26 +781,27 @@ private struct PerformanceRow: View {
     var highlight: Bool = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: DSSpacing.md) {
             Image(systemName: icon)
-                .foregroundColor(iconColor)
+                .foregroundStyle(iconColor)
                 .font(.title3)
                 .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(label)
                     .font(.subheadline)
                     .fontWeight(highlight ? .semibold : .regular)
                 Text(String(format: "%.3f s", time))
                     .font(highlight ? .title3 : .headline)
                     .fontWeight(highlight ? .bold : .regular)
-                    .foregroundColor(highlight ? .green : .primary)
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
                 Text(detail)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(DSColors.secondaryText)
             }
             Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DSSpacing.xs)
     }
 }
 
@@ -803,13 +813,13 @@ private struct TechnicalRow: View {
         HStack {
             Text(label)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(DSColors.secondaryText)
             Spacer()
             Text(value)
                 .font(.subheadline)
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DSSpacing.xs)
     }
 }
 
@@ -821,43 +831,25 @@ private struct ContentTagPill: View {
 
     /// Gradient colors for tag backgrounds based on index
     private var tagBackgroundColor: Color {
-        let colors: [Color] = [
-            .blue.opacity(0.15),
-            .purple.opacity(0.15),
-            .green.opacity(0.15),
-            .orange.opacity(0.15),
-            .pink.opacity(0.15),
-            .teal.opacity(0.15),
-            .indigo.opacity(0.15),
-            .mint.opacity(0.15),
-        ]
-        return colors[colorIndex % colors.count]
+        Color.accentColor.opacity(0.15)
     }
 
     private var tagTextColor: Color {
-        let colors: [Color] = [
-            .blue,
-            .purple,
-            .green,
-            .orange,
-            .pink,
-            .teal,
-            .indigo,
-            .mint,
-        ]
-        return colors[colorIndex % colors.count]
+        Color.accentColor
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DSSpacing.xs) {
             Image(systemName: "tag.fill")
-                .font(.system(size: 10))
+                .scaledFont(size: 10)
+                .foregroundStyle(DSColors.readable(tagTextColor))
             Text(tag)
-                .font(.system(size: 12, weight: .medium))
+                .scaledFont(size: 12, weight: .medium)
+                // The word in the label color, the tag's color in the icon and the tint (5.7).
+                .foregroundStyle(DSColors.primaryText)
         }
-        .foregroundColor(tagTextColor)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xs)
         .background(
             Capsule()
                 .fill(tagBackgroundColor)
@@ -908,7 +900,10 @@ struct FlowLayout: Layout {
         var totalWidth: CGFloat = 0
 
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            // A subview wider than the row on its own is offered the row's width, so its text wraps instead of running
+            // past the edge, which a tag did at the larger text sizes (5.7).
+            let ideal = subview.sizeThatFits(.unspecified)
+            let size = ideal.width <= maxWidth ? ideal : subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
 
             // Check if we need to wrap to next line
             if currentX + size.width > maxWidth && currentX > 0 {

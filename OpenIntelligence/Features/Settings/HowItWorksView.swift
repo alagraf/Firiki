@@ -39,7 +39,7 @@ struct HowItWorksView: View {
                 vocabularyCard
                 replayCard
             }
-            .padding()
+            .padding(DSSpacing.lg)
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -128,7 +128,7 @@ struct HowItWorksView: View {
             } label: {
                 HStack {
                     Text("Plain English")
-                        .fontWeight(.semibold)
+                        .font(.subheadline.weight(.semibold))
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
@@ -136,8 +136,9 @@ struct HowItWorksView: View {
                 .foregroundStyle(DSColors.accent)
                 .padding(.vertical, DSSpacing.sm)
                 .padding(.horizontal, DSSpacing.md)
+                .frame(minHeight: DSSpacing.tapTarget)
                 .background(
-                    RoundedRectangle(cornerRadius: DSCorners.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                         .fill(DSColors.accent.opacity(0.12))
                 )
             }
@@ -165,16 +166,20 @@ struct HowItWorksView: View {
 
     /// What actually leaves the device, on the build the user is running.
     ///
-    /// The second wording is not a hedge. Private Cloud Compute sits behind
-    /// `#if compiler(>=6.4)` in eleven places, and App Store builds are produced by an older
-    /// toolchain that compiles those blocks out entirely, so nothing escalates and the app
-    /// never asks. Telling the user it might was describing a different build than the one in
-    /// their hand.
+    /// Private Cloud Compute is compiled in only with Swift 6.4 (`#if compiler(>=6.4)`) and runs only on iOS
+    /// and macOS 27 (`supportsPrivateCloudCompute`), so there are three cases. Corrected 2026-10-15: the first
+    /// named only the question too large for the device and said the app always asks, and the other two said
+    /// a question too large for the device fails; `ModelExecutionPlanner` also sends a Deep Think or Maximum
+    /// answer drawn from more than one document, "Allow without asking" doesn't ask, and an answer too large
+    /// for the device is retried on it with fewer, shorter passages (`usedOverflowRetry`).
     private var leavingExplanation: String {
         if deviceCapabilities.supportsPrivateCloudCompute {
-            return "Everything above is local, and the writing step normally is too. If a question needs more context than this device's model can hold, the app asks whether to send that single request to Apple's Private Cloud Compute. Apple states it is not retained. You can decline every time, or set routing to On-Device and it will never leave, at the cost of failing on very large questions rather than escalating."
+            return "Everything above is local, and the writing step usually is too. With Hybrid in the model picker, an answer goes to Apple's Private Cloud Compute when its passages don't fit in this device's model, and a Deep Think or Maximum answer when it draws on more than one document; with Private Cloud Compute chosen there, every answer does. Settings, Private Cloud Compute decides whether the app asks you first, sends without asking, or never sends. Apple states it keeps nothing after answering. With On-Device chosen, or Never use in Settings, nothing leaves, and an answer too large for this device's model is written from fewer, shorter passages."
         }
-        return "Everything above is local, and so is the writing step, in this version. Support for escalating a single oversized request to Apple's Private Cloud Compute is built and is not enabled in this build, so nothing is sent anywhere and you will not be asked. A question too large for this device's model fails rather than escalating. When that support does enable, it will ask first and you will be able to decline every time."
+        if DeviceCapabilities.pccRoutingCompiledIn {
+            return "Everything above is local, and so is the writing step. Private Cloud Compute needs iOS or macOS 27, so on this version nothing is sent anywhere and you won't be asked. An answer too large for this device's model is written from fewer, shorter passages."
+        }
+        return "Everything above is local, and so is the writing step. Private Cloud Compute isn't in this build, so nothing is sent anywhere and you won't be asked. An answer too large for this device's model is written from fewer, shorter passages."
     }
 
     private var leavingCard: some View {
@@ -182,7 +187,6 @@ struct HowItWorksView: View {
             SectionHeader(icon: "cloud", title: "When anything leaves this device")
             Text("One step can, and only if you allow it.")
                 .font(.callout)
-                .fontWeight(.medium)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(leavingExplanation)
@@ -219,7 +223,7 @@ struct HowItWorksView: View {
             } label: {
                 HStack {
                     Text("Replay Introduction")
-                        .fontWeight(.semibold)
+                        .font(.subheadline.weight(.semibold))
                     Spacer()
                     Image(systemName: "arrow.counterclockwise")
                         .font(.caption.weight(.bold))
@@ -227,8 +231,9 @@ struct HowItWorksView: View {
                 .foregroundStyle(DSColors.accent)
                 .padding(.vertical, DSSpacing.sm)
                 .padding(.horizontal, DSSpacing.md)
+                .frame(minHeight: DSSpacing.tapTarget)
                 .background(
-                    RoundedRectangle(cornerRadius: DSCorners.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                         .fill(DSColors.accent.opacity(0.12))
                 )
             }
@@ -256,7 +261,7 @@ struct HowItWorksView: View {
                 .background(DSColors.accent.opacity(0.12), in: Circle())
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 HStack(spacing: DSSpacing.sm) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))

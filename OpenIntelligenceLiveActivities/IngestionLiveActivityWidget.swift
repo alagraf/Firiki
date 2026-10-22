@@ -369,7 +369,7 @@ struct QueryLiveActivityWidget: Widget {
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: QueryLiveActivityAttributes.self) { context in
-            QueryLiveActivityLockScreenView(state: context.state)
+            QueryLiveActivityLockScreenView(state: context.state, sessionID: context.attributes.sessionID)
                 .activityBackgroundTint(Color.purple.opacity(0.22))
                 .activitySystemActionForegroundColor(.white)
                 .widgetURL(Self.chatURL)
@@ -394,8 +394,18 @@ struct QueryLiveActivityWidget: Widget {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
-                        ProgressView(value: context.state.progress, total: 1.0)
-                            .tint(.purple)
+                        HStack(spacing: 10) {
+                            ProgressView(value: context.state.progress, total: 1.0)
+                                .tint(.purple)
+                            if context.state.finished != true {
+                                // Stops the answer and keeps what is written (5.7).
+                                Button(intent: StopLongAnswerIntent(sessionID: context.attributes.sessionID)) {
+                                    Label("Stop", systemImage: "stop.fill")
+                                        .labelStyle(.iconOnly)
+                                }
+                                .tint(.purple)
+                            }
+                        }
                     }
                 }
             } compactLeading: {
@@ -419,6 +429,9 @@ struct QueryLiveActivityWidget: Widget {
 @available(iOSApplicationExtension 17.0, *)
 private struct QueryLiveActivityLockScreenView: View {
     let state: QueryLiveActivityAttributes.ContentState
+    let sessionID: UUID
+
+    @Environment(\.activityFamily) private var activityFamily
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -438,8 +451,19 @@ private struct QueryLiveActivityLockScreenView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
-            ProgressView(value: state.progress, total: 1.0)
-                .tint(.purple)
+            HStack(spacing: 12) {
+                ProgressView(value: state.progress, total: 1.0)
+                    .tint(.purple)
+                // Stops the answer and keeps what is written (5.7). Not in the watch's small
+                // layout, which has no room for it.
+                if state.finished != true, activityFamily != .small {
+                    Button(intent: StopLongAnswerIntent(sessionID: sessionID)) {
+                        Label("Stop", systemImage: "stop.fill")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .tint(.purple)
+                }
+            }
         }
         .padding()
     }
@@ -489,13 +513,28 @@ struct ScanDocumentControl: ControlWidget {
     }
 }
 
+/// Scan a page into the open library from the Lock Screen without unlocking (5.7). It opens OpenIntelligence's own
+/// capture extension through `ScanIntoLibraryIntent`, where "Scan Document" above opens the app's scanner after
+/// unlocking.
+@available(iOSApplicationExtension 18.0, *)
+struct ScanIntoLibraryControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.openintelligence.control.lockedscan") {
+            ControlWidgetButton(action: ScanIntoLibraryIntent()) {
+                Label("Scan into Library", systemImage: "camera.viewfinder")
+            }
+        }
+        .displayName("Scan into Library")
+        .description("Takes a photo of a page without unlocking. It's added to the library you have open when you open the app.")
+    }
+}
+
 // MARK: - Home Screen and Lock Screen widget (5.7)
 
 /// Ask, Add Document and Scan Document on the Home Screen and the Lock Screen. Each opens one of the
 /// app's own links, as the controls above do, so the widget needs no data from the app and no app
-/// group. A widget that shows the document count or the last question needs an app group shared with
-/// the app, which needs a provisioning profile this Mac's Xcode can't make (row "Home Screen & Lock
-/// Screen Widgets").
+/// group. "Your Library" below shows the document count and the last question, which the app writes
+/// to an app group the two share.
 @available(iOSApplicationExtension 17.0, *)
 struct QuickActionsWidget: Widget {
     var body: some WidgetConfiguration {
@@ -584,5 +623,181 @@ struct QuickActionsWidgetView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
+    }
+}
+
+// MARK: - "Your Library" widget (5.7)
+
+/// What the app writes for this widget, read from the app group's container: the fields of the app's
+/// `WidgetSnapshot` (OpenIntelligence/App/WidgetSnapshot.swift) that the widget shows. The app keeps the
+/// answer to the open library's own, so the widget shows what it finds.
+struct LibraryWidgetSnapshot: Codable, Equatable {
+    var libraryName: String
+    var documentCount: Int
+    var question: String?
+    var answerPreview: String?
+    var answeredAt: Date?
+
+    static let appGroup = "group.com.openintelligence.app"
+    static let fileName = "widget_snapshot.json"
+
+    static func read() -> LibraryWidgetSnapshot? {
+        guard
+            let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
+                .appendingPathComponent(fileName),
+            let data = try? Data(contentsOf: url)
+        else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(LibraryWidgetSnapshot.self, from: data)
+    }
+
+    /// What the widget gallery shows before the app has written anything.
+    static let example = LibraryWidgetSnapshot(
+        libraryName: "Home", documentCount: 12, question: "When is the rent due?",
+        answerPreview: "Rent is due on the first of each month, with a grace period of five days.",
+        answeredAt: nil)
+}
+
+/// "Your Library" (5.7): the open library and its document count on the Home Screen and the Lock
+/// Screen, and on the Home Screen the last question in that library with the start of its answer.
+/// The answer is marked `privacySensitive`: WidgetKit hides it on a locked device when the person has
+/// chosen to hide private widget data (developer.apple.com, "Creating a widget extension", read
+/// 2026-10-15). The app redraws the widget when either changes (`WidgetSnapshot.write`). With no app
+/// group, or before the app has written anything, it asks to open the app.
+///
+/// Not in `OpenIntelligenceLiveActivitiesBundle` yet: until the App ID carries the app group, a device
+/// build has no container, and the widget could only ask to open the app. It goes into the bundle in
+/// the same commit as the App Group entitlement. Seen working in the iOS 27 Simulator with the group
+/// on 2026-10-15.
+@available(iOSApplicationExtension 17.0, *)
+struct LibraryWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "com.openintelligence.widget.library", provider: LibraryTimeline()) { entry in
+            LibraryWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Your Library")
+        .description("The library you have open, how many documents it holds, and your last question.")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+    }
+}
+
+struct LibraryEntry: TimelineEntry {
+    let date: Date
+    let snapshot: LibraryWidgetSnapshot?
+}
+
+/// One entry, read when the system asks: the app asks for a redraw whenever it writes a new snapshot.
+struct LibraryTimeline: TimelineProvider {
+    func placeholder(in context: Context) -> LibraryEntry {
+        LibraryEntry(date: .now, snapshot: .example)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (LibraryEntry) -> Void) {
+        let snapshot = LibraryWidgetSnapshot.read() ?? (context.isPreview ? .example : nil)
+        completion(LibraryEntry(date: .now, snapshot: snapshot))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<LibraryEntry>) -> Void) {
+        completion(Timeline(entries: [LibraryEntry(date: .now, snapshot: LibraryWidgetSnapshot.read())], policy: .never))
+    }
+}
+
+@available(iOSApplicationExtension 17.0, *)
+struct LibraryWidgetView: View {
+    let entry: LibraryEntry
+    @Environment(\.widgetFamily) private var family
+
+    private static let chat = URL(string: "openintelligence://chat")!
+    private static let documents = URL(string: "openintelligence://documents")!
+
+    var body: some View {
+        content
+            .widgetURL(entry.snapshot == nil ? Self.documents : Self.chat)
+            .containerBackground(for: .widget) {
+                if family == .accessoryRectangular { Color.clear } else { Color(.systemBackground) }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let snapshot = entry.snapshot {
+            switch family {
+            case .accessoryRectangular:
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(snapshot.libraryName, systemImage: "books.vertical")
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(Self.count(snapshot.documentCount))
+                        .font(.caption)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            case .systemMedium:
+                HStack(alignment: .top, spacing: 12) {
+                    library(snapshot)
+                        .frame(maxWidth: 110, maxHeight: .infinity, alignment: .topLeading)
+                    lastAnswer(snapshot)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            default:
+                library(snapshot)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: "books.vertical")
+                    .font(.title2)
+                    .foregroundStyle(.purple)
+                Spacer(minLength: 0)
+                Text("Open OpenIntelligence to show your library here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private func library(_ snapshot: LibraryWidgetSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: "books.vertical")
+                .font(.title2)
+                .foregroundStyle(.purple)
+            Spacer(minLength: 0)
+            Text(snapshot.libraryName)
+                .font(.headline)
+                .lineLimit(2)
+            Text(Self.count(snapshot.documentCount))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Label("Ask", systemImage: "bubble.left.and.text.bubble.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.purple)
+        }
+    }
+
+    @ViewBuilder
+    private func lastAnswer(_ snapshot: LibraryWidgetSnapshot) -> some View {
+        if let answer = snapshot.answerPreview {
+            VStack(alignment: .leading, spacing: 4) {
+                if let question = snapshot.question {
+                    Text(question)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                }
+                Text(answer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+            }
+            .privacySensitive()
+        } else {
+            Text("Your last answer shows here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private static func count(_ n: Int) -> String {
+        n == 1 ? "1 document" : "\(n) documents"
     }
 }

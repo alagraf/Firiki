@@ -105,9 +105,31 @@ final class OIEntityMappingTests: XCTestCase {
             chunk("A late charge of $75.00 applies.", "Lease.pdf", page: 3),
         ]
         XCTAssertEqual(
-            OIAnswerEntity.sourceList(for: chunks),
+            OIAnswerEntity.sourceList(answer: "Rent is late after the 5th.", evidence: [], retrievedChunks: chunks),
             "- Lease.pdf, pages 3, 7\n- Rules.pdf"
         )
+    }
+
+    /// An answer with labels lists what each one points at, the list the app's Share gives (5.7): through the
+    /// first 5.7 builds the list named documents only, so a copied answer's [S1] named nothing.
+    func testAnAnswersLabelsAreEachListedWithTheirSource() {
+        let chunks = [
+            chunk("Rent is late after the 5th.", "Lease.pdf", page: 7),
+            chunk("Quiet hours start at 10:00 p.m.", "Rules.pdf", page: nil),
+        ]
+        XCTAssertEqual(
+            OIAnswerEntity.sourceList(
+                answer: "Quiet hours start at 10:00 p.m. [S2]. Rent is late after the 5th [S1].", evidence: [],
+                retrievedChunks: chunks),
+            "[S2] Rules.pdf\n[S1] Lease.pdf, page 7"
+        )
+    }
+
+    /// Shortcuts shows an answer item's title as it is, so it is the answer's opening in plain words (5.7).
+    func testAnAnswersTitleIsItsOpeningInPlainWords() {
+        let answer = OIAnswerEntity()
+        answer.text = "### Pet Deposit Amount\n- **$300.00** [S1]"
+        XCTAssertEqual(String(localized: answer.displayRepresentation.title), "Pet Deposit Amount $300.00")
     }
 
     func testAnAnswerHandedToAnotherAppArrivesWithItsSources() {
@@ -117,6 +139,27 @@ final class OIEntityMappingTests: XCTestCase {
 
         answer.sourceList = "- Lease.pdf, page 3"
         XCTAssertEqual(answer.textWithSources, "Rent is late after the 5th.\n\nSources:\n- Lease.pdf, page 3")
+    }
+
+    func testAnAnswersOwnLineOfSourceLabelsGivesWayToTheList() {
+        let answer = OIAnswerEntity()
+        answer.text = "The pet deposit is $300.00.\n\nSources: [S1]"
+        answer.sourceList = "- Lease.pdf, page 1"
+        XCTAssertEqual(answer.textWithSources, "The pet deposit is $300.00.\n\nSources:\n- Lease.pdf, page 1")
+
+        answer.text = "Rent is $1,200 [S1] and late after the 5th [S2].\nSources: [S1], [S2]\n"
+        XCTAssertEqual(
+            answer.textWithSources, "Rent is $1,200 [S1] and late after the 5th [S2].\n\nSources:\n- Lease.pdf, page 1",
+            "inline labels stay; the closing line goes")
+
+        answer.text = "Sources of income are listed on page 2."
+        XCTAssertEqual(
+            answer.textWithSources, "Sources of income are listed on page 2.\n\nSources:\n- Lease.pdf, page 1",
+            "a sentence that starts with the word is kept")
+
+        answer.sourceList = ""
+        answer.text = "The pet deposit is $300.00.\n\nSources: [S1]"
+        XCTAssertEqual(answer.textWithSources, answer.text, "with no list to replace it, the line stays")
     }
 
     // MARK: - Mode menu

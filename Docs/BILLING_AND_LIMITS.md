@@ -84,6 +84,16 @@ default when the App Store sends a win-back message (`Message` is unavailable on
 offers can be redeemed in the App Store and in Subscription settings on every platform.
 `[evidence_level: code_verified, confidence: exact, evidence_source: PlanUpgradeSheet.swift dealBadge(for:), comparisons(for:), livePrices; PlanPriceComparison.swift; https://developer.apple.com/app-store/subscriptions/ "Billing amount" and https://developer.apple.com/documentation/storekit/supporting-win-back-offers-in-your-app, both fetched 2026-09-29; StoreKit.swiftinterface in the macOS 27 SDK, Message marked unavailable on macOS]`
 
+### Readable at every text size (5.7)
+
+Added 2026-10-16, from Apple's accessibility audit and the screenshots of the plans sheet in light and dark at the
+default and the largest text sizes. The subheading under the headline is in the readable gray
+(`DSColors.secondaryText`, 5.23 to 1 measured, was 3.48); the privacy-label banner's words are in the label color
+with the purple kept in its icons (gray on its purple tint measured 3.34 to 1); each story slide's second line is in
+the label color on its tint; and the title is inline at accessibility sizes, where the large title was cut to
+"Workspace...". Prices, labels and comparisons are unchanged.
+`[evidence_level: measured (iOS 27.0 Simulator, BenchmarkRuns/2026-10-16-accessibility-pass-3/), confidence: high, evidence_source: PlanUpgradeSheet.swift heroSection, socialProofBanner, storySlides]`
+
 ---
 
 ## 3. Document Pack Add-On Mechanics (discontinued product, retained for existing owners)
@@ -148,7 +158,15 @@ $49.99 point does not resolve to one price per currency: USD is 49.99 in 87 terr
 and EUR is 59.99 in 24 and 49.99 in one (MNE). `LaunchSale` keys by currency, so in a future sale window Montenegro
 would be told its regular EUR 49.99 was reduced from EUR 59.99. No build is exposed, because the only window closed on
 2026-09-30 and a new sale needs a new build. Before the next sale, key the table by territory or leave USD and EUR out,
-and make `scripts/verify_sale_prices.py` read every territory rather than its 28.
+and make `scripts/verify_sale_prices.py` read every territory rather than its 28. **Done for 5.7 (2026-10-17):**
+`LaunchSale.regularLifetimePriceExceptions` holds those 23 territories with the currency each was read in, and
+`regularLifetimePrice(currency:territory:)` gives a listed territory its own price, any other its currency's, and USD or
+EUR nothing until the storefront's country is known (`StorefrontTerritory`, read from `Storefront.current` when the app
+comes to the front and when the plans screen opens). `scripts/verify_sale_prices.py` reads every territory's currency
+from `/v1/territories` and compares each open-ended price with what the app would show there; its first run, on
+2026-10-17, found 175 territories, 141 matching, 34 with no recorded price (no banner there) and 0 that differ.
+`[evidence_level: test_verified (LaunchSaleTests), confidence: high for the table, medium for the storefront read, which
+no sale has exercised; evidence_source: LaunchSale.swift]`
 `[evidence_level: measured, confidence: exact, evidence_source: open-ended rows of /v1/inAppPurchasePriceSchedules/6756638872/automaticPrices and manualPrices, 175 territories, grouped by /v1/territories currency, 2026-09-29]`
 `[evidence_level: measured, confidence: exact, evidence_source: POST /v1/inAppPurchasePriceSchedules and GET .../manualPrices, 2026-09-29 12:25 PT; /v1/inAppPurchasePricePoints/<49.99 USA>/equalizations]`
 
@@ -344,9 +362,61 @@ new call's options, has no values in the Xcode 27.0 SDK, so the set passed is em
 
 ## 6. The privacy policy screen (`PrivacyPolicyView`, kept under Features/Billing)
 
-*Added 2026-10-14, for 5.7.* The in-app privacy policy lives beside the plan screens. Its line on
-diagnostics now reads that telemetry and diagnostics stay on the device and that a crash report
-leaves only if the person chooses to email or share it, because 5.7 adds a crash report
-the person can email (`CrashReports`; `Docs/PRIVACY_AND_ROUTING.md`, "Diagnostics from the system stay
-on the device"). Nothing about plans, prices or limits changed. `[evidence_level: code_verified,
-confidence: high, evidence_source: PrivacyPolicyView.swift, CrashReports.swift]`
+*Added 2026-10-14, for 5.7; rewritten 2026-10-15.* The in-app privacy policy carries the same sections as
+gunzino.me/openintelligence/privacy. `scripts/privacy_policy.py` writes both from one text, and with them Gunzino's
+hand-written copy of the page, which its deploy compares the built page with (`Docs/ai/RUNBOOK.md`, "Changing the
+privacy policy"). Settings, About opens it with a Privacy Policy row. From
+2026-05-28 (`a666a9b`) until then nothing opened it: the Plans screen's Privacy Policy button became a link to the
+website, and `PlanUpgradeSheet.showingPrivacy` is still declared and never set to true. The Plans screen keeps the
+website link. Nothing about plans, prices or limits changed.
+
+Each statement in the text was checked against the code on 2026-10-15:
+
+- No advertising or tracking code: no `AdSupport`, `AppTrackingTransparency`, `SKAdNetwork` or `AdAttributionKit`
+  in the app. `URLSession` is used by `WebPageFetchService` (an ephemeral session that never accepts or sets
+  cookies), by `AppStoreRatingSnapshot`, and by `AdapterManager`, which nothing calls (removed in 5.7 on 2026-10-20); `LocalOpenAIServerLLMService.swift`
+  is inside `#if false`.
+- Private Cloud Compute is iOS, iPadOS and macOS 27 only: `FoundationModelSessionFactory` throws `modelUnavailable`
+  before 27. Show Details on `CloudConsentPromptView` gives the reason and the size of what would be sent.
+- When it is used (corrected 2026-10-15): with Hybrid, `ModelExecutionPlanner` sends an answer whose passages don't
+  fit (`!localBudget.fits`) and a Deep Think or Maximum answer drawn from more than one document
+  (`complexityRequestsPCC`); with the picker's Private Cloud Compute, every answer. `cloudConsentDecision` reads no
+  mode, so "Allow without asking" (shown as "Allow for Deep Think and Maximum" through 5.6) allows every request.
+- What differs before 5.7, said in the text: the setting's name, the search cache, dictation, Spotlight removal,
+  web pages, Siri asking first and crash reports (each found with `git log -S` against the `v5.6.0` tag).
+- iCloud Sync needs Pro or Lifetime (`effectiveTier.isAtLeast(.pro)`).
+- A web page comes from Save a Web Page, the Link field of Add to Library, or a web address pasted on the Documents
+  screen: the three callers of `WebPageFetchService.fetch`. From 5.7 (added 2026-10-17) a page shared to the app
+  from another app's share sheet is a fourth way in, and the policy names it: the share extension only writes the
+  address to the app group's inbox (`SharedInbox`), and the app downloads it through the Paste control's staging
+  (`SharedInboxImport`, `PastedContentStaging.stage`), so the callers of `fetch` are still those three.
+  `[evidence_level: code_verified, confidence: high, evidence_source: PastedContentStaging.swift:116,
+  ScreenAwarenessIntents.swift:111, AddToLibraryIntent.swift:74, SharedInboxImport.swift]`
+- A crash report (`CrashReports.fields`) holds the versions, the device model, how the app ended, the app's two state
+  domains (import and answer) and the call stack, and leaves out an exception's message and the memory region
+  description. About can email its summary or share the whole file.
+- Dictation is `DictationTranscriber`, on the device. Turning off Spotlight Indexing calls
+  `deleteAllSearchableItems`. Deleting a library removes each of its documents, which clears their passages, keyword
+  rows and Spotlight entries (`LibraryDeletion`).
+- Language data for the Atlas (added 2026-10-17): `AtlasLabeling.loadWordClasses` calls
+  `NLTagger.requestAssets(for:tagScheme:)` with a language code and `.lexicalClass` only, for the eight languages in
+  `languagesWithWordClasses` that the device lacks, once a launch; nothing from the library goes with it. The policy's
+  date moved to October 17, 2026 with this paragraph; the gunzino.me copy waits on the owner's word for that repository.
+- Cached questions and the passages found for them (`semantic_query_cache`) are deleted from 5.7 once the
+  documents or the app's version change (`RAGService.deleteUnreachableCachedSearches`, added 2026-10-15). Through
+  5.6 nothing deleted them, and they outlived their library. The policy says what each version does.
+
+`[evidence_level: code_verified, confidence: high, evidence_source: the files named above, read 2026-10-15;
+git log -S'showingPrivacy = true' for the button]`
+
+## 7. An action's engine reads the saved plan (added 2026-10-15, for 5.7)
+
+A Shortcuts or Siri action that runs while the app is closed builds its own engine (`IntentSupport.engine`) with no
+entitlement store. Its document check reads `EntitlementStore.savedDocumentAllowance`, from `savedEntitlementSnapshot`: the plan, the document
+packs not yet expired and any legacy protection, as the app's store last saved them, built by the store's own
+`buildSnapshot`. Until 5.7 that check used `QuotaPolicy.documentLimit()`, whose default is the free plan, so Add to
+Library refused a Pro or Lifetime library of five documents or more. The library limit already read the saved plan
+(`currentLibraryLimit`). Nothing about prices or limits changed. `[evidence_level: test_verified
+(SavedEntitlementSnapshotTests), confidence: high]`
+
+> **5.7, 2026-10-22.** The plan screens (`PlanUpgradeSheet`, `LaunchSaleBanner`) took the app-wide visual standard (colour, spacing, corners) with their text sizes unchanged. No price, plan, limit or purchase path changed (`ui_wiring_check.py` OK). `[evidence_level: build_verified, confidence: high]`

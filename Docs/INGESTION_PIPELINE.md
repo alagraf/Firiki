@@ -1,8 +1,9 @@
 # Ingestion Pipeline — source-verified at v4.6; shipped versions in `Docs/SHIPPED_VERSION.json`
 
-> **Read this file by section, never whole** (about 65 KB): `grep -n '^## ' Docs/INGESTION_PIPELINE.md`, then the section a task touches.
+> **Read this file by section, never whole** (about 65 KB when this line was written, about 171 KB on 2026-10-20): `grep -n '^## ' Docs/INGESTION_PIPELINE.md`, then the section a task touches.
 
 > **Documentation status:** Source-verified on 2026-07-15 against v4.6. **Not re-verified since.** `Docs/SHIPPED_VERSION.json` is the per-platform record of which version is live and which is in review; read it there, because a version number hardcoded in this header went stale with each release. Corrected 2026-09-01, having said 4.9 since July; 5.1 recorded 2026-09-02, 5.2 recorded 2026-09-11, 5.3 recorded 2026-09-20. Private Cloud Compute shipped in 5.2 on 2026-09-10 and is live on both platforms, and it still does not change ingestion: indexed content remains local until a later query explicitly selects and consents to a minimized PCC synthesis envelope.
+> **Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress).** These parts were read again in the code and corrected where they disagreed with it. §1: the two indexes are not written "in parallel", the diagram is redrawn in the order the code runs, and a new list, "The order the code runs", gives the steps of a whole-file import with their lines, and the exits for very large files. §2: the PDF lane, and what a photo's passages hold. §2.7: which passages carry entities, and the entity index that nothing fills. §3: the passage sizes, tables and lists, and the token split's current lines. §4: the keyword store's columns and weights, the vector store's format and search, and what a stand-in embedder does to a library. §5: the custom words a PDF's Vision requests get ("OCR language narrowing"), and in "Saved first, improved after" the document overview's limits and where it is stored, and what the streamed paths skip. §6: what the pre-scan's plan reaches, and when a chunk size asks for a rebuild. Everything else is as it was. Line numbers in these notes are that tree's and will move: `RAGService.swift` grew 50 lines during the pass, and its lines were re-pinned to the file as it stood at 22:27 PDT.
 > **Known drift as of 2026-08-05** — in the changelog under 4.9 (now `Docs/Archive/CHANGELOG_2.0_to_5.2.md`) but not yet described below: all five workspace metadata writes are now atomic read-modify-writes through `coordinatedMergeData(at:transform:)`, closing the race where an ingestion completing mid-sync-pass left a fully intact document on disk with no metadata row pointing at it. `WorkspaceSyncService` also no longer deletes an index for a library that still has documents.
 > **Source of truth:** The code. The codebase audit this line cited, in `Docs/AUDIT/`, is not in the repository (`Docs/AUDIT/` is gitignored). For history, see `Docs/Archive/CHANGELOG_2.0_to_5.2.md` 4.8–4.9 for ingestion and sync (moved out of `CHANGELOG.md` on 2026-09-24).
 > **Scope:** Describes shipped behavior unless explicitly labeled experimental, developer-only, or scaffolded.
@@ -13,6 +14,8 @@ This document describes the design and implementation of the import-time documen
 
 ## 1. Overview
 The ingestion pipeline converts raw files (PDFs, images, text documents) into searchable text segments with semantic metadata, storing them in parallel lexical and vector indexes. 
+
+*Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):* the two indexes are not written in parallel. The keyword store (SQLite FTS5) gets the whole document before the text is cut, with one row per page for a multi-page PDF or a batch of a large one, and then one row per passage after the vectors are stored. A single-page PDF and every other file get no page rows, a file imported in pieces stores its whole text once at the end, and an XML file over 50 MB stores the joined text of its passages. The diagram was redrawn to the order the code runs, and "The order the code runs", after it, gives the steps with their lines. `[evidence_level: code_verified, confidence: high, evidence_source: DocumentProcessor.swift:787-797 (large XML), 987-1015 (first write, page rows only for numbered text, before chunking at :1046), RAGService.swift:7894 (vectors), 7981 (passage rows), RAGService+TextStreaming.swift:316-317]`
 
 ```mermaid
 flowchart TD
@@ -25,21 +28,36 @@ flowchart TD
     SINGLE --> SUPPRESSED{Library repair suppressed?}
     SUPPRESSED -- Yes --> WAIT[Wait for explicit import or manual rebuild]
     SUPPRESSED -- No --> A
-    A[Import File] --> B{File Type}
-    B -- PDF Size < 10MB --> C{Native Text Layer?}
-    B -- PDF Size >= 10MB --> STREAM[Batched Streaming Ingestion]
-    C -- Yes --> D[PDFKit Extraction]
-    C -- No --> E[Vision OCR Fallback]
-    D --> PRIME[Mine rough text: custom words + narrow OCR language set]
-    PRIME --> E
-    B -- Text/Markdown --> F[Direct Text Read]
+    A[Import File] --> COPY[Copied into the workspace and queued, one item per file]
+    COPY --> SERIAL[Serial loop: one file at a time, 120 s lease]
+    SERIAL --> DUP{Same file already in this library, by SHA-256 or stored path?}
+    DUP -- Yes --> SKIPDUP[Skipped: Already imported]
+    DUP -- No --> QUOTA{Plan has room?}
+    QUOTA -- No --> QERR[Document quota error]
+    QUOTA -- Yes --> EMB[The library's embedder. A stand-in provider clears the library's vectors]
+    EMB --> PRESCAN[Pre-scan: first 10 pages or 10,000 characters, chunk plan saved on the library]
+    PRESCAN --> B{File type and size}
+    B -- PDF over 10 MB --> STREAM[Batched Streaming Ingestion]
     B -- Text, Markdown or JSON Lines over 8 MB --> TPIECES[Import in pieces of whole lines]
-    B -- Image --> IMG[Structured parse, then OCR + classification]
+    B -- Not XML and over 500 MB --> TOOBIG[Refused: fileTooLarge]
+    B -- XML over 50 MB --> XMLSAX[Streaming SAX parse: its own passages, their joined text to FTS5, no page rows]
+    XMLSAX --> SPOT1
+    B -- PDF up to 10 MB --> PRIME[Narrow the OCR languages from the first 50 pages of text layer. Custom words: the universal list]
+    PRIME --> PHASE1{Phase -1: one sample page read by OCR. Jaccard under 0.15, or numbers that fail the SHX check?}
+    PHASE1 -- Yes, every page --> E
+    PHASE1 -- No --> HYB[Document level: hybrid mode if over 60% of 5 sampled pages hold good text, else OCR mode]
+    HYB --> C{Per page: marked for OCR, a scan under text, or a hard page?}
+    C -- No --> D[PDFKit text layer, read by word position]
+    C -- Yes --> E[Vision RecognizeDocumentsRequest at 360 or 432 DPI, RecognizeTextRequest fallback]
+    E -- Hybrid mode only --> LAE[LayoutAwareExtractor: columns, and its text replaces Vision's paragraphs]
+    LAE --> G
+    B -- Text/Markdown --> F[Direct Text Read]
+    B -- Image --> IMG[Structured parse, labels, OCR, codes, a description the model writes]
     B -- CSV --> CSVL[RFC 4180 parse to pipe rows]
     B -- JSON / JSON Lines --> JSONR[Parse records to field: value lines]
-    B -- Office XML --> OFF[ZIP + XML: docx/xlsx/pptx]
+    B -- Office XML --> OFF[ZIP + XML: docx/xlsx/pptx. Legacy doc/xls/ppt throw]
     B -- iWork --> IWORK[Always throws; see 2.6]
-    B -- Audio/Video --> AV[SpeechAnalyzer transcription]
+    B -- Audio/Video --> AV[On-device transcription, up to 2 hours]
     D --> G[Normalizer & OCR Repair]
     E --> G
     F --> G
@@ -48,15 +66,22 @@ flowchart TD
     JSONR --> G
     OFF --> G
     AV --> G
-    G --> H[Semantic / Structure-aware Chunking]
-    G -- JSON records --> HREC[One passage per record]
+    G --> J1[SQLite FTS5, first write: the whole document, with page rows for a multi-page PDF]
+    J1 --> H[Semantic / Structure-aware Chunking: target 260, at most 310, overlap 50 words, metadata per passage]
+    J1 -- JSON records --> HREC[One passage per record]
     HREC --> I
-    H --> I[Token Boundary Enforcer]
-    I --> J[SQLite FTS5 Storage]
-    I --> K[Embedding Generation - Core ML or Core AI]
+    H --> I[Token Boundary Enforcer: split above 430 tokens]
+    I --> DETECT[Data detector over the whole text, for the vocabulary. Entity index never filled]
+    DETECT --> SPOT1[Gazetteer terms and a Spotlight entry for the document]
+    SPOT1 --> K[Embedding Generation - Core ML or Core AI, with a file name and section prefix]
     PROFILE[GPU Execution Profile] --> E
     PROFILE --> K
-    K --> L[BNNS Vector Storage]
+    K --> L[BNNS Vector Storage: one flat Float32 file per library, in arrival order, rewritten whole at each save]
+    L --> SPOT2[A Spotlight entry per passage]
+    SPOT2 --> J[SQLite FTS5, second write: one row per passage]
+    J --> VOCAB[Library vocabulary, then the vector store is saved again]
+    VOCAB --> LISTED[Document listed and saved: searchable from here]
+    LISTED --> ENRICH[One overview passage, content tags, suggested questions. Wait while in the background]
     J --> LOCAL[Local Search Index Boundary]
     L --> LOCAL
     
@@ -64,23 +89,26 @@ flowchart TD
     STATE --> S1[Process Batch of 15 Pages]
     S1 --> SKIP{Already completed?}
     SKIP -- Yes --> NEXT_BATCH{More Pages?}
-    SKIP -- No --> S2[Extract Chunks]
-    S2 --> S3[Vectorize Batch]
+    SKIP -- No --> S2[Extract Chunks: the batch's text and pages appended to FTS5 first]
+    S2 -- Whole PDF over 500 MB, first batch --> TOOBIG
+    S2 --> S3[Vectorize Batch, with a bare file name prefix]
     PROFILE --> S3
-    S3 --> S4[Store Batch to FTS5 & Vector DB]
+    S3 --> S4[Store Batch: vector DB, then FTS5 rows per passage]
     S4 --> S5[Call db.persist & Update ingestion_state.json]
     S5 --> NEXT_BATCH
     NEXT_BATCH -- Yes --> S1
     NEXT_BATCH -- No --> S6[Finalize Document Metadata & Await saveToDisk]
-    S6 --> S7[Pre-generate Suggested Questions]
+    S6 --> S7[Pre-generate Suggested Questions. No overview, tags, Spotlight or vocabulary]
     S7 --> S8[Clean Checkpoints]
 
     TPIECES --> TSTATE[Load text_ingestion_state.json: stable doc ID, bytes done, record numbers]
     TSTATE --> TPENDING{A piece was being stored when the app stopped?}
     TPENDING -- Neither store has it --> T1
     TPENDING -- Both stores have it --> TCOUNT[Count it as committed]
-    TPENDING -- The stores disagree --> TOVER[Remove the document's chunks and start over]
+    TPENDING -- Vector store has it, search index has none --> TFINISH[Write its index rows from the vector store, count it as committed]
+    TPENDING -- The stores disagree otherwise --> TOVER[Remove the document's chunks and start over]
     TCOUNT --> T1
+    TFINISH --> T1
     TOVER --> T1
     TPENDING -- No --> T1[Cut the next piece: about 2 MB, ending at a line feed]
     T1 --> T2[processDocument on the piece: records numbered for the whole file, short records packed]
@@ -95,6 +123,39 @@ flowchart TD
     T7 --> S7
 ```
 
+### The order the code runs *(added 2026-10-20)*
+
+Read in the working tree on 2026-10-20 (`b868fc0` plus the 5.7 work in progress), for a file imported whole. Steps 1 and 2 are the queue, `RAGService.addDocument` (RAGService.swift:6909) runs steps 3 to 7 and 13 to 21, and `DocumentProcessor.processDocument` (DocumentProcessor.swift:721) runs steps 8 to 12. `RAGService.swift` grew 50 lines while this was written, and its lines below were re-pinned to the file as it stood at 22:27 PDT that evening, so they will move again. Nothing was built or run for this list.
+
+1. **Copy and queue.** The file is copied into the app's workspace (§1.5), and `enqueueDocuments` saves one `IngestionItem` per file and starts the queue's task (RAGService.swift:6113-6180).
+2. **One file at a time.** `runIngestionLoop` claims a 120-second lease on the next queued item and waits for `addDocument` to finish before it takes another (RAGService.swift:336, 6500-6561, 6617-6635).
+3. **Managed copy, iCloud, duplicate check, plan.** `addDocument` copies a file from outside the workspace into it (`prepareManagedDocumentURL`, :8595-8605), waits for an iCloud placeholder to download, and hashes the file with SHA-256 (:5037-5043, 6933). A file the library already holds, by that hash or by its stored path, is skipped as "Already imported" (:4992-5010, 6949-7025). Then the plan's document limit is checked (:7027-7074).
+4. **The embedder.** The library's provider, or `coreml_sentence_embedding` at 384 dimensions when the library names none. When that provider can't be loaded, `EmbeddingService.forProvider` falls back to the Core ML copy of MiniLM and last to `NLEmbedding` at 512 (EmbeddingService.swift:181-213). `addDocument` then records the stand-in on the library and **clears the library's vectors** (`invalidateVectorStore(for:clearStorage: true)`, RAGService.swift:7080-7128).
+5. **File type**, from the extension (`detectDocumentType`, DocumentProcessor.swift:9942-10066).
+6. **The chunk-size pre-scan**, when the library's `autoAdaptDimension` is on, as it is for a new library (KnowledgeContainer.swift:172, 226). Before each import, the first 10 pages of a PDF, or the first 10,000 characters of a file that reads as UTF-8 text, give a plan of 280 to 420 words with 50 to 70 words of overlap, saved on the library as an `.auto` chunking directive (RAGService.swift:7226-7256, 10282-10301, AdaptiveEmbeddingOptimizer.swift:288-338). Step 10 clamps it to 260 and 50 (§6).
+7. **Very large files leave here.** A PDF over 10 MB goes to `importLargePDFStreamed` (batches of 15 pages) and a text, Markdown or JSON Lines file over 8 MB to `importLargeTextStreamed` (pieces of about 2 MB), and each does the rest itself (RAGService.swift:7258-7297, §5). Both embed each passage with a bare `"<file name>: "` prefix and no section, and neither writes an overview passage, content tags, Spotlight entries or the library's vocabulary. Both write suggested questions and end with the library analysis (RAGService+Streaming.swift:138, 278, RAGService+TextStreaming.swift:346, 397, RAGService.swift:7274, 7295).
+8. **Read the text**, by type (§2). First, `processDocument` reads an XML file over 50 MB with a streaming SAX parser that returns its own passages and stores their joined text, with no page rows, so steps 9 to 12 do not run for it (DocumentProcessor.swift:749-832). It refuses any other file over 500 MB (`fileTooLarge`, :839-843), and since that size is the whole file's (:735), a PDF over 500 MB, which takes the streamed path, is refused at its first batch.
+   - **PDF.** The OCR languages are first narrowed from the text layer of the first 50 pages (`detectDocumentRecognitionLanguagesIfNeeded`, DocumentProcessor.swift:3451-3466, called at :4126). The custom words Vision gets are the universal list only (`OCRConfiguration.universalCustomWords`, set at :727 and passed at :4185). The document's own vocabulary is mined only in `extractTextFromPDFWithPages` (:3676), which is called from the branch for systems before 26 (:4134), which no supported OS takes (the deployment target is 26.0), and from the PDF case of `extractTextWithPageInfo` (:1398), and no caller hands that function a PDF (:861-882, 7670-7673). Phase -1 then looks at three sample pages, runs OCR on the one with the most text in a script Vision reads, and calls the text layer scrambled when the two sets of words have a Jaccard similarity under 0.15, or, under 0.45, when the layer holds five or more number tokens and those match under 0.25 (the SHX check). A scrambled layer sends every page to Vision (:4197-4325). Next a document-level test picks hybrid mode, when the layer is not scrambled and more than 60% of up to five sampled pages hold over 100 characters of acceptable text, and OCR mode otherwise (`pdfHasGoodNativeText`, :4147-4167, 4329). Each page is then classified (`PageComplexityAnalyzer`: direct text, spatial text, or one of three OCR levels) and read from its text layer by word position, or with Vision when the classifier picks OCR, finds a scan under a text layer, or picks spatial text for a page with tables, dense numbers, more than one column, a complex layout, list or header patterns, low text coverage or fine print (:276-303, 4515-4600, PageComplexityAnalyzer.swift:1260-1266). Vision is `RecognizeDocumentsRequest` on the page rendered at 360 DPI, or at 432 DPI for a page with fine print, tables, columns, dense numbers, a complex layout, strong headers or little text, and for every page of a scrambled text layer, with `RecognizeTextRequest` when the structured parse caught under 30% of the words (:236-260, StructuredDocumentParser.swift:688-790). In hybrid mode `LayoutAwareExtractor` also reads each Vision page for columns and reading order, and on a page with no structured table, unless it is a scan under a text layer, its text replaces Vision's paragraphs (:4609-4650, 4801-4848). Repeated headers and footers are removed (:3278, 5358), and pictures in the PDF are described by the on-device model (`analyzeEmbeddedImages`, :5351, 7423-7470).
+   - **Photo.** The structured parse, then an `[Image: <type>]` line, the classifier's top five labels, the recognised text with any barcode or QR code first, and a `Description:` line that the on-device model (`SystemLanguageModel.default`) writes (DocumentProcessor.swift:7857-7918, ImageUnderstandingService.swift:1166-1201). **So a photo's passages hold words that are not in the picture.**
+   - **Recording.** Transcribed on the device: from 5.7 `SpeechAnalyzer` with a `SpeechTranscriber` first, otherwise `SFSpeechRecognizer` with `requiresOnDeviceRecognition = true`. Eight extensions (m4a, mp3, wav, caf, aiff, mp4, mov, m4v), and at most 2 hours (SpeechAnalyzerService.swift:85-86, 121-122, AudioTranscriptionService.swift:217).
+   - **Office.** `.docx`, `.xlsx` and `.pptx` are read from their zipped XML. A legacy `.doc`, `.xls` or `.ppt` gets the same type, does not open as a ZIP, and throws `officeFormatNeedsConversion` (DocumentProcessor.swift:9389-9487, 10015-10020). Pages, Numbers and Keynote always throw (§2.6).
+9. **Clean-up, then the first keyword-store write.** Junk OCR lines are filtered (a PDF's page by page while it is read, any other file that used OCR here), the text is normalised off the main actor, and then **the whole cleaned document goes into the keyword store (the `documents` FTS5 table) before anything is cut**, with one row per page in `document_pages` when the text has more than one page or is a batch of a large PDF. A single-page PDF and every other file get no page rows (DocumentProcessor.swift:935-1015, page rows only for numbered text at :987, `storeText`, :10590-10599). A document category is then picked by keyword scoring (:1038-1044).
+10. **Cut into passages.** Target 260 words, at most 310, an overlap of 50 and a minimum of at least 60. A table over 380 words is split by rows, each item of a structured list is a passage of its own, and each table also gets a summary passage (§3, DocumentProcessor.swift:1046-1209). Each passage gets its metadata here. A prose passage gets its top 5 keywords, section title and path, page, up to 15 named entities (from `NLTagger` and an always-on supplement of capitalised words), abbreviations and cross-reference targets (SemanticChunker.swift:1795-1856, 1962-2040), and a table, list or figure passage up to 20 keywords (DocumentProcessor.swift:7115-7156).
+11. **The 430-token split.** Each passage is counted with the embedder's WordPiece tokenizer, and one over 430 tokens is split into `[Part N]` parts of at most 420 (DocumentProcessor.swift:1230, 6765-6773, 6816-6880, 6943-6967).
+12. **Apple's data detector over the whole text**, the first 1,000,000 characters. Its matches go to the library's vocabulary and not into the passages (DocumentProcessor.swift:457, 1268-1274, RAGService.swift:8006-8015). **The entity index (`EntityIndexService`) is never filled by this build**: nothing calls its `indexChunk` or `indexChunks`, and only the deletion paths and a statistics log reach it (EntityIndexService.swift:92-145).
+13. **Gazetteer terms, and a Spotlight entry for the document** (RAGService.swift:7335-7356).
+14. **Embed.** Each passage is embedded as `"[<file name>] [<Section > Path>] "` and its text, translated first when the library has a translation target. The file name loses its extension, and its underscores and hyphens become spaces (RAGService.swift:7650-7774, the file name part at 9274-9285). The model is MiniLM-L6-v2, 384 numbers a passage. The Core ML copy mean-pools and is the default on iPhone and iPad. The Core AI copy reads the first (CLS) position and is the default on a Mac with macOS 27, so the two copies give different vectors for one text (CoreMLSentenceEmbeddingProvider.swift:66-73, EmbeddingService.swift:546-571). `NLEmbedding` at 512 is the last stand-in (step 4). An import stops when more than half of a batch's vectors are unusable (`EmbeddingVectorCheck.requireUsable`, RAGService.swift:7774).
+15. **The vector store write.** `BNNSVectorDatabase.storeBatch` appends each vector **in arrival order** to the store's buffers in memory, and `persist()`, called right after it, rewrites the library's three files whole (`_vectors.bin` of raw Float32, `_norms.bin` and `_meta.json`), each to a temporary file that is then moved into place, vectors first. There is no index, no quantisation and no grouping (RAGService.swift:7872-7895, BNNSVectorDatabase.swift:26-36, 1036-1091). §4 has the search.
+16. **A Spotlight entry per passage** (RAGService.swift:7902-7925).
+17. **The second keyword-store write: one row per passage** in the `chunks` FTS5 table, stemmed, with section titles weighted (RAGService.swift:7936-7986, and §4).
+18. **The library's vocabulary**, from the passages and the detected entities. Then `persist()` runs again, and it writes nothing unless the store changed after step 15 (RAGService.swift:7988-8034, BNNSVectorDatabase.swift:1083-1091).
+19. **Listed.** The document joins the list, and the list is saved. Only from here can a question find it: a question uses only the passages of a listed document (RAGService.swift:8143-8168, the rules at :1338-1368).
+20. **Enrichment**: one overview passage, content tags and suggested questions (§5, "Saved first, improved after"). While the app is in the background these wait until it is in front (RAGService.swift:8169-8186, 8293-8491).
+21. **Done.** The item is marked complete, the retrieval settings are tuned to the library's document types, and the library analysis is refreshed (RAGService.swift:8190-8218).
+
+Not done at import, on any path: clustering or topic grouping of the passages (k-means appears only in the visualisation code, `AtlasLabeling.swift` and `LibraryVisualizationEngine.swift`), a summary tree above the one overview passage, and the entity index.
+`[evidence_level: code_verified, confidence: high, evidence_source: the files and lines given in each step, read on 2026-10-20, RAGService.swift re-pinned at 22:27 PDT, nothing built or run]`
+
 ---
 
 ## 1.5 Import entry points *(added 2026-08-27)*
@@ -106,7 +167,9 @@ same way.
 |---|---|---|
 | Library "Add Documents" | iOS | `UIDocumentPickerViewController` with `asCopy: true`, in a sheet |
 | Library "Add Documents" | macOS | `MacDocumentImportPanel` — `NSOpenPanel.beginSheetModal(for:)`, no sheet |
-| Finder drag-and-drop onto the library | macOS, iPadOS | `.dropDestination(for: URL.self)` on the library area |
+| Finder drag-and-drop onto the library | macOS, iPadOS | `.dropDestination(for: URL.self)` on the library area, in three parts: the header above the row of libraries, everything below it, and the import panel (`DocumentLibraryView.takingDroppedFiles(as:)`, 5.7) |
+
+The row of libraries is in no part, so a file dropped on it is not taken; each part takes a drop anywhere in its frame. Through 5.6 one target went around the whole area, and on iOS 27.0 a target around the row kept its chips from being dragged into a new order: SwiftUI reported the dragged chip's own place, so no library moved. `[evidence_level: measured in the iOS 27.0 Simulator, 2026-10-19: the reorder with a probe app and with the app's own build, files dropped on the parts with the probe app only (kept in BenchmarkRuns/2026-10-19-library-reorder); confidence: medium; not tried on a Mac or an iPad; evidence_source: DocumentLibraryView.swift takingDroppedFiles(as:), libraryPicker]`
 
 **All three copy into the app-managed workspace before ingesting**, through
 `ImportedFileStaging.copyIntoWorkspace` in
@@ -131,6 +194,16 @@ of a folder document and `copyItem` would copy one wholesale. Quota is checked b
 drop that would exceed the document limit raises the paywall instead of half-importing.
 `[evidence_level: code_verified, confidence: exact]`
 
+Corrected 2026-10-19: the first sentence describes 5.6, and the second says more than the code does. From 5.7 a dropped folder is opened, and the files inside
+it that the app imports come in, through its subfolders, at most `folderFileRoom` of them (the plan's room
+left, never more than 500); loose files are all staged (`ImportedFileStaging.copyIntoWorkspaceExpandingFolders`).
+The plan check before any copy is `canAddDocument(currentCount:)` with the count of every document in the
+app, so it raises the paywall when the plan's document limit is already reached, not when a drop would take
+the count past it, and never on a plan with unlimited documents.
+`[evidence_level: code_verified, confidence: high, evidence_source: DocumentLibraryView.swift handleDroppedFiles, folderFileRoom; DocumentPicker.swift copyIntoWorkspaceExpandingFolders; EntitlementStore.swift canAddDocument]`
+What happens to the files of a drop larger than the room left, after staging, was not read for this note.
+`[evidence_level: unverified, confidence: low, evidence_source: enqueueDocumentIngestion and the import queue not read on 2026-10-19]`
+
 ---
 
 ### Files handed over by another app *(added 2026-10-09, for 5.7)*
@@ -144,12 +217,16 @@ Through 5.6 the app declared no document types, so Files, Mail and share sheets 
 ### PDF Ingestion
 - **Standard Lane:** Uses PDFKit to extract the native text layer if available. [StructuredDocumentParser.swift](../OpenIntelligence/Services/Document/Processing/StructuredDocumentParser.swift) is used to resolve structures like tables, lists, and headings.
 - **OCR Fallback Lane:** If the native text layer is missing or malformed, the pipeline invokes [LayoutAwareExtractor.swift](../OpenIntelligence/Services/Document/Processing/LayoutAwareExtractor.swift) to render pages as images and run local Apple Vision OCR, restoring page layout anchors.
+- **Corrected 2026-10-20 against the working tree:** on iOS and macOS 26 and later every PDF goes through `extractStructuredPDFContent` and `extractWithStructuredParsing`, and the lane is chosen twice, once for the document and then page by page. For the document, Phase -1 reads one sample page with OCR (of three sampled, the one with the most text in a script Vision reads) and calls the text layer scrambled when its words and OCR's have a Jaccard similarity under 0.15, or, under 0.45, when the layer holds five or more number tokens and those match under 0.25 (the SHX check). A scrambled layer sends every page to Vision. Otherwise `pdfHasGoodNativeText` picks hybrid mode when more than 60% of up to five sampled pages hold over 100 characters of acceptable text, and OCR mode when they do not. For each page, `PageComplexityAnalyzer` picks direct text, spatial text or one of three OCR levels. A page is read from its text layer by word position (`extractTextWithSpatialOrdering`) unless the analyzer picks OCR, finds a scan under a text layer, or picks spatial text for a page with tables, dense numbers, more than one column, a complex layout, list or header patterns, low text coverage or fine print. Such a page is rendered at 360 DPI (432 for a page with fine print, tables, columns, dense numbers, a complex layout, strong headers or little text, and for a scrambled text layer) and read by `RecognizeDocumentsRequest` in `StructuredDocumentParser`, with `RecognizeTextRequest` when the structured parse caught under 30% of the words. In hybrid mode `LayoutAwareExtractor` also reads each such page for columns and reading order, and on a page with no structured table, unless it is a scan under a text layer, its text replaces Vision's paragraphs while Vision's tables, lists and titles stay. In OCR mode it does not run. So the bullet above has it backwards: `LayoutAwareExtractor` runs only for a PDF whose text layer is good, never for a scan or a scrambled layer. Repeated headers and footers are then removed, and pictures in the PDF get a description from the on-device model. `[evidence_level: code_verified, confidence: high, evidence_source: DocumentProcessor.swift:236-260, 276-303, 861-866, 4112-4130, 4147-4167, 4197-4325, 4329, 4515-4600, 4609-4650, 4801-4848, 5351, 5358, StructuredDocumentParser.swift:688-790]`
 
 ### Image Ingestion *(corrected 2026-08-08)*
 - Standalone images (png/jpg/jpeg/heic/tiff/gif) run through `StructuredDocumentParser.parsePageImage` first, the same `RecognizeDocumentsRequest` path PDFs use, and its output is prepended to the classification and AI description from `ImageUnderstandingService`. A failure falls back to the previous behaviour, so this adds structure and never removes it.
 - **Until 2026-08-08 this path never saw the structured parser.** It used `VNRecognizeTextRequest`, which returns text lines in reading order and cannot express that a value belongs to a row and a column, so the same table gave cell structure inside a PDF and flat lines when photographed. `[evidence_level: code_verified, confidence: exact]`
+- **From 2026-08-08 to 5.7 that structure was stored as Swift's description of it.** The image path joined the parsed elements with `StructuredPageContent.plainText(of:)`, written for the coverage check, which returned `String(describing:)` for a table, a list or a figure, so a photographed receipt stored "table(OpenIntelligence.TableData(pageNumber: 1, rows: ..." in its text and passages. From 5.7 it returns `textForEmbedding`: a table's `textRepresentation` (rows, cells and a Markdown table, the text a PDF's table gets, though a photo's is cut into passages with the rest of its text where a PDF's table is a passage of its own), a list's items, a figure's description. A photo imported before 5.7 keeps its text until it is imported again. `[evidence_level: measured (the household receipt's passages in the iOS 27.0 Simulator, 2026-10-20), code_verified, test_verified (StructuredPageContentTests; full suite in the iOS 27.0 Simulator on 2026-10-20: 1,300 tests, 6 skipped, 0 failures), confidence: high]`
+- **What a photo's text holds, added 2026-10-20.** After the structured parse come an `[Image: <type>]` line, `Content:` with the classifier's top five labels, `Text:` with the recognised text (any barcode or QR code first, from 5.7), and `Description:` with the sentence or two the on-device model (`SystemLanguageModel.default`) writes, or the classifier's own description when the model gives none. All of it is cut into passages, embedded and indexed like the page's words, so **a photo's passages hold words that are not in the picture**, and a search can match the model's description or a label. `[evidence_level: code_verified, confidence: high, evidence_source: ImageUnderstandingService.swift:1166-1201, 659-674, 748-773, DocumentProcessor.swift:7857-7918]`
 
 ### Camera Capture *(corrected 2026-08-08)*
+- **Debug builds only, from 5.7 (2026-10-20).** `CameraManager`, `CameraVisionOverlayView`, `CaptureToRAGBridge`, `DocumentCaptureView`, `CameraOverlayGeometry` and `LiveObjectDetectionService` compile only in Debug builds (`#if os(iOS) && DEBUG`), with the chat's presenter and its "Look at Something" menu item, so a Release build holds none of this path. Scanning a document in a shipping build goes through the system's scanner (`SystemDocumentScanner`, `VNDocumentCameraViewController`), and the Lock Screen capture extension uses the system camera. What follows describes the Debug path. `[evidence_level: build_verified and measured (an iOS Release build on 2026-10-20 holds no symbol of these types), confidence: high, evidence_source: the six files' #if, ChatScreen.swift, AttachmentPicker.swift]`
 - Document captures run `RecognizeDocumentsRequest` and prefer its structured output. Non-document captures skip it, since a photo of a pet or a landscape has no document structure to find. Failure or an empty parse leaves the flat OCR text untouched.
 - **This path carried both defects.** `CameraManager.analyzeCapture` sorted its OCR observations into reading order and then joined them with a space, discarding every boundary that sort had just established, and it never reached the structured parser at all. Photographing a spec sheet produced flat text while importing the same page as a PDF produced cell structure. `[evidence_level: code_verified, confidence: exact]`
 
@@ -435,7 +512,11 @@ Why, measured with a probe of the same calls on macOS 27.0 that day, on `say` ou
 
 Measured as a command-line probe on a Mac (macOS 27.0) on 2026-10-09: the on-device model reported the vision capability, and a 640 by 420 bar chart drawn for the test came back in 3.0 s (293 input tokens, 77 output) as "The figure is titled "Units shipped per year" and shows the number of units shipped per year from 2023 to 2025. The values shown are 120 units in 2023, 200 units in 2024, and 290 units in 2025.", which is what the chart showed. `[evidence_level: measured, confidence: medium, evidence_source: a swiftc probe, 2026-10-09; one image, one machine]` Not measured: the app importing a document with figures, an iPhone, what a large image costs in tokens, how much longer an import with many figures takes. There is no cap on how many of a document's images are described, as before.
 
+The commented-out figure block in `StructuredDocumentParser.swift` ("Multi-Modal Figure Extraction", which would read `document.figures`) calls `VisualCaptioningService`, which was removed in 5.7 on 2026-10-20 because nothing referenced it; the descriptions that run are the ones above. `[evidence_level: code_verified, confidence: high, evidence_source: StructuredDocumentParser.swift, the block after the paragraph loop; grep for VisualCaptioningService]`
+
 ---
+
+**Codes in a picture are read by Vision, not by the model's eye (added 2026-10-15, 5.7).** Shown a QR code, the on-device model wrote a link the code did not hold: "https://www.apple.com" for one holding "https://example.com/manual/X-200", in two runs on a Mac (macOS 27). `ImageUnderstandingService.readCodes` now reads every barcode and QR code in an image with Vision's `DetectBarcodesRequest` before it is described (`analyzeOneImage`, `analyzeStandaloneImage`, and `generateAIDescription` for the other callers), and the codes go first in the image's recognised text (`textWithCodes`), so the passage holds them and the prompt's 500-character cut keeps them. The prompt tells the model never to write what a code holds unless the notes list it. Where Vision's reader cannot run (the iOS Simulator cannot create it), the session gets Apple's two tools for an attached image instead, `getText` (OCRTool, 193 tokens of the window) and `readBarcodes` (BarcodeReaderTool, 198 tokens), with the image attached under the label "figure": unlabelled, the model's call named "QR Code" and found nothing. Measured on the Mac on 2026-10-15: with the tool, the model called `readBarcodes` and wrote the right link, in 25.5 s against 5.1 s without it, which is why Vision reads first; Vision read the code in 2.5 s on its first request of the run and a picture with no code in 12 ms. `[evidence_level: measured (swiftc probes on macOS 27, one image), test_verified for the prompt and the merging (ImageCodeReadingTests; Vision's reading skips in the Simulator); confidence: medium; not measured on an import on a device]`
 
 ## 2.7 Entity detection: Vision already did the work, and it was discarded
 
@@ -477,6 +558,30 @@ that gap means carrying a page-level entity list through `StructuredPageContent`
 `DocumentProcessor`'s chunk metadata, which touches several element-construction paths including the
 markdown-table and PDF-text lanes. It is tracked separately rather than bundled in here.
 
+**From 5.7 the whole text goes through the detector too** *(added 2026-10-14)*. From iOS and macOS 26
+any string can (`StringProtocol.dataDetectorMatches`, in the same `DataDetection.swiftinterface`), so
+`DocumentProcessor` runs `StructuredDocumentParser.detectedEntities(inText:characterLimit:)` on the
+document's chunkable text after chunking, off the main actor, over the first 1,000,000 characters
+(`textEntityCharacterLimit`), with the regex sweep for types the detector found none of, and merges
+the matches into `lastDetectedEntities` without repeats; the library's vocabulary learns them as it
+learns the cells'. Paragraphs, pages read from their PDF text layer, and text files are covered that
+way; chunk metadata still carries no per-chunk entity list. Measured on the Mac on 2026-10-14: 0.7 to
+1.1 million characters a second, and a test sentence gave two phone numbers (one British), a postal
+address, an amount in euros, a flight number, a link and a date. `[evidence_level: measured for the
+speed and the sentence, test_verified (TextEntityDetectionTests), confidence: medium]`
+
+*Corrected 2026-10-20 against the working tree:* "chunk metadata still carries no per-chunk entity list" is true
+of the detector's matches only. Every passage carries `ChunkMetadata.entities`: a prose passage up to 15 names,
+from `NLTagger` and an always-on supplement of capitalised words, a table passage the detector's matches for its
+table, and a figure passage the image classifier's labels. A list passage from a PDF carries none, because the
+PDF path builds its list elements with no entities. The whole-text matches above go to the library's vocabulary
+and to no passage. And the entity index meant to map names to passages, `EntityIndexService`, is never filled by this build:
+nothing calls its `indexChunk` or `indexChunks`, and nothing outside the service calls its lookups
+(`chunksForEntity`, `chunksForEntities`).
+`[evidence_level: code_verified, confidence: high, evidence_source: SemanticChunker.swift:1826, 1962-2040,
+DocumentProcessor.swift:4818-4829, 5608, 5635, 5660, 5688, 5720, 5752, 1268-1274, RAGService.swift:8006-8015,
+EntityIndexService.swift:92-145, and a search of the source for callers]`
+
 `[evidence_level: code_verified, confidence: exact, evidence_source: StructuredDocumentParser.swift extractDetectedData/entity(from:in:)/patternEntities; iPhoneOS27.0.sdk DataDetection.swiftinterface SemanticDetails; Vision.swiftinterface DocumentObservation.Container.Text.detectedData]`
 
 ## 2.8 Object detection: the model it looked for was never in the bundle
@@ -515,12 +620,18 @@ searches for a model that is not there.
 the presenting `fullScreenCover` is still commented out, so the detector is correct and still
 unreached. That is tracked separately as a product decision, not a defect.
 
+*(Note 2026-10-20: superseded. The camera became reachable in Debug builds on 2026-09-11 and was kept to
+them on 2026-09-13. From 5.7 this service compiles only in Debug builds as well, because its one caller,
+`DocumentCaptureView`, does, so a Release build carries none of it.)*
+
 `[evidence_level: build_verified, confidence: high, evidence_source: LiveObjectDetectionService.swift; request and observation shapes read from iPhoneOS27.0.sdk Vision.swiftinterface 2026-09-11]`
 
 ## 3. Chunking & Token Gating
 
 ### Semantic Chunking
-- Raw text is chunked using [SemanticChunker.swift](../OpenIntelligence/Services/Document/Chunking/SemanticChunker.swift). It runs adaptive windows (default size $\le 310$ words) with an overlap counted in words. `[evidence_level: code_verified, confidence: high, evidence_source: SemanticChunker.swift advancePosition, which steps back `overlap` words from the end of a chunk; corrected 2026-10-09, this line said "character overlap"]`
+- Raw text is chunked using [SemanticChunker.swift](../OpenIntelligence/Services/Document/Chunking/SemanticChunker.swift). It runs adaptive windows (default size $\le 310$ words) with an overlap counted in words (from 5.7 the word tokenizer's words, as the cap on a window's size, `maxSize`, is; the window's target size is counted in runs of text between spaces, as the overlap was through 5.6; corrected 2026-10-17). A passage that reaches the end of the text ends the cut; through 5.6, and in 5.7 until 2026-10-17, the loop stepped back for the overlap there too and cut it again as a last passage lying wholly inside the one before. `[evidence_level: code_verified, confidence: high, evidence_source: SemanticChunker.swift advancePosition, which steps back `overlap` words from the end of a chunk; corrected 2026-10-09, this line said "character overlap"]`
+
+**The sizes, corrected 2026-10-20 against the working tree.** 310 words is the ceiling, not the size a passage aims for. `processDocument` gives the chunker four numbers. The target is the library's window or the file type's preset, at most 260 words (`maxTargetSize`). A passage is at most 310 words (`safeMaxSize`). The overlap is at most 50 words (`maxOverlap`). The minimum is `max(preset, 60)` words: 80 for PDFs, text, images and CSV, 100 for Office files and recordings, and 60 for code and JSON, lowered to 60 by a dense-precision plan and raised to 100 by an elastic one. The pre-scan's plan (280 to 420 words, 50 to 70 of overlap) is at or above the clamp. The pre-scan saves a plan before each import of a PDF or of a file that reads as UTF-8 text, and the plan stays on the library for the imports it cannot preview, so once a library has one, every import into it is cut at a 260-word target with a 50-word overlap. A text shorter than the minimum becomes one passage, and a passage under 15 words is merged into the one before it, which can take that one past 310 words before the token split (§3, Token Limit Enforcement). `[evidence_level: code_verified, confidence: high, evidence_source: DocumentProcessor.swift:1053-1078, SemanticChunker.swift:246-325, 364-385, 447-450, 712-750, AdaptiveEmbeddingOptimizer.swift:288-338, RAGService.swift:7226-7256, 10270-10301]`
 
 **Where it runs, what it costs and where it stops, corrected 2026-10-09 for 5.7.** An 88.50 MB `.jsonl` (92,730,215 characters) imported on an iPhone 16 Pro Max froze the app and iOS ended it: termination 0x8BADF00D, the scene-update watchdog, with the main thread inside `findOptimalChunkRange`. The file's pipeline trace gives the time each step held: text cleanup 57 s, the full-text store 16 s, the chunker's heading pass 30 s, its topic-word pass 17 s, its table pass 4.6 s, and 2.2 s for the first chunk. `[evidence_level: measured, confidence: high, evidence_source: the device's crash report and pipeline trace of 2026-10-09 16:31 to 16:34 PT; copies of the two reports are in BenchmarkRuns/2026-10-09-chunker-large-text, which git ignores]` Three things were wrong, and each is changed:
 
@@ -529,11 +640,15 @@ unreached. That is tracked separately as a product decision, not a defect.
 3. **Limit.** One document may have 50,000 chunks (`SemanticChunker.maxChunks`). Through 5.6 the loop stopped there and said nothing, so the rest of a longer text was never indexed. The chunker now records and logs it (only when words are left after the furthest chunk), and on the import path the document is refused: `DocumentProcessingError.tooManyPassages`, with the stored full text removed. When there are more words than 50,000 chunks of `maxSize` words can hold (`exceedsChunkLimit`), that is known from the word count, before the whole-text passes; and for a text over about 31 MB that this chunker will take, `processDocument` counts the words before the cleanup pass and before anything is stored, so the refusal comes first. `[evidence_level: test_verified for the chunker and the rule, build_verified for the processor's early count, confidence: medium, evidence_source: SemanticChunkerLargeTextTests; SemanticChunker.swift chunkText; DocumentProcessor.swift processDocument]` A text file that large is refused; it is not split into several documents and it is not streamed.
 4. **Memory, added later on 2026-10-09.** With the cost fixed, the same file got far enough to show a fourth thing. Cutting a chunk hands its text to Foundation and NaturalLanguage several times, and what those calls leave behind is released only when an autorelease pool drains. Neither chunk loop had a pool, so about 123 KB a chunk stayed until the loop ended. On an Apple M3 Pro, generated JSON Lines text, peak footprint before and after a pool for each chunk: 107 MB and 22 MB at 1 million characters, 203 MB and 31 MB at 2 million, 392 MB and 47 MB at 4 million. On the iPhone two imports of the file ended at chunk 19,734 and chunk 19,755, with no crash report and no expiry in the trace. The chunks are unchanged (the same 75 digests). The trace now gets the first 40 chunks line by line and after that one line a thousand chunks; four lines a chunk had turned the file over about every ten seconds. `[evidence_level: measured for the footprints and the equality of output, inferred for memory being what ended the device runs, confidence: high for the measurement and medium for the device cause, evidence_source: the harness in BenchmarkRuns/2026-10-09-chunker-large-text; SemanticChunker.swift, both chunk loops; the device's pipeline traces of 2026-10-09 18:50 and 20:16 PT]`
 
+**A passage ends at the end of a word, corrected 2026-10-20 for 5.7.** The end of a passage is put at the nearest sentence end within 100 characters of its target (`findNearestSentenceEnd`), found with `NLTokenizer` over that window. The tokenizer cannot see past the window, so its last sentence always "ended" at the window's edge, and where no sentence ended inside the window, in a run-on line, a list, code or JSON records, that edge was chosen and the passage ended inside a word. The window's edge now counts only where a sentence really ends (`SemanticChunker.canEndSentence`: the text's end, a line break, or a sentence's end mark with a space after it), the mirror of what 2026-10-17 did for passage starts (`canStartSentence`); with no sentence end near, the end moves to the nearest space within 100 characters (`snappedToWordBoundary`). The window kept as a passage's parent (`buildParentContent`) takes the same fallback at both edges, where it took the raw offset. A passage over the word cap (`maxSize`) was trimmed at its last tokenizer word, which in text with few spaces lies inside a run such as a JSON record; the trim steps back to the last space when one is within 200 characters, inside an ASCII run only. New imports only: the chunker's recipe in the embedding fingerprint has no version term, so libraries already built are not flagged. `[evidence_level: test_verified (SemanticChunkerTests: testNoPassageEndsInsideAWord on a run-on line and on JSON records, testWhereASentenceCanEnd, testSnappingToAWordBoundary), confidence: high for text with spaces; a token longer than 100 characters is still cut where it is, evidence_source: SemanticChunker.swift findNearestSentenceEnd, canEndSentence, snappedToWordBoundary, buildParentContent]`
+
 ### Structure-Aware Chunking
 - When structured tables or lists survive the parsing phase, they are preserved as atomic chunks to prevent layout breakage, ensuring that data cells are not separated from their column headers during retrieval.
+- **Corrected 2026-10-20 against the working tree:** a table is one passage only up to 380 words (`maxAtomicWords`). A larger table is split by its rows, the header row repeated in each part, and each part marked `[Part N]`. Every table also gets a second passage, a summary of the table written by the code (`tableSemantic`), and some tables one passage per row as well. A figure is held to the same 380 words. A structured list is not kept whole: each of its items becomes a passage of its own, and a list the parser did not mark atomic is cut with the prose around it. The 430-token split below can still cut any of these. `[evidence_level: code_verified, confidence: high, evidence_source: DocumentProcessor.swift:5568-5572, 5594-5693 (tables), 5698-5725 (list items), 5762-5780 (figures), 5797-5800 (other lists), 6572-6612 (row split, header kept)]`
+- **A structured passage's parent is its section's title, corrected 2026-10-19 for 5.7.** A prose passage stores the window around it as `parentContent`; a table, list or key-value passage stores its section's title there (`DocumentProcessor`, `parentText: currentSectionTitle`), a label rather than a window. Readers that took `parentContent ?? content` read such a passage as its title alone, so a table's rows never reached the model or the checks. Readers use `DocumentChunk.contextText` from 5.7, which keeps the parent only when it holds the passage; what is stored is unchanged. In the 60-page test PDF's library 238 of 520 passages were of this kind. See `Docs/RETRIEVAL_PIPELINE.md`, "A table's passage is read as its rows". `[evidence_level: measured (store metadata, iOS 27.0 Simulator, 2026-10-19), code_verified, confidence: high, evidence_source: DocumentProcessor.swift, DocumentChunk.swift]`
 
 ### Token Limit Enforcement
-- Before indexing, `DocumentProcessor.enforceTokenLimitOnChunks` counts each chunk with the embedding model's own tokenizer (`embeddingTokenizer`, loaded by `AutoTokenizer.from(directory:)` from the `swift-tokenizers` package) and splits any chunk over `safeTokenLimit`: 430 tokens, the model's 510-token limit less 80 reserved for the contextual prefix. Without the tokenizer it estimates 3 characters per token. `[evidence_level: code_verified, confidence: exact, evidence_source: DocumentProcessor.swift:416,486,6434-6440,6450-6462; corrected 2026-09-28, the line named BertTokenizer, which left the code on 2026-07-01 in 8bc68d3]`
+- Before indexing, `DocumentProcessor.enforceTokenLimitOnChunks` counts each chunk with the embedding model's own tokenizer (`embeddingTokenizer`, loaded by `AutoTokenizer.from(directory:)` from the `swift-tokenizers` package) and splits any chunk over `safeTokenLimit`: 430 tokens, the model's 510-token limit less 80 reserved for the contextual prefix. Without the tokenizer it estimates 3 characters per token. `[evidence_level: code_verified, confidence: exact, evidence_source: DocumentProcessor.swift:416,486,6434-6440,6450-6462; corrected 2026-09-28, the line named BertTokenizer, which left the code on 2026-07-01 in 8bc68d3]` *(Re-read 2026-10-20 in the working tree, unchanged in substance: the limits are at DocumentProcessor.swift:6765-6773, `enforceTokenLimitOnChunks` at :6816-6880 runs at :1230, after the cut and before the embedder, and a passage over 430 is cut into `[Part N]` parts of at most 420 tokens at :6943-6967.)* `[evidence_level: code_verified, confidence: exact, evidence_source: DocumentProcessor.swift:1230, 6765-6773, 6816-6880, 6943-6967, read 2026-10-20]`
 
 ---
 
@@ -624,6 +739,16 @@ Once chunks are generated and validated, they are written to two separate storag
 2. **Vector Index:** Dense query vectors (384-dimensions) are generated on the device by the bundled MiniLM model, through its Core ML copy (`EmbeddingModel.mlpackage`) or its Core AI copy (from 5.7 a new library uses Core ML on iPhone and iPad and Core AI on macOS 27), and stored in [BNNSVectorDatabase.swift](../OpenIntelligence/Services/VectorStore/BNNSVectorDatabase.swift) using Cosine Similarity.
 Both indexes are isolated by `container_id` to enforce library boundaries.
 
+*Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):*
+
+- **The keyword store is written twice, the first time before the chunks exist.** The whole cleaned document goes into the `documents` table before the text is cut, with one row per page in `document_pages` for a multi-page PDF or a batch of a large one. A single-page PDF and every other file get no page rows, a file imported in pieces stores its whole text once at the end, and an XML file over 50 MB stores the joined text of its passages. One row per passage goes into `chunks` after the vectors are stored (§1, "The order the code runs", steps 8, 9 and 17). All three are FTS5 tables with `tokenize='porter unicode61'`, so words are stemmed and case-folded ("running" matches "run"), not matched exactly. They are in one file, `fulltext.sqlite`, and the libraries share them through a `container_id` column (the file's header comment, "separate tables per container", is out of date).
+- **BM25 weights section titles and section paths, not entity tags.** `chunks` indexes `section_title`, `section_path` and `content`, and a search weights them 10, 5 and 1. There is no entity column.
+- **The vectors are passage vectors**, one per passage: 384 numbers from MiniLM-L6-v2, or 512 from `NLEmbedding` when it stands in, each computed over the `"[file name] [section]"` prefix and the passage together. A question is embedded with the same model when it is asked.
+- **The vector store is one flat file per library, searched by brute force.** The vectors are kept in arrival order (`storeBatch` appends them to buffers in memory), and each save (`persist()`) rewrites the library's `_vectors.bin` (raw Float32), `_norms.bin` and `_meta.json` whole, each to a temporary file moved into place, vectors first. There is no index, no quantisation, no clustering and no grouping by topic. A search computes the cosine similarity of the question with every vector in the library, with Metal on the GPU from 1,000 vectors when the device allows it and with vDSP on the CPU otherwise, then sorts out the top K. It is not an HNSW index: VecturaKit is not a dependency, so the `vecturaHNSW` store kind falls back to this store, and the "HNSW index" in `HybridSearchService`'s comments (lines 10 and 1198) describes nothing in the build.
+- **A stand-in embedder clears the library.** When the library's provider can't be loaded at import and another provider stands in, the library is switched to the stand-in and its vectors are cleared before the import goes on (§1, step 4).
+
+`[evidence_level: code_verified, confidence: high, evidence_source: SQLiteFullTextService.swift:15, 87-94, 191-196, 242-255, 321-328, 1440-1461, DocumentProcessor.swift:787-797, 987-1015, RAGService+TextStreaming.swift:316-317, BNNSVectorDatabase.swift:26-41, 1036-1091, 1104-1201, VectorStoreRouter.swift:154-172, Package.resolved and project.pbxproj, which name no VecturaKit, RAGService.swift:7080-7128, 7894-7895]`
+
 ---
 
 ## 5. Performance Optimizations & Checkpointing
@@ -706,6 +831,8 @@ device — which is every shipping device — through `extractWithStructuredPars
 `OCRConfiguration.configureRequest`. The older `VNRecognizeTextRequest` survives in six places: the
 text-layer validation sample, camera capture, `LayoutAwareExtractor`, and pre-26 fallbacks.
 
+**2026-10-20, for 5.7:** each `VNRecognizeTextRequest` left in `Services/Document`, eight of them in `DocumentProcessor` (three), `ImageUnderstandingService`, `LayoutAwareExtractor`, `CoreMLRegionDetector`, `IntelligentDocumentProcessor` and `OCRConfiguration`, carries a comment saying why it stays: these move to Vision's Swift `RecognizeTextRequest` together, checked against the OCR fixtures in `IngestionFormatCoverageTests`, not one at a time. The camera's uses are outside the import path and Debug-only since 5.7. `[evidence_level: code_verified (a grep for the request in Services/Document), confidence: exact]`
+
 Two consequences, both fixed here.
 
 **The language narrowing added on 2026-08-29 never executed.** It was placed in
@@ -768,6 +895,19 @@ that same string, once per document, and `OCRConfiguration.narrowedRecognitionLa
 turns the result into a subset of the curated list. `configureRequest` takes it as an optional
 `languages:` parameter and disables `automaticallyDetectsLanguage` when it is present.
 
+*Corrected 2026-10-20 against the working tree:* the language detection was moved to the live path
+(`detectDocumentRecognitionLanguagesIfNeeded`, called at the top of `extractStructuredPDFContent`), and the
+vocabulary mining was not. It is still only in `extractTextFromPDFWithPages` (:3676), which has two callers: the
+branch for systems before 26 (:4134), which no supported OS takes (the deployment target is iOS and macOS 26.0),
+and the PDF case of `extractTextWithPageInfo` (:1398). No caller hands that function a PDF: `processDocument` sends
+PDFs to `extractStructuredPDFContent` and only other files to it (:861-882), and `processDocumentWithVisualUnderstanding`
+uses it only for other files (:7670-7673) and has no caller of its own. So on every supported device a PDF's Vision
+requests get the universal custom words (`OCRConfiguration.universalCustomWords`, set at the start of
+`processDocument`) and none of the document's own. `[evidence_level: code_verified, confidence: high,
+evidence_source: DocumentProcessor.swift:727, 861-882, 1398, 3451-3466, 3676, 4112-4135, 4185, 4715, 7670-7673, a
+grep of the source for callers of extractTextWithPageInfo, extractTextFromPDFWithPages and
+processDocumentWithVisualUnderstanding, project.pbxproj deployment targets]`
+
 **The function is deliberately reluctant.** It returns `nil` — meaning *keep all thirteen* — whenever
 narrowing is not clearly safe: a primary detection at or below `0.8` confidence, an undetermined
 language, an empty rough text layer (which is what a garbled-text-layer document produces), or a
@@ -798,6 +938,45 @@ Call sites outside PDF ingestion — the camera capture path, `IntelligentDocume
 **No performance figure is claimed.** The correctness argument stands on Apple's own text; the
 speed argument is a plausible prior that only a device trace can settle, and the log line above
 exists so that trace can attribute it.
+
+### A text layer in a script Vision does not read *(added 2026-10-19, for 5.7)*
+
+Before trusting a PDF's text layer, Phase -1 reads a sample page with OCR and compares the two sets of words; under
+a Jaccard similarity of 0.15 the text layer is taken for a font-substitution cipher and every page goes to OCR. That
+comparison means something only when OCR can read the page. Vision's text recognition (`VNRecognizeTextRequest`
+revision 3, accurate) lists 33 languages in nine scripts on macOS 27: Arab, Cyrl, Deva, Hans, Hant, Jpan, Kore, Latn
+and Thai. It has no model for Greek or Hebrew, and on a Greek page it returned Cyrillic and Latin look-alikes
+("hayyúnon" for "εγγύηση"), so a correct Greek text layer scored 0.000, was judged a cipher, and the page imported
+empty once the garbage filter had removed the OCR junk.
+
+`OCRConfiguration.visionCanReadMostOf(_:)` is true unless a text has at least 20 letters and fewer than half of them
+are in a script Vision has a model for (`scriptsVisionCanRead`, from Vision's `supportedRecognitionLanguages()` at
+first use, mapped to scripts with `Locale.Language`, with those nine scripts as the fallback; that first call took 22
+to 58 ms on an M3 Pro and a repeat 0.2 ms, measured with a probe on macOS 27, and the set is kept for the launch). It
+is used twice:
+
+- **Phase -1 picks its sample from pages that pass.** A document with any sampled page in a script Vision reads is
+  checked with that page; one whose sampled pages all fail keeps its text layer: `Text layer kept without an OCR
+  check: the sampled pages' letters are mostly in a script Vision's text recognition does not read`.
+- **The page loop reads a failing page from its text layer** (`DocumentProcessor.readsTextLayerVisionCannotRead`),
+  through PDFKit spatial extraction like a simple page, not through `LayoutAwareExtractor` and
+  `StructuredDocumentParser`, which take their text from Vision: `Page N: read from its text layer, whose script
+  Vision's text recognition does not read`. A right-to-left page (`OCRConfiguration.isMostlyRightToLeft`) keeps
+  PDFKit's own order, because `spatialLineBreak` orders a line's words left to right; on macOS 27 PDFKit gave a
+  Hebrew page drawn with Core Text in reading order. A page the classifier marks as a scan with a text layer over
+  part of it (`isMixedModeScanned`) is not read this way: its text layer may be a stamp or a header over a scanned
+  body that only Vision can read.
+
+Still so, by design or not yet changed: a page read from its text layer gets no table or list structure from Vision;
+a page under half in such a script, beside a table Vision reads, still has that script replaced by OCR; Persian and
+Urdu, in Arabic script but not among Vision's languages, are still compared with Vision's Arabic reading; a scanned
+page in Greek or Hebrew with no text layer still goes to OCR, and revision 3 cannot read it (`RecognizeDocumentsRequest`
+was not probed); and a font named Symbol whose glyphs are Latin and which has no ToUnicode map extracts as Greek and
+is now kept without a check.
+`[evidence_level: test_verified (IngestionAccuracyTests: testAPDFPageOfGreekLinesImportsWithItsLines,
+testAPDFPageOfHebrewLinesImportsWithItsLinesInOrder, testAScannedPageWithAGreekLineInItsTextLayerStillHasItsScannedTextRead,
+testOCRChecksATextLayerOnlyInAScriptVisionReads; iOS 27 Simulator, 2026-10-19), measured (Vision's language list and
+PDFKit's Hebrew order, probes on macOS 27 the same day); confidence: high for the mechanism, not seen on a device]`
 
 ### Page-Level JSON Checkpointing & State Persistence
 - **Scope, clarified 2026-08-29: this applies only to `importLargePDFStreamed`, which is entered when
@@ -830,6 +1009,13 @@ exists so that trace can attribute it.
 - Each page's intermediate `PageParseResult` is serialized to a Codable JSON format.
 - Ingestion state and progress are tracked in a session-level `ingestion_state.json` file inside the checkpoints folder:
   `localCacheDir()/IngestionCheckpoints/<docFingerprint>/ingestion_state.json`
+- `<docFingerprint>` is a SHA-256 of the file's name, its size and its first and last megabyte
+  (`DocumentProcessor.computeDocumentFingerprint`, `fingerprintSample`), *changed 2026-10-21 for 5.7*. It was the
+  file's path and modification date, which change when the queued copy is staged again: on the owner's iPhone an app
+  update during a 913-page PDF changed the key (`0732812…` to `146c02f…` in the trace) and the 248 pages already read
+  were read again from page 1. A file that cannot be read keeps the old key. `[evidence_level: test_verified
+  (CheckpointFingerprintTests), measured (the owner's trace, 2026-10-21) for the defect, not yet re-run on the iPhone,
+  confidence: high]`
 - This state file persists a stable `documentId` (ensuring chunks are indexed under the same ID on resume), `lastCompletedPage` index, and accumulated counts (chunks, words, chars).
 - If the queue is paused or the app restarts mid-ingest:
   1. The engine restores the stable `documentId` and counts from `ingestion_state.json`.
@@ -858,6 +1044,8 @@ exists so that trace can attribute it.
 
 **Why.** An 88.50 MB `.jsonl` with 189,579 records could not be imported on an iPhone 16 Pro Max. Read in one go it became a string of 92,730,215 characters, the app's footprint reached 2,830.73 MB during cleanup, and the import ended for memory with about a fifth of the text chunked. `[evidence_level: measured, confidence: high, evidence_source: the device's CPU report of 2026-10-09 18:47 PT and its pipeline traces; the record count is from a copy of the file taken for counting and not kept]`
 
+**The library's embedding fingerprint, corrected 2026-10-19.** When this import, or a PDF over 10 MB streamed in batches (`importLargePDFStreamed`), fills a library from empty, it records the library's embedding fingerprint at the end, as the whole-file path does; through the first 5.7 builds only the whole-file path did, and the library's first question flagged it for a rebuild it did not need. The check is that the store holds exactly the passages the import wrote. `[evidence_level: code_verified, measured (iOS 27.0 Simulator trace, 2026-10-19), confidence: high, evidence_source: RAGService+Streaming.swift, RAGService+TextStreaming.swift]`
+
 **Which files.** `DocumentProcessor.importsInPieces`: over 8 MB (`piecewiseTextBytes`) and a `.jsonl` or `.ndjson` file by extension, a text file, or a Markdown file; a `.json` file only above 64 MB, the size at which it is read as text already. The file must also be one whose line feeds are single bytes (`TextPieceReader.canBeCutAtLineFeeds`: no UTF-16 or UTF-32 byte-order mark and no zero byte in its first 4,096). Anything else takes the one-go path as before, a CSV, HTML, RTF or Office file of any size included.
 
 **The loop** (`RAGService.importLargeTextStreamed`, in `RAGService+TextStreaming.swift`):
@@ -877,7 +1065,7 @@ When the last piece is in, the kept text is stored once (`SQLiteFullTextService.
 
 **A cancellation is not a failure.** `EmbeddingService` used to wrap a `CancellationError` as a provider failure, and the queue then marked the import Failed and dropped it (an iPhone, 2026-10-09, 22:41 PT). The embedder now rethrows a cancellation as one, and the queue's loop and this import treat any error thrown once the task is cancelled as the cancellation. When the system ends its background task while the app is in front, the import goes on. An item the system stopped in the background keeps its checkpoint's progress, and the Live Activity reads "Paused. Open to continue".
 
-**Stopping.** A cancel by the person removes the document's chunks and its checkpoint: the running import removes its own, and a queued or paused item's committed pieces are removed by `purgeStreamedTextImport`, which all five cancel functions of the queue call, before the imported file is deleted (the checkpoint folder is found from the file's path, size and date). A cancel because background time ran out keeps both, and the queue starts again by itself when the app is in front (`resumeIngestionStoppedInBackgroundIfNeeded`). A cancelled queue task is set aside and the next one waits for it to end, so two loops are never on one file.
+**Stopping.** A cancel by the person removes the document's chunks and its checkpoint: the running import removes its own, and a queued or paused item's committed pieces are removed by `purgeStreamedTextImport`, which all five cancel functions of the queue call, before the imported file is deleted (the checkpoint folder is found from the file's path, size and date). A cancel because background time ran out keeps both, and the queue starts again by itself when the app is in front (`resumeIngestionStoppedInBackgroundIfNeeded`). A cancelled queue task is set aside and the next one waits for it to end, so two loops are never on one file. Stop and dismiss also removes the app's own copy of each stopped file from `ImportedDocuments` once the running task has unwound (`RAGService.removeImportedCopies`, 5.7), unless a stored document or a queued import names it, and keeps every copy until the stored documents have been read; until 2026-10-20 the copy stayed, and the same file chosen again came in as "Support Tickets-2.jsonl". `[evidence_level: test_verified (PauseIngestionTests.testStoppingRemovesTheCopyOfAStoppedFileAndKeepsADocumentsFile), measured (the copy left in the iOS 27 Simulator's container, 2026-10-20), confidence: high]`
 
 **The vector store under a cut-off save.** A piece is saved with `persist()`, which rewrites the store's files. From 5.7 the vectors are written before the metadata, and a load trims vectors the metadata does not list, so an app ended in the middle of a save leaves the library's store as it was before the save instead of deleted (`BNNSVectorDatabasePersistenceTests`). The import then finds neither store has the piece and imports it again.
 
@@ -885,7 +1073,7 @@ When the last piece is in, the kept text is stored once (`SQLiteFullTextService.
 
 **The main actor.** `processDocument` is main-actor code. On a 2 MB piece of the file above (4,610 records, 3,019 passages) the first version took 21 s and held the main actor for 14 s in one stretch, which is the kind of hold iOS ends an app for. A sample of the run showed all 14 s in the cleanup of chunk titles (`sanitizeProcessedChunkMetadata`), which built a new `NLLanguageRecognizer` for every label of every chunk, about 2.4 ms each. Three changes: `OCRConfiguration.detectDocumentLanguage` keeps one recognizer and resets it (under a lock, since it is called from the main actor and from the concurrent pool); the cleanup remembers each label it has cleaned, lets the main actor go every 50 chunks, and is skipped for JSON record chunks, whose titles the app writes itself; and a record's tokens are counted once and a passage's once, where they were counted up to four and three times, with the main actor let go every 100 calls. The same piece after: 5.4 s, longest hold 0.39 s. `[evidence_level: measured, confidence: high, evidence_source: a one-off test that ran the piece through processDocument on the iOS 27 simulator (Debug, Apple M3 Pro) with a 10 ms heartbeat task on the main actor, and `sample` on the test host; 2026-10-09; the test is not in the suite]` The first change was made after the tokenizer calls alone were cut and the hold did not move, which is how the cause was found; the earlier guess was wrong.
 
-**Not done, and known.** The other whole-piece passes in `processDocument` still run on the main actor, a piece at a time. The vector store rewrites its metadata and vectors whole at every `persist()`, which is once a piece, and holds every chunk's text in memory, so the app's memory still grows with what a library holds; what no longer happens is the whole file being held at once. The kept text is read whole when it is stored at the end. The text chunker counts a passage's size in tokenizer words and its overlap in space-separated words, so on text with few spaces (JSON, code) consecutive passages overlap far more than the configured figure; that is what made the 88.50 MB file project to about 88,000 chunks as plain text, and it is not changed here.
+**Not done, and known.** The other whole-piece passes in `processDocument` still run on the main actor, a piece at a time. The vector store rewrites its metadata and vectors whole at every `persist()`, which is once a piece, and holds every chunk's text in memory, so the app's memory still grows with what a library holds; what no longer happens is the whole file being held at once. The kept text is read whole when it is stored at the end. The text chunker counts a passage's size in tokenizer words and its overlap in space-separated words, so on text with few spaces (JSON, code) consecutive passages overlap far more than the configured figure; that is what made the 88.50 MB file project to about 88,000 chunks as plain text, and it is not changed here. *(2026-10-17: changed, and the sentence above corrected: only the cap on a passage's size, `maxSize`, is counted in tokenizer words; its target size is counted in runs between spaces. `advancePosition` counts the overlap in the tokenizer's words of the passage alone, so on any text the overlap is the setting, moved back only to a real sentence start within 30 characters (the tokenizer's boundaries inside the window, and the window's first token only where `canStartSentence` finds the start of the text, a line break, or a sentence's end, which after `.`, `!`, `?`, the danda, and the Urdu and Arabic stops needs a space, so "3.14" and "example.com" don't count, and after `。` and the other CJK stops doesn't; the snap used to take its own window's edge for one, which started a passage mid-word); `SemanticChunkerTests.testOverlapInTextWithFewSpacesIsTheSetting` measures it on text whose runs between spaces are three words each, where it was 60 or more. A passage's top keywords with the same count are in alphabetical order, and merging a small passage keeps both lists' order (`orderedUnion`), where a dictionary and a set gave an order that changed with every launch, the variation the 2026-10-09 measurement saw without `SWIFT_DETERMINISTIC_HASHING`. Measured the same day with that harness against the chunker before and after (`BenchmarkRuns/2026-10-17-chunker-overlap-and-ties`, Apple M3 Pro): at the app's settings the overlap's median is the setting, where it was 58 to 81 words for a setting of 50 and up to 136 in JSON Lines; on those texts no non-space character is left out, before or after (the cut ends early only on a tail of 64 characters or fewer with no letter or digit); two launches print the same 75 digests, where 45 of 75 differed; and the passages lying wholly inside the one before, 92 of 287 on 150,000 characters of prose and 224 of 463 on 250,000 characters of JSON Lines, are none, once the end of the text ends the cut as the line above says. With a setting the app doesn't use (overlap 8, cap 60) one or two in the middle of the longest texts remain.)*
 
 ### Folders, empty vectors and the progress line *(added 2026-10-14, for 5.7)*
 
@@ -911,7 +1099,124 @@ the model returned zeros on the units a device asks for, Core ML runs on the CPU
 fixed text, neither measured; from 5.7 they name the step only. `[evidence_level: code_verified,
 confidence: high, evidence_source: DocumentProcessor.swift]`
 
+**The import summary and the import panel (2026-10-18).** `ProcessingSummaryView` showed "Dimensions 512"
+and "Neural Engine accelerated" for every library. MiniLM, the default on every device, writes 384, and
+only the Core ML copy is planned onto the Neural Engine (150 of 161 operations under `.all`, `MLComputePlan` on an
+M3 Pro with macOS 27, 2026-10-18, `BenchmarkRuns/2026-10-18-compute-plan`); the
+Core AI copy, the default on a Mac with macOS 27, runs on the GPU. From 5.7 the view reads both from the
+library's provider (`ProcessingSummary.embeddingDimensions`, `embeddingRunsOn`). Nothing presents the view
+today (its `#Preview` is the only instance, and `RAGService.lastProcessingSummary` has no reader), so this
+corrects text no one saw, before anyone wires it up. The import panel's
+processing-mode button wrote `gpuAccelerationLevel`, which `DeviceCapabilityService` reads only when no
+GPU profile is stored, and one is stored at every launch, so the button changed its own label and
+nothing else; it now steps through the four profiles through the setter Settings uses. The Live
+Activity's "Nx GPU" read `gpuConcurrency`, a figure nothing else in the app applied, and is replaced by
+the pages rendered and recognised at once; its mode names the profile the import runs with, or "No GPU
+(background)". `[evidence_level: code_verified, plus measured for the Neural Engine plan (one M3 Pro), confidence: high, evidence_source: DocumentChunk.swift
+ProcessingSummary, ProcessingSummaryView.swift, IngestionQueueOverlay.swift, IngestionLiveActivityService.swift,
+DeviceCapabilityService.swift migrateGPUExecutionProfile; not yet seen on a device]`
+
+### A resume skips the pre-scan and the embedding its checkpoints hold *(added 2026-10-21, for 5.7)*
+
+The complexity pre-scan leaves out pages with a `page_<n>.json` checkpoint, and `addDocument` passes the import's
+checkpoint folder to `EmbeddingService.generateEmbeddings(for:cacheDirectory:progressHandler:)`, which writes each batch
+of 16 vectors there (`embeddings-<SHA-256 of provider, dimension and texts>.bin`) and reads it back on a resume; the folder
+is removed with the checkpoints when the import finishes. Chunking still runs again. `[evidence_level: code_verified,
+not yet re-run on a device, confidence: medium]`
+
+### The 500 MB guard does not apply to a PDF read in page ranges *(added 2026-10-21, for 5.7)*
+
+`processDocument` rejects a file over 500 MB that it would read whole (`maxNonStreamableSizeMB`). It used to measure
+the whole file on every page batch of `importLargePDFStreamed` too, so no PDF over 500 MB could be imported; a call with
+a `pageRange` now skips it. `[evidence_level: code_verified, build_verified, not run with a file over 500 MB, confidence: high]`
+
+### Page analysis and the embedding model's mode switch run off the main thread *(added 2026-10-21, for 5.7)*
+
+`PageComplexityAnalyzer` is `nonisolated` and its `analyze` and `analyzeBatch` are `@concurrent`; it had taken the
+module's default main-actor isolation, so Vision text detection for the complexity pre-scan ran on the main thread
+(1.62 and 0.57 s hangs at the start of an import on the owner's iPhone, Instruments, 2026-10-21). The embedding
+provider's ingestion mode (`CoreMLSentenceEmbeddingProvider.enableIngestionMode`, `disableIngestionMode`) now records
+the compute units it wants, and the model is reloaded on the next embed, off the main thread; the reload had held the
+main thread for 2.36 s. `[evidence_level: measured (the hangs), test_verified (IngestionModeSwitchTests), confidence: high]`
+
+### Vision concurrency on a Mac follows the thermal state *(added 2026-10-21, for 5.7)*
+
+`VisionOCRThrottle`'s async semaphore reads its limit at every acquire and release instead of fixing it at
+launch. On a Mac the limit is `DeviceCapabilityService.thermallyLimitedVisionConcurrency`: the chip's ceiling at
+`.nominal`, half of it (at least 2) at `.fair`, 2 at `.serious` and 1 at `.critical`; the synchronous queue's
+`maxConcurrentOperationCount` is set from the same value before each use. No public API says whether a Mac has a
+fan, and a fanless MacBook Air ran its Vision work at 100% CPU against 400% over a five-hour import at the old fixed
+ceiling. iPhone and iPad keep the fixed ceiling. Operations already running finish; the limit applies to the next.
+`[evidence_level: test_verified (VisionThermalLimitTests), not run on a fanless Mac, confidence: medium,
+evidence_source: VisionOCRThrottle.swift AsyncVisionSemaphore, currentVisionConcurrencyLimit;
+DeviceCapabilityService.swift thermallyLimitedVisionConcurrency]`
+
+### Pause, text left by an unfinished import, and text set sideways *(added 2026-10-14, for 5.7)*
+
+**Pause.** The import queue has a Pause button while an import runs (`RAGService.pauseIngestionQueue`).
+The file being imported stops the way it does when iOS ends the app's background time: a file
+imported in pieces keeps its checkpoint and goes on from its last saved piece, any other file starts
+over, and the paused item says which. Waiting files are paused too, and the queue waits for Continue
+or Discard, as after a restart. `ingestionPausedByPerson` keeps the end of the stopped import from
+queueing it again (`handleContinuedIngestionExpiration` returns at once while it is set). A paused
+file stays paused until Continue, Discard or its own Cancel: `updateIngestionItem` drops any other
+stage for it. The cancelled task runs on to its next cancellation check, and on 2026-10-16 its
+"Storing" landed after the pause on a file whose embedding had just finished, so Continue, which
+takes the paused files, left that one at "Storing" with nothing importing it until the app was
+opened again (a Simulator run of the accessibility audit, `pipeline_trace.log`: "The person paused 3
+import(s)", then "User resumed 2"). An end (done, failed, cancelled) still lands.
+`[evidence_level: test_verified (PauseIngestionTests, four tests), confidence: medium; not paused on a device]`
+
+**Text left by an unfinished import.** An import stores the document's text in the keyword store
+before its record, so an app ended in the middle of one left text with no document. Once a launch,
+after the queue is restored and with no import queued or running, `removeTextOfUnfinishedImports`
+removes the stored text of every document the keyword store holds and the document list read from
+disk does not, through the store's own `getAllDocumentIds` and `delete(for:)` (its file is not
+changed). A list that is empty or can't be read removes nothing. From 5.7 the same check removes, from the vector
+stores of Local Only libraries, the passages of every document the list doesn't have (`removePassages`), with their
+keyword rows: on 2026-10-15 the owner's library BDB0BCA5 held 27 and no document. iCloud libraries are left alone,
+because their documents can arrive after their passages and a removal would reach the other devices. `[evidence_level:
+test_verified (UnfinishedImportTextTests, PassagesFromKnownDocumentsTests), confidence: medium]`
+
+**Text set sideways along the page.** `LayoutAwareExtractor.isMarginStrip` leaves out a text box far
+taller than it is wide that sits at the left or right edge or runs most of the page's height, in
+both the Vision and the PDF text-layer paths. Measured with Vision on a journal article on
+2026-10-14: the publisher's download notice down the right edge of pages 2 to 8 was one box 0.011 to
+0.013 wide and 0.958 tall, and it was read into the page's text. Rotated labels inside figures and
+every body line stay. The journal's logo at the top of page 1, which a device import read as "IN
+Pychatry an" and made a section heading, is horizontal and not touched by this. `[evidence_level:
+measured for the boxes, test_verified (LayoutMarginStripTests); confidence: medium]`
+
+**The coverage check off the main thread.** `verifyContentCoverage`, which splits the whole extracted
+text and every passage into words to compare them, runs off the main actor (`@concurrent`). It held
+the main thread for as long as that took on a large file. Structure-aware chunking still runs on the
+main actor. `[evidence_level: code_verified, confidence: high]`
+
+**The stage ledger's counts off the main thread** *(2026-10-16)*. The ledger's four readings
+(extraction, chunked, sanitized, token-limited) counted every passage's characters and words on the
+main actor, and counted words by splitting the text into a substring per word: about 430 ms a
+reading for 8 MB of text on an M3 Pro (built `-O`), about 1.7 s an import, and 1.4 million substrings
+each time. They are counted by `IngestionStageLedger.counts(of:)` on the concurrent pool
+(`DocumentProcessor.ledgerCounts`, `@concurrent`), walking the characters without making substrings,
+and `DocumentProcessor.wordCount(of:)` counts the same way. The counts are the split's
+(`IngestionStageLedgerTests.testWordCountIsTheCountSplittingGives`: line breaks, CRLF, no-break and
+ideographic spaces, a combining mark after a space, Greek and Chinese). The category check counts the
+whole text once (15 ms for 8 MB on the same Mac) and reads a sample of at most 12,000 characters, so it
+stays. Structure-aware chunking still runs on the main actor. `[evidence_level: measured (a scratch
+probe on this Mac, -O, 2 and 8 MB of mixed text), test_verified, confidence: high for the Mac; the
+device's times are not measured]`
+
 ---
+
+### Word counts and words that open sentences *(added 2026-10-15, for 5.7)*
+
+The Words figure an import reports is the document's own count of its text as read (`ProcessingMetadata.totalWords`, split at any whitespace by `DocumentProcessor.wordCount(of:)`), not a sum over its passages, which share words at their edges; a streamed XML file's passages are counted the same way. A text file of 600 different words, ten to a line, counts 600 and keeps every word in its passages (WordCountTests). The chunker's capitalized-word entity supplement leaves out words that open sentences and are never names alone: "However", "Should" and the other modal verbs, the pronouns and common sentence adverbs (SemanticChunkerTests reads a chunk five times and gets the same entities). `[evidence_level: test_verified, confidence: medium]`
+
+### Saved first, improved after *(added 2026-10-15, for 5.7)*
+
+An import writes its passages, their vectors and their keyword rows, saves the vector store and records the document before it calls Apple's model for the RAPTOR-lite overview, the content tags and the suggested questions (`RAGService.enrichImportedDocument`). Through 5.6 the overview and the tags came before the save, and on 2026-10-15 iOS ended a background import 53 s in, during the suggested questions that followed the save. While the app is in the background the three calls are not made: the document is listed (`RAGService.deferEnrichment`, the `deferredDocumentEnrichment` setting) and `runDeferredEnrichmentsIfNeeded` makes them when the app is in front and no import runs. A document deleted meanwhile leaves the list. `[evidence_level: test_verified (DeferredEnrichmentTests) for the list, build_verified for the order, confidence: medium]` *(Added 2026-10-19: moving this work after the save let a document be deleted while its overview was written, and the overview then stayed as a passage of no document, which later answers cited as "Unknown Document Summary"; no release had it. The overview and the suggested questions are now stored only for a listed document, which includes one in its undo seconds, and taken out again when the deletion began while they were stored (`RAGService.enrichmentTargetState`). `[evidence_level: test_verified (DeletedDuringEnrichmentTests: a note deleted while the import reports writing its overview leaves no passage, one deleted and undone keeps its overview), confidence: high]`)*
+
+**What the overview is, added 2026-10-20 against the working tree.** One per document, and only when `enableDocumentSummaries` is on, which is the default, and the import is not an onboarding sample. `DocumentSummaryService` builds a sample of about 5,500 characters from the document's passages (the first, then the next ones in order, then the last when it fits) and asks for a summary of 120 words or fewer, with tools off. When `SystemLanguageModel.default` is available it asks that on-device model directly, gives up after 12 s, and then uses the sample's first 150 words instead. When it is not, the request goes through `RAGService.llmService` with a fresh `InferenceConfig`, which carries no route plan and leaves Private Cloud Compute allowed, so `FoundationModelRoutePolicy`'s planless branch decides where it runs, and no consent check is on that path. That route was not traced further: which service backs `llmService` when the on-device model is unavailable, and whether the planless branch would pick PCC for this prompt, are open. `[evidence_level: inferred, confidence: medium, evidence_source: DocumentSummaryService.swift:244-256, 270-314, LLMModel.swift:146-173, FoundationModelRoutePolicy.swift:49-95, RAGService.swift:19247-19290, and no consent check in LLMService.swift, FoundationModelRoutePolicy.swift or FoundationModelSessionFactory.swift]` Either answer is cut at 150 words. The result is embedded with a `"[Document Summary: <name>]"` prefix and stored as **one passage at level 1 (`documentSummary`) in the vector store only**: it gets no keyword-store row. There is no tree above it. Levels 2 and 3 (`clusterSummary` and the library-wide one) are declared as "future" and nothing builds them. Standard's summary-first routing for overview questions searches these passages (RAGService.swift:12434-12496). The content tags and the suggested questions follow. A PDF over 10 MB and a large text file imported in pieces get no overview and no tags, only the suggested questions (§1, step 7). `[evidence_level: code_verified, confidence: high, evidence_source: RAGService.swift:2389, 8306-8375, DocumentSummaryService.swift:42, 62-67, 97-140, 186-224, 225-320, 369-373, DocumentChunk.swift:89-100, SettingsStore.swift:572]`
 
 ## 5b. Token counting, and the invariant that guards it
 
@@ -969,8 +1274,11 @@ When a document is selected for import and the container's `autoAdaptDimension` 
 3. **Pre-Ingestion Adaptation**: Based on these signals, the engine resolves the optimal `ChunkingPlan` (e.g. `densePrecision` strategy, `300` word window for structured text/code) *before* processing page 1.
 4. **Dynamic Container Tuning**: The container’s active `chunkingDirective` is updated to `.auto` with these parameters. The ingestion pipeline processes the current document and all subsequent imports using this custom-tuned configuration immediately, eliminating the need to re-process the file.
 
+*Corrected 2026-10-20 against the working tree:* the plan's window and overlap never change what the chunker gets. The windows the plan can name are 280 (code), 300 (structured text), 320 (maths), 380 (several languages) and 300 to 420 (prose), with 50 to 70 words of overlap, and `processDocument` clamps every request to a target of at most 260 words and an overlap of at most 50. So the "300 word window" in step 3 is cut at 260, and a library the pre-scan has planned is cut at 260 and 50 whatever its documents hold. What does reach the chunker is the plan's strategy: dense precision lowers the minimum passage to 60 words, elastic raises it to 100, and both turn on topic detection, which the code preset has off (§3, "The sizes"). The preview is read only from a PDF's first 10 pages or from a file that opens as UTF-8 text, so an image, an Office file or a recording gets no plan of its own. `[evidence_level: code_verified, confidence: high, evidence_source: AdaptiveEmbeddingOptimizer.swift:288-338, RAGService.swift:7226-7256, 10270-10301, DocumentProcessor.swift:1053-1078, SemanticChunker.swift:364-385]`
+
 ### Non-Destructive Configuration Shifting
 - **Chunking Strategy & Window Shifts**: Since chunk size variations do not break vector math, changes to the chunking strategy, window window size, or overlap are applied **instantly and silently** to the container configuration. The database continues to perform cosine similarity searches over existing mixed chunks, avoiding the CPU/battery drain of full database rebuilds.
 - **Embedding Provider Shifts**: Changes to the embedding provider or vector dimension (e.g., from 384D Core ML to 512D Contextual) change the mathematical vector space. Mixing dimensions will crash similarity search; therefore, embedding shifts are blocked during active ingestion and require a full database rebuild to guarantee consistency.
+- *Corrected 2026-10-20 against the working tree:* "instantly and silently" holds for a chunk size the app sets and not for one the person sets. The library's embedding fingerprint counts the chunking directive only when its source is `.manual` (`EmbeddingFingerprint.chunkerRecipe`). So the pre-scan and the self-tuner change a library's chunking without any rebuild, and a chunk size chosen in Library Settings changes the fingerprint: at the library's next question it is marked as needing a rebuild (`librariesNeedingIndexRebuild`), which the app offers and does not run on its own. The rule is from 5.6. Through 5.5 every directive counted, the app's own included, and a fingerprint stored then is re-recorded without a flag when the app's tuning was the only difference. Separately, one provider change is made by the app on its own: when the library's embedder can't be loaded at import and a stand-in is used, the library is switched to the stand-in and its vectors are cleared before the import goes on (§1, step 4). Whether the empty-index repair (§5, "Authoritative Queue Dismissal & Automatic Repair") then re-embeds the library's other documents was not traced. `[evidence_level: code_verified, confidence: high, evidence_source: EmbeddingFingerprint.swift:35-52, RAGService.swift:5805-5873, 7080-7128]`
 
 > **Changed 2026-10-13 for 5.7.** The corpus-level analysis that follows an import (`RAGService.refreshIntelligence`) reads at most 4,000 passages of a library past that size. A report made from such a sample shifts the chunking settings as any report does and never proposes another embedding model. An import in pieces (a large text, JSON Lines or PDF file) now ends with that refresh, as an import read whole does; through 5.6 it ended without one. Nothing queues a rebuild on its own for any report: `IngestionContext.allowsSelfTuningScheduling` is false for every kind of import. `[evidence_level: test_verified for the rule about a sample (LibraryAnalysisSampleTests), code_verified for the refresh and the switch, confidence: high, evidence_source: RAGService.swift resolveAutoAdjustments, generateIntelligenceSnapshot, addDocument]`

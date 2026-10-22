@@ -198,6 +198,15 @@ final class AgenticOrchestrator: Sendable {
         self.qualityMode = qualityMode
     }
 
+    /// Whether Deep Think runs its Self-RAG check after the chain (5.7). The check keyed on `config.maxSteps >= 8`, a
+    /// stand-in for "this is Deep Think" that the A17 Pro's step budget of 5 never reached
+    /// (`DeviceCapabilityService.optimizedAgenticConfig`), so Deep Think on an iPhone 15 Pro skipped the check every
+    /// newer device runs. The step budget still picks the chain's starting length (`reasoningChainConfig`); Maximum runs
+    /// its own check.
+    static func runsDeepThinkSelfRAG(qualityMode: RAGQualityMode, config: AgenticConfig) -> Bool {
+        qualityMode.canonical == .deepThink && !config.isUnlimited
+    }
+
     /// Get the appropriate ReasoningChainConfig based on AgenticConfig
     /// Uses unlimited reasoning chain when AgenticConfig.isUnlimited is true
     private var reasoningChainConfig: ReasoningChainConfig {
@@ -748,11 +757,20 @@ final class AgenticOrchestrator: Sendable {
                 // the guard added to `runVerificationLoop` did not fire here, and the case still
                 // answered "No evidence of a dataset of rumors in the provided context." in 59
                 // characters, from a 2000-character slice, having discarded the chain's synthesis.
+                let agreesWithSynthesis = Self.researchMayReplaceSynthesis(
+                    question: query, synthesis: chainResult.finalAnswer, research: cleanRecursiveAnswer)
+                if recursiveResult != nil, !cleanRecursiveAnswer.isEmpty, !agreesWithSynthesis {
+                    Log.warning(
+                        "[Agentic] Kept the synthesis (\(chainResult.finalAnswer.count) chars): research's "
+                            + "\(cleanRecursiveAnswer.count)-char answer says things the synthesis does not",
+                        category: .llm)
+                }
                 if let recursiveResult,
                     !cleanRecursiveAnswer.isEmpty,
                     !answerIndicatesRetrievalMiss(recursiveResult.finalAnswer),
                     !looksLikeRawEvidenceDump(cleanRecursiveAnswer),
-                    Self.shouldAcceptReplacement(previous: chainResult.finalAnswer, replacement: cleanRecursiveAnswer)
+                    Self.shouldAcceptReplacement(previous: chainResult.finalAnswer, replacement: cleanRecursiveAnswer),
+                    agreesWithSynthesis
                 {
                     Log.info(
                         "[Agentic] Recursive research found answer after \(recursiveResult.steps.count) steps",
@@ -777,7 +795,7 @@ final class AgenticOrchestrator: Sendable {
             // SELF-RAG 2.0: Verify answer before returning (Deep Think mode only)
             // 2026 best practice: Don't just generate — verify citations and relevance
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            let isDeepThinkMode = config.maxSteps >= 8 && !config.isUnlimited
+            let isDeepThinkMode = Self.runsDeepThinkSelfRAG(qualityMode: qualityMode, config: config)
             if isDeepThinkMode,
                 let verified = try await ragService.runFinishableStage({
                     try await self.runVerificationLoop(
@@ -883,7 +901,7 @@ final class AgenticOrchestrator: Sendable {
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             // SELF-RAG 2.0: Verify answer before returning (Deep Think mode)
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            let isDeepThinkMode = config.maxSteps >= 8 && !config.isUnlimited
+            let isDeepThinkMode = Self.runsDeepThinkSelfRAG(qualityMode: qualityMode, config: config)
             if isDeepThinkMode,
                 let verified = try await ragService.runFinishableStage({
                     try await self.runVerificationLoop(
@@ -1096,7 +1114,7 @@ final class AgenticOrchestrator: Sendable {
                     expandedResults = "Expanded search found \(broaderChunks.count) chunks:\n\n"
                     for (index, chunk) in broaderChunks.prefix(8).enumerated() {
                         expandedResults += "[\(index + 1)] From \(chunk.sourceDocument):\n"
-                        let content = (chunk.chunk.parentContent ?? chunk.chunk.content).prefix(500)
+                        let content = chunk.chunk.contextText.prefix(500)
                         expandedResults += String(content) + "\n\n"
                     }
                 }
@@ -1159,7 +1177,7 @@ final class AgenticOrchestrator: Sendable {
 
         // Build combined chunk text
         let chunkText = chunks.prefix(5)
-            .map { ($0.chunk.parentContent ?? $0.chunk.content).lowercased() }
+            .map { $0.chunk.contextText.lowercased() }
             .joined(separator: " ")
 
         // Count how many query keywords appear in chunks
@@ -1271,7 +1289,10 @@ final class AgenticOrchestrator: Sendable {
                 Output ONLY the new query phrase, nothing else .
             """
 
-        let response = try await ragService.generateWithFreshSession(prompt: prompt, maxTokens: 128)
+        // A search phrase has no closing full stop, so continuation took it for a cut-off sentence and asked for more,
+        // which came back as "... in this libraryusing document specificationswithin this library" on the owner's
+        // iPhone (Deep Think, 2026-10-21). A query is one line; nothing is continued (5.7).
+        let response = try await ragService.generateWithFreshSession(prompt: prompt, maxTokens: 128, skipContinuation: true)
         let reformulated = response.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Validate it's actually different and reasonable
@@ -1341,7 +1362,7 @@ final class AgenticOrchestrator: Sendable {
             block += " (Page \(page))"
         }
         block += " (Relevance: \(String(format: "%.1f%%", retrieved.similarityScore * 100))):\n"
-        block += (retrieved.chunk.parentContent ?? retrieved.chunk.content)
+        block += retrieved.chunk.contextText
             .trimmingCharacters(in: .whitespacesAndNewlines)
         block += "\n\n"
         return block
@@ -1863,7 +1884,7 @@ final class AgenticOrchestrator: Sendable {
                 searchResult += " (Page \(page))"
             }
             searchResult += " (Relevance: \(String(format: "%.1f%%", retrieved.similarityScore * 100))):\n"
-            let fullText = (retrieved.chunk.parentContent ?? retrieved.chunk.content).trimmingCharacters(
+            let fullText = retrieved.chunk.contextText.trimmingCharacters(
                 in: .whitespacesAndNewlines)
             // Include more text since our chunks are better quality now
             let preview = fullText.count > 1000 ? String(fullText.prefix(1000)) + " [...]" : fullText
@@ -2314,7 +2335,7 @@ final class AgenticOrchestrator: Sendable {
 
         // For borderline cases (10-50% overlap), ask LLM to verify
         let chunkPreviews = chunks.prefix(3).map { chunk in
-            let content = (chunk.chunk.parentContent ?? chunk.chunk.content)
+            let content = chunk.chunk.contextText
             return String(content.prefix(300))
         }.joined(separator: "\n---\n")
 
@@ -2529,7 +2550,7 @@ final class AgenticOrchestrator: Sendable {
 
         let contextText =
             initialChunks
-            .map { $0.chunk.parentContent ?? $0.chunk.content }
+            .map { $0.chunk.contextText }
             .joined(separator: "\n")
 
         let entityPrompt = """
@@ -3651,6 +3672,92 @@ final class AgenticOrchestrator: Sendable {
     /// totalCitations > 0`, while an answer with no citations has its grounding forced to 0.5 and
     /// skips the check. So an uncited replacement always verifies cleaner than the cited original
     /// it displaced, and the loop preferred it for precisely that reason.
+    /// Whether research's answer may take the place of the chain's synthesis (5.7, roadmap row "Deep
+    /// Think replaces a full synthesis with a one-line research answer when the synthesis hedges, and
+    /// the one line can be wrong").
+    ///
+    /// Research runs when the synthesis hedges, and its answer replaced the synthesis whenever
+    /// `shouldAcceptReplacement` passed, which a synthesis without citation markers always lets
+    /// through. Measured on 2026-09-23 (macOS, Deep Think, one document): a 3,372-character synthesis
+    /// gave way to "OpenIntelligence handles file types such as notes, warnings, exceptions, and
+    /// documents.", which is wrong. Now a synthesis of 400 characters or more gives way to an answer
+    /// under a quarter of its length only when what that answer adds beyond the question's own words
+    /// is mostly in the synthesis too (60 percent of those words or more): the short answer has to
+    /// agree with what the person was already shown, not bring a claim of its own. "Nine verification
+    /// checks run." can replace a synthesis that names nine checks; the file-type line can't replace
+    /// one that never mentions warnings or exceptions. A longer research answer is a rewrite, and the
+    /// rules before decide it.
+    nonisolated static func researchMayReplaceSynthesis(question: String, synthesis: String, research: String) -> Bool {
+        let synthesisText = synthesis.trimmingCharacters(in: .whitespacesAndNewlines)
+        let researchText = research.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard synthesisText.count >= 400, researchText.count * 4 < synthesisText.count else { return true }
+        let added = answerWords(in: researchText).subtracting(answerWords(in: question))
+        guard !added.isEmpty else { return false }
+        let shown = answerWords(in: synthesisText)
+        let agreed = added.filter { shown.contains($0) }.count
+        return Double(agreed) / Double(added.count) >= 0.6
+    }
+
+    /// What the Self-RAG loop does with research's answer (5.7).
+    nonisolated enum LoopResearchVerdict: Equatable {
+        /// Research's answer takes the loop answer's place.
+        case replace
+        /// The loop keeps its answer and carries on, as it always did when a replacement was turned away.
+        case keep
+        /// The loop keeps its answer and stops: research's answer doesn't agree with it, and another research run on
+        /// the same question costs up to three minutes for the same kind of answer (review, 2026-10-18).
+        case keepAndStop
+    }
+
+    /// The checks the first call site applies before research's answer replaces the chain's synthesis, for the Self-RAG
+    /// loop's call, the one Deep Think reaches (`maxIterations: 3`) (5.7). Until 2026-10-18 the loop applied only
+    /// `shouldAcceptReplacement`, so a short research answer turned away at the first site could still replace the
+    /// answer here (found by a triage read of the roadmap row, 2026-10-18). The evidence-dump and retrieval-miss checks
+    /// are instance methods, so the caller passes their results.
+    nonisolated static func loopResearchVerdict(
+        question: String, answer: String, research: String, isEvidenceDump: Bool, isRetrievalMiss: Bool
+    ) -> LoopResearchVerdict {
+        guard researchMayReplaceSynthesis(question: question, synthesis: answer, research: research) else {
+            return .keepAndStop
+        }
+        guard !isEvidenceDump, !isRetrievalMiss else { return .keep }
+        return shouldAcceptReplacement(previous: answer, replacement: research) ? .replace : .keep
+    }
+
+    /// The words of an answer that carry its content: lowercased, three letters or more or a number,
+    /// without stop words, and a number written as a word ("nine") counted as its digits ("9").
+    nonisolated static func answerWords(in text: String) -> Set<String> {
+        let numberWords = [
+            "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7",
+            "eight": "8", "nine": "9", "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13",
+            "fourteen": "14", "fifteen": "15", "sixteen": "16", "seventeen": "17", "eighteen": "18",
+            "nineteen": "19", "twenty": "20",
+        ]
+        let words = text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .map { numberWords[$0] ?? $0 }
+            .filter { word in
+                guard !word.isEmpty else { return false }
+                if word.allSatisfy(\.isNumber) { return true }
+                return word.count >= 3 && !answerStopWords.contains(word)
+            }
+        return Set(words)
+    }
+
+    /// The stop words `answerWords` leaves out: the lexical check's list, plus the words any short
+    /// answer opens with.
+    nonisolated private static let answerStopWords: Set<String> = [
+        "the", "are", "was", "were", "been", "being", "have", "has", "had", "does", "did", "will",
+        "would", "could", "should", "may", "might", "must", "shall", "can", "for", "with", "from",
+        "into", "through", "during", "before", "after", "above", "below", "between", "under", "again",
+        "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "each", "few",
+        "more", "most", "other", "some", "such", "nor", "not", "only", "own", "same", "than", "too",
+        "very", "just", "also", "now", "what", "which", "who", "whom", "this", "that", "these",
+        "those", "its", "myself", "our", "ours", "ourselves", "you", "your", "yours", "him", "his",
+        "her", "hers", "they", "them", "their", "and", "but", "any", "both", "include", "includes",
+        "including", "like",
+    ]
+
     nonisolated static func shouldAcceptReplacement(previous: String, replacement: String) -> Bool {
         let previousCitations = citationCount(in: previous)
         let replacementCitations = citationCount(in: replacement)
@@ -3788,10 +3895,19 @@ final class AgenticOrchestrator: Sendable {
                         category: .llm)
                     currentSteps.append(contentsOf: recursiveResult.steps)
                     currentTokens += recursiveResult.totalTokens
-                    if Self.shouldAcceptReplacement(previous: currentAnswer, replacement: newAnswer) {
+                    let verdict = Self.loopResearchVerdict(
+                        question: query, answer: currentAnswer, research: newAnswer,
+                        isEvidenceDump: looksLikeRawEvidenceDump(cleanNewAnswer),
+                        isRetrievalMiss: answerIndicatesRetrievalMiss(newAnswer))
+                    if verdict == .replace {
                         logAnswerReplacement(
                             previous: currentAnswer, replacement: newAnswer, reason: "semantic delta below 0.10")
                         currentAnswer = newAnswer
+                    } else {
+                        Log.warning(
+                            "[Agentic] Self-RAG: kept the answer (\(currentAnswer.count) chars) over research's "
+                                + "\(newAnswer.count)-char answer (\(verdict))",
+                            category: .llm)
                     }
                     break
                 }
@@ -3799,11 +3915,20 @@ final class AgenticOrchestrator: Sendable {
                 if !answerIndicatesRetrievalMiss(newAnswer) {
                     currentSteps.append(contentsOf: recursiveResult.steps)
                     currentTokens += recursiveResult.totalTokens
-                    if Self.shouldAcceptReplacement(previous: currentAnswer, replacement: newAnswer) {
+                    let verdict = Self.loopResearchVerdict(
+                        question: query, answer: currentAnswer, research: newAnswer,
+                        isEvidenceDump: looksLikeRawEvidenceDump(cleanNewAnswer), isRetrievalMiss: false)
+                    if verdict == .replace {
                         logAnswerReplacement(
                             previous: currentAnswer, replacement: newAnswer,
                             reason: "recursive research returned an answer")
                         currentAnswer = newAnswer
+                    } else {
+                        Log.warning(
+                            "[Agentic] Self-RAG: kept the answer (\(currentAnswer.count) chars) over research's "
+                                + "\(newAnswer.count)-char answer (\(verdict))",
+                            category: .llm)
+                        if verdict == .keepAndStop { break }
                     }
                     // Update sources/chunks
                     for chunk in recursiveResult.retrievedChunks {
@@ -4652,7 +4777,7 @@ extension AgenticOrchestrator {
             }
             // No structured section: the opening of the text is still a better menu entry than an
             // index, and this is exactly the case the routing turn exists to disambiguate.
-            let body = (candidate.chunk.parentContent ?? candidate.chunk.content)
+            let body = candidate.chunk.contextText
                 .replacingOccurrences(of: "\n", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return String(body.prefix(60))
@@ -4945,7 +5070,7 @@ extension AgenticOrchestrator {
             if wholeWindowTokens == nil && trimmedCtx.count < minimumUsefulContext && !windowChunks.isEmpty {
                 var rawContext = ""
                 for (idx, wc) in windowChunks.enumerated() {
-                    let content = wc.chunk.parentContent ?? wc.chunk.content
+                    let content = wc.chunk.contextText
                     // Global position, matching the `labelOffset` on the extraction path above.
                     let sourceLabel = "[S\(startIdx + idx + 1)] (\(wc.sourceDocument))"
                     let truncated = String(content.prefix(contextBudget / max(windowChunks.count, 1)))
@@ -5796,6 +5921,10 @@ extension AgenticOrchestrator {
                     .map { "[\($0.offset + 1)] \($0.element)" }
                     .joined(separator: "\n")
 
+                // The findings carry the sessions' own labels ([S5], [S13]); the synthesis sees no passages. The prompt
+                // ended "Cite as [S1], [S2].", and the model copied the example: on the owner's iPhone (2026-10-21) a
+                // two-document comparison's write-up scored citations 0/5 in Self-RAG, because its labels pointed at
+                // passages that did not hold the claims (5.7).
                 let synthesisPrompt = """
                     QUESTION: \(query)
 
@@ -5806,7 +5935,8 @@ extension AgenticOrchestrator {
                     Combine ALL findings into flowing prose with complete sentences and full paragraphs.
                     Use ### section headers to organize topics. Use **bold** sparingly for key terms only.
                     Write naturally — use paragraphs for explanations, and bullets only for actual sequential steps or specification lists.
-                    Include every relevant detail found across all sessions. Cite as [S1], [S2].
+                    Include every relevant detail found across all sessions.
+                    The findings already carry source labels such as [S5] or [S13]. Keep each label with the sentence it supports, written exactly as it appears in the findings. Never invent a label, renumber one, or move a label to a sentence it did not support.
                     """
 
                 let synthesisSystemPrompt =
@@ -7681,7 +7811,7 @@ extension AgenticOrchestrator {
                 weightedTerms[structureType, default: 0] += 2
             }
 
-            let content = chunk.chunk.parentContent ?? chunk.chunk.content
+            let content = chunk.chunk.contextText
             for term in semanticTerms(from: content, minimumLength: 4, limit: 18) {
                 weightedTerms[term, default: 0] += 1
             }
@@ -7865,7 +7995,7 @@ extension AgenticOrchestrator {
 
             TASK: Synthesize ALL findings into ONE comprehensive answer.
             Integrate across clusters. Include specific values and data. Use **bold** sparingly for key terms only.
-            Never repeat content. Cite [S1], [S2].
+            Never repeat content. Keep each finding's [S#] labels exactly as written; never invent or renumber one.
 
             SYNTHESIS:
             """
@@ -7873,7 +8003,7 @@ extension AgenticOrchestrator {
         let systemPrompt = """
             Synthesize document findings. Include ALL specific values, numbers, and data points.
             Cross-reference multiple sources. Never repeat content. Use **bold** sparingly for key terms only.
-            Cite as [S1], [S2]. Write like a domain expert — format naturally for the content.
+            Keep the findings' [S#] labels exactly as written. Write like a domain expert — format naturally for the content.
             """
 
         var totalTokens = 0
@@ -8175,7 +8305,7 @@ extension AgenticOrchestrator {
                 Include every relevant detail, value, specification, and procedure.
                 Write in complete sentences and natural paragraphs — not just bullet points.
                 Use bullet points only for actual lists of items (like steps or specifications).
-                Cite sources as [S1], [S2].
+                Cite each fact with the [S#] label of the passage it came from, written exactly as it is labeled above.
                 """
             return (prompt, systemPrompt)
 
@@ -8193,7 +8323,7 @@ extension AgenticOrchestrator {
                 Using these additional documents, write ONLY new details about: "\(query)"
                 Do NOT repeat or rephrase anything from prior findings above.
                 Focus exclusively on details, values, or procedures NOT already covered.
-                Write in complete sentences and full paragraphs. Cite as [S1], [S2].
+                Write in complete sentences and full paragraphs. Cite each fact with the [S#] label of the passage it came from, written exactly as it is labeled above.
                 """
             return (prompt, systemPrompt)
 
@@ -8213,7 +8343,7 @@ extension AgenticOrchestrator {
                 Use ### section headers to organize topics. Use **bold** sparingly for key terms only.
                 Write in complete sentences and full paragraphs — not just bullet lists.
                 Use bullet points only for actual sequential steps or specification lists.
-                Include every relevant detail found. Cite as [S1], [S2].
+                Include every relevant detail found. Cite each fact with the [S#] label of the passage it came from, written exactly as it is labeled above.
                 """
             return (prompt, systemPrompt)
 
@@ -8242,7 +8372,7 @@ extension AgenticOrchestrator {
                 Do NOT repeat or rephrase information already covered above.
                 If the documents contain relevant details not yet mentioned, describe them thoroughly.
                 Write in complete sentences and full paragraphs, as plain prose.
-                Do not reply with JSON, field names, or any structured format. Cite as [S1], [S2].
+                Do not reply with JSON, field names, or any structured format. Cite each fact with the [S#] label of the passage it came from, written exactly as it is labeled above.
                 """
             return (prompt, systemPrompt)
         }
@@ -8998,7 +9128,7 @@ extension RAGService {
 
     /// Generate with a fresh session (no accumulated context)
     /// Used by AgenticOrchestrator for each thinking step
-    func generateWithFreshSession(prompt: String, maxTokens: Int) async throws -> LLMResponse {
+    func generateWithFreshSession(prompt: String, maxTokens: Int, skipContinuation: Bool = false) async throws -> LLMResponse {
         try Task.checkCancellation()
         #if canImport(FoundationModels)
             // Create a temporary AppleFoundationLLMService for isolated generation
@@ -9018,6 +9148,7 @@ extension RAGService {
             // final post-retrieval synthesis may be selected for PCC.
             config.executionContext = .onDeviceOnly
             config.allowPrivateCloudCompute = false
+            config.skipContinuation = skipContinuation
 
             return try await tempService.generate(
                 prompt: prompt,
@@ -9060,6 +9191,13 @@ extension RAGService {
         // nothing to do with how long the final answer should be.
         let profile = await MainActor.run { self.activeAdaptiveProfile }
         let effectiveTemperature = temperature ?? profile?.temperature ?? 0.5
+        // Which of the three this step used. Until 5.7 nothing recorded a step's temperature, so
+        // nothing showed the profile reaching a generation (roadmap row "Adaptive profiles cannot
+        // reach Deep Think or Maximum").
+        Log.info(
+            "[Agentic] Step temperature \(effectiveTemperature) from "
+                + (temperature != nil ? "the step" : profile != nil ? "the adaptive profile" : "the default"),
+            category: .llm)
 
         var config = InferenceConfig(
             maxTokens: maxTokens,
@@ -9153,24 +9291,31 @@ extension RAGService {
 
         switch plan.synthesisTarget {
         case .privateCloudCompute:
-            let envelope = CloudEvidenceMinimizer().makeEnvelope(
-                plan: plan,
-                query: prompt,
-                chunks: sourceChunks,
-                maximumCharacters: max(
-                    800,
-                    min(
-                        12_000,
-                        Int(
-                            Double(plan.contextBudget.remaining + plan.contextBudget.evidence)
-                                * FoundationModelTokenBudget.cloudFallbackCharsPerToken)
-                    )
+            let maximumCloudCharacters = max(
+                800,
+                min(
+                    12_000,
+                    Int(
+                        Double(plan.contextBudget.remaining + plan.contextBudget.evidence)
+                            * FoundationModelTokenBudget.cloudFallbackCharsPerToken)
                 )
             )
-            routedContext = renderCloudEvidenceEnvelope(envelope)
-            let includedIDs = Set(envelope.evidence.map(\.sourceID))
-            routedSourceChunks = sourceChunks.filter {
-                includedIDs.contains($0.chunk.id.uuidString)
+            if hasRenderedEvidence {
+                // The step's evidence is already rendered, with the chain's own labels (13 of this function's 14
+                // call sites, above). The envelope is built from chunks, so from none it was empty, and the step
+                // reached Private Cloud Compute with no evidence at all (found by review, 2026-10-20, read in code).
+                // The rendered evidence goes instead, cut to the same budget.
+                routedContext = String(context.prefix(maximumCloudCharacters))
+            } else {
+                let envelope = CloudEvidenceMinimizer().makeEnvelope(
+                    plan: plan,
+                    query: prompt,
+                    chunks: sourceChunks,
+                    maximumCharacters: maximumCloudCharacters
+                )
+                routedContext = renderCloudEvidenceEnvelope(envelope)
+                // In the envelope's order, which its [S1], [S2] ... labels number (5.7).
+                routedSourceChunks = Self.passages(sourceChunks, inTheOrderOf: envelope)
             }
             do {
                 try await ensureConsentForDeepThink(

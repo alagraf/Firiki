@@ -194,12 +194,20 @@ class HybridSearchService {
     ///
     /// `(sourceDocument, chunkIndex)` is stable across re-ingestion, across devices, and across two
     /// users holding the same document, which the UUID never was.
-    static func stableTieBreakKey(_ chunk: RetrievedChunk) -> String {
+    ///
+    /// The document's id comes last (5.7): at the stages that sort with this key a passage's name is often
+    /// empty (a vector hit) or "Unknown" (a keyword-only hit), so passages of two documents at the same place
+    /// still tied, and kept whatever order a dictionary gave them (review of 2026-10-17). The id is fixed for
+    /// as long as the document is in the library, and it only decides between passages whose name and place
+    /// are the same.
+    /// Nonisolated (5.7): `RAGEngine` sorts with it off the main actor, and as a main-actor method under the module's
+    /// default isolation every such call was a warning that is an error in the Swift 6 language mode.
+    nonisolated static func stableTieBreakKey(_ chunk: RetrievedChunk) -> String {
         // Zero-padded so lexical comparison orders the index numerically.
-        "\(chunk.sourceDocument)#\(String(format: "%08d", chunk.chunk.metadata.chunkIndex))"
+        "\(chunk.sourceDocument)#\(String(format: "%08d", chunk.chunk.metadata.chunkIndex))#\(chunk.chunk.documentId.uuidString)"
     }
 
-    static func byScoreThenId(_ lhs: RetrievedChunk, _ rhs: RetrievedChunk) -> Bool {
+    nonisolated static func byScoreThenId(_ lhs: RetrievedChunk, _ rhs: RetrievedChunk) -> Bool {
         lhs.similarityScore != rhs.similarityScore
             ? lhs.similarityScore > rhs.similarityScore
             : stableTieBreakKey(lhs) < stableTieBreakKey(rhs)
@@ -471,7 +479,8 @@ class HybridSearchService {
             }
         }
 
-        boostedResults.sort { $0.similarityScore > $1.similarityScore }
+        // Ties keep one order from run to run (5.7): see `byScoreThenId`.
+        boostedResults.sort(by: Self.byScoreThenId)
 
         if boostedCount > 0 {
             let keywordNames = discriminativeKeywords.map { "\($0.keyword)(\(Int($0.scaleFactor * 100))%)" }
@@ -566,7 +575,8 @@ class HybridSearchService {
             }
         }
 
-        boostedResults.sort { $0.similarityScore > $1.similarityScore }
+        // Ties keep one order from run to run (5.7): see `byScoreThenId`.
+        boostedResults.sort(by: Self.byScoreThenId)
 
         if boostedCount > 0 {
             Log.debug("[Hybrid] Structure boost: \(boostedCount) table/list chunks boosted for spec query", category: .retrieval)
@@ -973,7 +983,7 @@ class HybridSearchService {
                     similarityScore: vectorWeight * max(0, similarity) + keywordWeight * keyword,
                     rank: 0))
         }
-        scored.sort { $0.similarityScore > $1.similarityScore }
+        scored.sort(by: Self.byScoreThenId)
         Log.info(
             "[Hybrid] Document scope: scored \(candidates.count) of \(ids.count) passages of \(scope.count) named document(s), "
                 + "\(comparedByVector) of them by vector as well as by words, returning \(min(topK, scored.count))",
@@ -1385,7 +1395,7 @@ class HybridSearchService {
         guard EvidenceScoringPolicyService.isStateLookupQuery(query), !results.isEmpty else { return results }
 
         let adjusted = results.map { result -> RetrievedChunk in
-            let content = result.chunk.parentContent ?? result.chunk.content
+            let content = result.chunk.contextText
             let adjustment = EvidenceScoringPolicyService.stateLookupAnchorAdjustment(
                 query: query,
                 content: content,

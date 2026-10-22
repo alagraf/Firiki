@@ -68,44 +68,45 @@ struct SourceFidelityStatus: View {
     }
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSSpacing.md) {
             ZStack {
                 Circle()
                     .fill(level.color.opacity(0.15))
                     .frame(width: 40, height: 40)
                 Image(systemName: level.icon)
-                    .font(.system(size: 20, weight: .semibold))
+                    .scaledFont(size: 20, weight: .semibold)
                     .foregroundStyle(level.color)
             }
             
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                HStack(alignment: .firstTextBaseline, spacing: DSSpacing.xs) {
                     Text(level.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(DSColors.primaryText)
                     
                     if let score = score, score > 0 {
                         Text(String(format: "(%.0f%% fidelity)", score * 100))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .scaledFont(size: 11)
+                            .monospacedDigit()
+                            .foregroundStyle(DSColors.secondaryText)
                     }
                 }
                 
                 Text(level.description)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .scaledFont(size: 11)
+                    .foregroundStyle(DSColors.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             
             Spacer()
         }
-        .padding(12)
+        .padding(DSSpacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(DSColors.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .stroke(level.color.opacity(0.25), lineWidth: 1)
         )
     }

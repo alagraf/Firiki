@@ -73,7 +73,7 @@ struct VersionHistoryView: View {
 
     private func releaseHeader(_ release: VersionHistoryRelease) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(DSAnimations.fastEase) {
                 if expanded.contains(release.id) {
                     expanded.remove(release.id)
                 } else {
@@ -82,9 +82,10 @@ struct VersionHistoryView: View {
             }
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text("Version \(release.version)")
                         .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
                         .foregroundStyle(DSColors.primaryText)
                     if let date = release.date {
                         Text(date)
@@ -96,7 +97,7 @@ struct VersionHistoryView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 2)
+                            .padding(.top, DSSpacing.xxs)
                     }
                 }
 
@@ -117,22 +118,22 @@ struct VersionHistoryView: View {
     }
 
     private func sectionHeading(_ heading: String, count: Int) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DSSpacing.xs) {
             Text(heading.uppercased())
                 .font(.caption2.weight(.bold))
                 .kerning(0.8)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(DSColors.accent)
             Text("\(count)")
                 .font(.caption2.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
+                .padding(.horizontal, DSSpacing.xs)
+                .padding(.vertical, DSSpacing.xxs)
                 .background(Capsule().fill(Color.accentColor.opacity(0.12)))
             Spacer(minLength: 0)
         }
         .padding(.top, DSSpacing.sm)
-        .padding(.bottom, 2)
+        .padding(.bottom, DSSpacing.xxs)
         .listRowSeparator(.hidden)
         .accessibilityLabel("\(heading), \(count) item\(count == 1 ? "" : "s")")
     }
@@ -141,17 +142,17 @@ struct VersionHistoryView: View {
         let isOpen = expandedDetails.contains(item.id)
 
         return Button {
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(DSAnimations.fastEase) {
                 if isOpen { expandedDetails.remove(item.id) } else { expandedDetails.insert(item.id) }
             }
         } label: {
             HStack(alignment: .top, spacing: DSSpacing.xs) {
                 // A marker rather than a bullet: it gives each entry a left edge to
                 // scan down, which is what the flat list was missing.
-                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                Capsule()
                     .fill(Color.accentColor.opacity(0.35))
                     .frame(width: 2)
-                    .padding(.vertical, 1)
+                    .padding(.vertical, DSSpacing.xxs)
 
                 VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(item.title)
@@ -169,12 +170,12 @@ struct VersionHistoryView: View {
                         if !isOpen, detail.count > 190 {
                             Text("More")
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(DSColors.accent)
                         }
                     }
                 }
             }
-            .padding(.vertical, 3)
+            .padding(.vertical, DSSpacing.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

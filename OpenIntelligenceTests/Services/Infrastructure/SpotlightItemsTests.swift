@@ -64,4 +64,34 @@ final class SpotlightItemsTests: XCTestCase {
         XCTAssertEqual(SpotlightIndexService.previewText(fromStored: "Short note"), "Short note")
         XCTAssertNil(SpotlightIndexService.previewText(fromStored: "  \n "))
     }
+
+    /// A passage's title names its document and its page, and nothing internal (5.7): it read
+    /// "Juniper Flats Lease - Unit 4B.pdf — Page 3 [Chunk 13]", and "Page 1" for a text file.
+    func testAPassagesTitleNamesItsDocumentAndPage() {
+        XCTAssertEqual(
+            SpotlightIndexService.passageTitle(documentName: "Juniper Flats Lease - Unit 4B.pdf", pageNumber: 3),
+            "Juniper Flats Lease - Unit 4B.pdf, page 3")
+        XCTAssertEqual(SpotlightIndexService.passageTitle(documentName: "Notes.txt", pageNumber: nil), "Notes.txt")
+        XCTAssertEqual(SpotlightIndexService.passageTitle(documentName: "Notes.txt", pageNumber: 0), "Notes.txt")
+    }
+
+    /// A document's entry keeps the identifier a tap is routed by, never expires and sits in its library's domain (5.7).
+    func testADocumentsEntryKeepsItsIdentifierAndNeverExpires() {
+        let document = OIDocumentEntity(id: UUID(), filename: "Lease.pdf", totalChunks: 4, libraryName: "Home")
+        let item = SpotlightIndexService.documentItem(document, domain: "oi.docs.home")
+        XCTAssertEqual(item.uniqueIdentifier, "document-\(document.id.uuidString)")
+        XCTAssertEqual(item.domainIdentifier, "oi.docs.home")
+        XCTAssertEqual(item.expirationDate, .distantFuture)
+        XCTAssertEqual(item.attributeSet.title, "Lease.pdf")
+        XCTAssertEqual(AppLink.destination(forSpotlightIdentifier: item.uniqueIdentifier), .document(document.id))
+    }
+
+    /// Find Passages never hands back more than 20, whatever number a shortcut passes in.
+    func testFindPassagesHoldsItsLimitToTwenty() {
+        XCTAssertEqual(SearchPassagesIntent.clampedLimit(500), 20)
+        XCTAssertEqual(SearchPassagesIntent.clampedLimit(20), 20)
+        XCTAssertEqual(SearchPassagesIntent.clampedLimit(5), 5)
+        XCTAssertEqual(SearchPassagesIntent.clampedLimit(0), 1)
+        XCTAssertEqual(SearchPassagesIntent.clampedLimit(-3), 1)
+    }
 }

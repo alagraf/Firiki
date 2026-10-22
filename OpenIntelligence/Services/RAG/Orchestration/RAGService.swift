@@ -369,6 +369,9 @@ class RAGService: ObservableObject {
     /// weak pointer can be nil or another window's engine, which sent a chat's own request to the relay
     /// and left an action's with nothing to show it.
     @MainActor var asksThroughRelay = false
+    /// True on the engine the app's window shows (`ContentView`). `activePresentedInstance` is not that: an
+    /// engine an action builds with the app closed registers there too, when nothing holds the place (5.7).
+    @MainActor var isTheAppsEngine = false
     /// Set once a sheet for this engine went unseen: its later steps go on without Private Cloud
     /// Compute instead of bringing the app forward and waiting again. An action's engine serves one
     /// question, so this lasts for that question.
@@ -452,6 +455,9 @@ class RAGService: ObservableObject {
     /// Counts the queue loops started. A loop that finds a later one has been started leaves the
     /// queue's task and its items alone on its way out: they are the later loop's by then.
     @MainActor private var ingestionLoopID = 0
+    /// Whether the person paused the import queue (`pauseIngestionQueue`, 5.7). While it is set, the
+    /// queue waits for Continue or Discard, and the end of the stopped import doesn't queue it again.
+    @MainActor @Published private(set) var ingestionPausedByPerson = false
     @MainActor private var ingestionContexts: [UUID: IngestionContext] = [:]
     @MainActor private var ingestionQueueTombstones: [IngestionQueueTombstone] = []
     @MainActor private var selfHealingRebuildTask: Task<Void, Never>?
@@ -1284,6 +1290,83 @@ class RAGService: ObservableObject {
         !results.isEmpty && results.allSatisfy { documentIds.contains($0.chunk.documentId) }
     }
 
+    /// What every cached search's key holds besides the question and the embedding model: each library's
+    /// documents with their passage counts, and the app's version (5.7). While it stays the same a cached
+    /// search can be found again; once it changes, none can.
+    nonisolated static func queryCacheDocumentsToken(
+        _ documents: [(id: UUID, passages: Int)], appVersion: String = RAGService.appVersionForQueryCache
+    ) -> String {
+        var digest = SHA256()
+        for document in documents.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
+            digest.update(data: Data("\(document.id.uuidString):\(document.passages)\n".utf8))
+        }
+        digest.update(data: Data(appVersion.utf8))
+        return digest.finalize().prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    nonisolated static let queryCacheTokenKey = "queryCacheDocumentsToken"
+
+    /// Deletes the cached searches once the documents or the app's version have changed since they were
+    /// last deleted, and returns how many went, or nil when nothing had changed (5.7). Runs after the
+    /// documents are saved and at launch. Through 5.6 nothing deleted a cached search: they kept the
+    /// questions and the passages found, a deleted library's text among them, until the app was removed,
+    /// and from 5.7 every import, deletion or update left all of them unreachable.
+    /// `deleteAll` stands in for the database in tests. It is not a default closure that calls the store:
+    /// Swift takes such a closure as the store actor's own, an error in the Swift 6 language mode.
+    @discardableResult
+    static func deleteUnreachableCachedSearches(
+        documents: [(id: UUID, passages: Int)], defaults: UserDefaults = .standard,
+        deleteAll: (() async -> Int)? = nil
+    ) async -> Int? {
+        let token = queryCacheDocumentsToken(documents)
+        guard defaults.string(forKey: queryCacheTokenKey) != token else { return nil }
+        let deleted: Int
+        if let deleteAll {
+            deleted = await deleteAll()
+        } else {
+            deleted = await SQLiteFullTextService.shared.deleteAllCachedQueries()
+        }
+        defaults.set(token, forKey: queryCacheTokenKey)
+        if deleted > 0 {
+            Log.info(
+                "[RAGService] Deleted \(deleted) cached search(es) that no question can reach any more",
+                category: .pipeline)
+        }
+        return deleted
+    }
+
+    /// The passages of a library's store that belong to a listed document (5.7). What the later steps of a question
+    /// draw on (the spec sniper, cross-references, parent expansion, lexical recall) is this list, and they add
+    /// passages after `passagesFromKnownDocuments` has run: on 2026-10-19 the spec sniper put the overview of a
+    /// deleted note into an answer, cited as "Unknown" (`ShortcutsActionTests.testAPassageOfNoDocumentIsNotUsedInAnAnswer`).
+    private func chunksOfListedDocuments(_ chunks: [DocumentChunk]) async -> [DocumentChunk] {
+        let listed = await MainActor.run { Set(self.documents.map(\.id)) }
+        // The usual case drops nothing and keeps the store's own array rather than copying every passage
+        // (review, 2026-10-19: about 60 MB for a 144,247-passage library).
+        guard !chunks.allSatisfy({ listed.contains($0.documentId) }) else { return chunks }
+        let kept = chunks.filter { listed.contains($0.documentId) }
+        if kept.count < chunks.count {
+            Log.warning(
+                "[RAGService] \(chunks.count - kept.count) stored passage(s) belong to no listed document and are not used",
+                category: .retrieval)
+        }
+        return kept
+    }
+
+    /// Leaves out a passage from the stores whose document is in no library (5.7): its document was deleted,
+    /// or an import stopped before recording it, and an answer cited it as "Unknown". A passage the pipeline
+    /// made itself, such as a camera or barcode capture, carries its own name and is kept. On 2026-10-15 the
+    /// owner's library BDB0BCA5 held 27 such passages and no document.
+    nonisolated static func passagesFromKnownDocuments(
+        _ passages: [RetrievedChunk], knownDocumentIds: Set<UUID>
+    ) -> (kept: [RetrievedChunk], dropped: Int) {
+        let kept = passages.filter { passage in
+            knownDocumentIds.contains(passage.chunk.documentId)
+                || !(passage.sourceDocument.isEmpty || passage.sourceDocument == "Unknown")
+        }
+        return (kept, passages.count - kept.count)
+    }
+
     /// Restore a previously saved transcript to enable conversation continuity.
     ///
     /// Call this when:
@@ -1769,8 +1852,57 @@ class RAGService: ObservableObject {
         savePersistedIngestionQueueState()
     }
 
+    /// Pauses the import queue at the person's word (5.7, roadmap row "Ingestion has no pause
+    /// control"). A tester three hours into a five-hour import asked for it on 2026-08-29.
+    ///
+    /// The file being imported stops the way it does when iOS ends the app's background time: a
+    /// file imported in pieces (a PDF over 10 MB; a text, Markdown or JSON Lines file over 8 MB)
+    /// keeps its checkpoint and goes on from its last saved piece, and any other file starts over,
+    /// which the paused item says. Every file still waiting is paused too. The queue then waits for
+    /// Continue (`continuePausedIngestionQueue`) or Discard, as it does after the app was closed in
+    /// the middle of an import.
+    @MainActor
+    func pauseIngestionQueue() {
+        let activeIndices = ingestionItems.indices.filter {
+            !ingestionItems[$0].stage.isTerminal && ingestionItems[$0].stage != .paused
+        }
+        guard !activeIndices.isEmpty else { return }
+        ingestionPausedByPerson = true
+        cancelIngestionTaskAndSetItAside()
+        isProcessing = false
+        processingStatus = ""
+
+        for index in activeIndices {
+            let restored = documentProcessor.restoredIngestionProgress(
+                for: ingestionItems[index].url, knownPageCount: ingestionItems[index].metrics.pageCount)
+            ingestionItems[index].stage = .paused
+            ingestionItems[index].detail = restored == nil ? Self.pausedStartsOverDetail : Self.pausedKeepsPlaceDetail
+            ingestionItems[index].progress = restored?.fraction
+            ingestionItems[index].startedAt = nil
+            ingestionItems[index].finishedAt = nil
+            ingestionItems[index].errorMessage = nil
+            ingestionItems[index].clearLease()
+            ingestionItems[index].events.append(
+                IngestionEvent(stage: .paused, title: "Paused", detail: ingestionItems[index].detail))
+        }
+
+        Log.info("[RAGService] The person paused \(activeIndices.count) import(s)", category: .ingestion)
+        savePersistedIngestionQueueState()
+        syncIngestionLiveActivity()
+    }
+
+    /// What a paused import says about continuing (5.7).
+    static let pausedKeepsPlaceDetail = "Paused. Continues from where it stopped"
+    static let pausedStartsOverDetail = "Paused. Starts over when you continue"
+
     @MainActor
     private func handleContinuedIngestionExpiration(backgroundTimeRanOut: Bool = false) {
+        // A queue the person paused stays paused: the import their pause stopped ends through here.
+        guard !ingestionPausedByPerson else {
+            savePersistedIngestionQueueState()
+            syncIngestionLiveActivity()
+            return
+        }
         let activeIndices = ingestionItems.indices.filter { !ingestionItems[$0].stage.isTerminal }
         guard !activeIndices.isEmpty else {
             savePersistedIngestionQueueState()
@@ -1902,6 +2034,11 @@ class RAGService: ObservableObject {
     @MainActor var forceAgenticOnNextQuery: Bool = false
 
     @MainActor @Published var documents: [Document] = []
+    /// Deletions made in the app that can still be undone (5.7, `PendingDocumentRemoval`): their documents are
+    /// out of `documents` and not removed yet.
+    @MainActor @Published private(set) var pendingRemovals: [PendingDocumentRemoval] = []
+    /// Each pending removal's timer, what runs before it, and its entry in an undo manager.
+    @MainActor private var pendingRemovalWork: [UUID: PendingDocumentRemovalWork] = [:]
     @MainActor @Published var isProcessing: Bool = false
     @MainActor @Published var processingStatus: String = ""
     @MainActor @Published var lastError: String? = nil  // User-facing error message
@@ -1917,6 +2054,9 @@ class RAGService: ObservableObject {
     @MainActor private var containerIntelligenceSignature: [UUID: LibraryIntelligenceCache.Signature] = [:]
     /// False from the service's creation until the documents read from disk have been applied.
     @MainActor private var hasAppliedLoadedDocuments = false
+    /// Whether the stored documents have been read and applied since this engine started (5.7). Until then
+    /// `documents` is not the catalog, so nothing that asks "does a document name this file" may act on it.
+    @MainActor var hasLoadedDocumentsFromDisk: Bool { hasAppliedLoadedDocuments }
     @MainActor @Published private(set) var containerIntelligence: [UUID: LibraryIntelligenceCenter.IntelligenceReport] =
         [:]
     @MainActor @Published private(set) var chatHistories: [UUID: [ChatMessage]] = [:]
@@ -2148,7 +2288,6 @@ class RAGService: ObservableObject {
                 category: .initialization
             )
 
-            let selectedIsApple = (selectedModelRaw == "apple_intelligence")
             // Try to instantiate the user's selected model first
             let primaryService = Self.instantiateService(
                 for: selectedModelRaw,
@@ -2166,9 +2305,6 @@ class RAGService: ObservableObject {
                     category: .initialization
                 )
                 Log.info("✓ Using \(fallback.modelName) as active model", category: .initialization)
-                if selectedIsApple {
-                    lastError = "Apple Intelligence is unavailable or disabled on this device. Using fallback instead."
-                }
                 resolvedService = fallback
                 #if canImport(FoundationModels)
                     if #available(iOS 26.0, *),
@@ -2182,7 +2318,13 @@ class RAGService: ObservableObject {
                     }
                 #endif
             } else {
-                // No LLM available - check for screenshot mode first
+                // No LLM available - check for screenshot mode first.
+                //
+                // Nothing goes into `lastError` here (5.7). The Documents screen shows `lastError` as
+                // "Error Processing Document", and through 5.6 an engine started without the model put
+                // "Apple Intelligence is required but unavailable. Enable it in Settings" there, also on
+                // devices that can never run it, while documents import and search without it. The empty
+                // chat's notice and the mode chip say it by reason (`AppleIntelligenceCopy`).
                 #if targetEnvironment(simulator)
                     if ScreenshotMockLLMService.isScreenshotMode {
                         Log.info("📸 Screenshot mode: Using mock LLM for demo", category: .initialization)
@@ -2192,8 +2334,6 @@ class RAGService: ObservableObject {
                             "No configured LLM available; Apple Intelligence is REQUIRED",
                             category: .initialization
                         )
-                        lastError =
-                            "⚠️ Running in Simulator: Apple Intelligence requires Apple Silicon (A17 Pro+ iPhone, M1+ iPad/Mac)."
                         resolvedService = AppleFoundationLLMServiceUnavailable()
                     }
                 #else
@@ -2201,8 +2341,6 @@ class RAGService: ObservableObject {
                         "No configured LLM available; Apple Intelligence is REQUIRED",
                         category: .initialization
                     )
-                    lastError =
-                        "⚠️ Apple Intelligence is required but unavailable. Enable it in Settings → Apple Intelligence & Siri."
                     // Still need a service instance to avoid nil crashes, but it will always throw
                     resolvedService = AppleFoundationLLMServiceUnavailable()
                 #endif
@@ -2399,6 +2537,11 @@ class RAGService: ObservableObject {
         defaults.synchronize()
         Log.info("[Consent] Persisted \(provider.shortName) = \(state.rawValue)", category: .initialization)
     }
+
+    /// The settings the app's screens use, once `registerSettingsStore` has run. An action changes
+    /// these so the open chat follows at once (`SetAnswerModeIntent`, 5.7).
+    @MainActor
+    var registeredSettingsStore: SettingsStore? { settingsStore }
 
     @MainActor
     func registerSettingsStore(_ store: SettingsStore) {
@@ -2637,7 +2780,7 @@ class RAGService: ObservableObject {
             let queryTerms = extractQueryTerms(query)
 
             for (idx, chunk) in chunks.prefix(10).enumerated() {
-                let content = chunk.chunk.parentContent ?? chunk.chunk.content
+                let content = chunk.chunk.contextText
                 let preview = String(content.prefix(120)).replacingOccurrences(of: "\n", with: " ")
                 let score = String(format: "%.3f", chunk.similarityScore)
                 let page = chunk.pageNumber.map { "p.\($0)" } ?? "?"
@@ -3339,7 +3482,7 @@ class RAGService: ObservableObject {
         var adjustedAny = false
 
         let boosted = chunks.map { candidate -> (chunk: RetrievedChunk, structured: Bool) in
-            let content = candidate.chunk.parentContent ?? candidate.chunk.content
+            let content = candidate.chunk.contextText
             let lowerContent = content.lowercased()
             let metadata = candidate.chunk.metadata
             let sectionKeywords = Self.trustedSectionKeywordSet(
@@ -3563,13 +3706,17 @@ class RAGService: ObservableObject {
     ///
     /// Universal across all domains — works for any document type.  Uses simple
     /// keyword + spec-pattern matching to score individual sentences.
+    /// - Parameter leadingCandidateWhole: put the first candidate in whole, as `[S1]`, before any
+    ///   chosen sentence (see `extractRelevantSentencesOffMain`).
     func extractRelevantSentences(
         from candidates: [RetrievedChunk],
         query: String,
         maxChars: Int,
         compact: Bool,
         isExtractiveFirst: Bool = false,
-        labelOffset: Int = 0
+        labelOffset: Int = 0,
+        leadingCandidateWhole: Bool = false,
+        numberByUse: Bool = false
     ) async -> SentenceExtractionResult {
         let extractionTask = Task.detached(priority: .utility) {
             Self.extractRelevantSentencesOffMain(
@@ -3578,7 +3725,9 @@ class RAGService: ObservableObject {
                 maxChars: maxChars,
                 compact: compact,
                 isExtractiveFirst: isExtractiveFirst,
-                labelOffset: labelOffset
+                labelOffset: labelOffset,
+                leadingCandidateWhole: leadingCandidateWhole,
+                numberByUse: numberByUse
             )
         }
 
@@ -3589,17 +3738,82 @@ class RAGService: ObservableObject {
         }
     }
 
+    /// How many tokens of passages graph packing gathers for an investigate, compare or findings question (5.7).
+    ///
+    /// It was 6,000 on every device. Graph packing returns its passages in document order, with the context passages
+    /// it adds scored 0.3, and `assembleContext` then fills the window in that order (after the lost-in-the-middle
+    /// reorder, which assumes relevance order). On a device whose window is 4,096 tokens, about 3,190 tokens (4,470
+    /// characters) are left for passages, measured on the owner's iPhone 16 Pro Max (`Context budget: base=4096 ...
+    /// available=3190`, 2026-10-16), so roughly half of a 6,000-token pack was cut by position rather than relevance.
+    /// Three quarters of the window fits what is left after the instructions and the question; at 8,192 or more the
+    /// budget stays 6,000, as before. A device that reports no window counts as 4,096.
+    nonisolated static func graphPackingTokenBudget(windowTokens: Int) -> Int {
+        let window = windowTokens > 0 ? windowTokens : FoundationModelTokenBudget.baseContextLength
+        return min(6000, max(1500, window * 3 / 4))
+    }
+
+    /// The candidates with the passage retrieval ranked first in front, the rest in the order given
+    /// (5.7). The extractive ordering sorts by the question's words, and must not move retrieval's
+    /// best passage out of the context: see `extractRelevantSentencesOffMain`.
+    nonisolated static func leadingWithTopRanked(_ top: RetrievedChunk?, then ordered: [RetrievedChunk])
+        -> [RetrievedChunk]
+    {
+        guard let top else { return ordered }
+        return [top] + ordered.filter { $0.chunk.id != top.chunk.id }
+    }
+
     private nonisolated static func extractRelevantSentencesOffMain(
         from candidates: [RetrievedChunk],
         query: String,
         maxChars: Int,
         compact: Bool,
         isExtractiveFirst: Bool,
-        labelOffset: Int = 0
+        labelOffset: Int = 0,
+        leadingCandidateWhole: Bool = false,
+        numberByUse: Bool = false
     ) -> SentenceExtractionResult {
         if Task.isCancelled {
             return .empty
         }
+
+        // The passage retrieval ranked first goes in whole, ahead of every chosen sentence (5.7).
+        // Sentences are chosen by the question's words, and a passage can answer a question without
+        // repeating them. On 2026-10-15 "What happened on September 30" had the September 30 section
+        // of a monthly log ranked first; its lines name people and events, not "happened", and the
+        // date is in its heading, so the sentences chosen came from September 24 and 25 and the model
+        // was told nothing about the 30th. It takes at most three fifths of the budget, cut at a line
+        // or a sentence end; chosen sentences from the other passages fill the rest.
+        let leadEntry: (label: String, body: String)? = {
+            guard leadingCandidateWhole, let lead = candidates.first else { return nil }
+            let sectionTag: String
+            if let section = lead.chunk.metadata.sectionTitle, !section.isEmpty {
+                sectionTag = " \(section) —"
+            } else {
+                sectionTag = ""
+            }
+            let label: String
+            if compact {
+                let filename = URL(fileURLWithPath: lead.sourceDocument).lastPathComponent
+                label = "[S\(1 + labelOffset)]\(sectionTag) (\(filename))"
+            } else {
+                let page = lead.pageNumber.map { " p.\($0)" } ?? ""
+                label = "[S\(1 + labelOffset)]\(sectionTag) \(lead.sourceDocument)\(page)"
+            }
+            var body = lead.chunk.contextText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let room = maxChars * 3 / 5 - label.count - 1
+            if body.count > room {
+                let head = room > 0 ? String(body.prefix(room)) : ""
+                if let lineEnd = head.lastIndex(of: "\n") {
+                    body = String(head[..<lineEnd])
+                } else if let stop = head.lastIndex(where: { $0 == "." || $0 == "!" || $0 == "?" }) {
+                    body = String(head[...stop])
+                } else {
+                    body = head
+                }
+            }
+            return body.isEmpty ? nil : (label, body)
+        }()
+        let leadBodyLower = leadEntry?.body.lowercased() ?? ""
 
         // Keep sentence-scoring resources local to this detached task.
         // Shared static Set/regex storage has proven crash-prone on the utility queue.
@@ -3771,8 +3985,10 @@ class RAGService: ObservableObject {
             if Task.isCancelled {
                 return .empty
             }
+            // The leading passage is in already, whole.
+            if leadEntry != nil && chunkIdx == 0 { continue }
 
-            let content = candidate.chunk.parentContent ?? candidate.chunk.content
+            let content = candidate.chunk.contextText
             let source = candidate.sourceDocument
             let page = candidate.pageNumber
 
@@ -3827,6 +4043,8 @@ class RAGService: ObservableObject {
                     }
 
                     guard subLine.count > 5 else { continue }
+                    // A line the leading passage already gives, from a neighbouring passage.
+                    if !leadBodyLower.isEmpty, leadBodyLower.contains(subLine.lowercased()) { continue }
                     var headingContext = ""
                     if !isHeading {
                         headingContext = currentHeading
@@ -3945,9 +4163,18 @@ class RAGService: ObservableObject {
         var builder = String()
         builder.reserveCapacity(min(maxChars, 5000))
         var sourcesUsed: Set<Int> = []
+        // The sources in the order their blocks are written, which is the order `numberByUse` numbers them.
+        var packedOrder: [Int] = []
         var sentenceCount = 0
         let headerOverhead = compact ? 30 : 80
         let separatorSize = compact ? 5 : 7
+
+        if let leadEntry {
+            builder += leadEntry.label + "\n" + leadEntry.body + "\n"
+            sourcesUsed.insert(0)
+            packedOrder.append(0)
+            sentenceCount += EvidenceLineSplitter.lines(in: leadEntry.body).count
+        }
 
         // Group sentences by source into prose paragraphs (not one-per-line lists).
         // When each sentence is its own line, the FM regurgitates them as bullet lists.
@@ -3983,14 +4210,20 @@ class RAGService: ObservableObject {
                 } else {
                     sectionTag = ""
                 }
+                // With `numberByUse` the number is filled in after packing (`numberedLabels`), once it is known which
+                // sources made it: each is numbered by its place among the sources used, in the order
+                // `usedSourceIndices` returns, for a caller that keeps only those (the Standard path and its needle
+                // rescue). Without it the number is the candidate's place plus `labelOffset`, for a caller that keeps
+                // every candidate (Deep Think's windows, numbered over all routed passages).
+                let number =
+                    numberByUse
+                    ? labelPlaceholder(sentence.sourceIndex) : "\(sentence.sourceIndex + 1 + labelOffset)"
                 if compact {
                     let filename = URL(fileURLWithPath: sentence.sourceDoc).lastPathComponent
-                    sourceLabels[sentence.sourceIndex] =
-                        "[S\(sentence.sourceIndex + 1 + labelOffset)]\(sectionTag) (\(filename))"
+                    sourceLabels[sentence.sourceIndex] = "[S\(number)]\(sectionTag) (\(filename))"
                 } else {
                     let page = sentence.pageNumber.map { " p.\($0)" } ?? ""
-                    sourceLabels[sentence.sourceIndex] =
-                        "[S\(sentence.sourceIndex + 1 + labelOffset)]\(sectionTag) \(sentence.sourceDoc)\(page)"
+                    sourceLabels[sentence.sourceIndex] = "[S\(number)]\(sectionTag) \(sentence.sourceDoc)\(page)"
                 }
             }
             sourceBuffers[sentence.sourceIndex, default: []].append(displayText)
@@ -4025,7 +4258,7 @@ class RAGService: ObservableObject {
                     builder += compact ? "\n---\n" : "\n\n---\n\n"
                 }
                 builder += entry
-                sourcesUsed.insert(srcIdx)
+                if sourcesUsed.insert(srcIdx).inserted { packedOrder.append(srcIdx) }
                 sentenceCount += sentences.count
             } else {
                 // Try fitting partial sentences from this source
@@ -4044,7 +4277,7 @@ class RAGService: ObservableObject {
                             builder += compact ? "\n---\n" : "\n\n---\n\n"
                         }
                         builder += label + "\n" + partialParagraph + "\n"
-                        sourcesUsed.insert(srcIdx)
+                        if sourcesUsed.insert(srcIdx).inserted { packedOrder.append(srcIdx) }
                         sentenceCount += partial.count
                     }
                 }
@@ -4052,13 +4285,74 @@ class RAGService: ObservableObject {
             }
         }
 
+        // With `numberByUse` the sources are numbered in the order the context reads them ([S1], [S2], [S3] down the
+        // page) and returned in that order, the order the caller keeps them in. The blocks are written by relevance
+        // (each source's best sentence first), so numbered in candidate order the labels read [S1], [S8], [S9], [S6]
+        // down the page (5.7; Docs/ai/DECISIONS.md, 2026-10-20). Without `numberByUse` a label is the candidate's
+        // place, so the order stays the candidates' (Deep Think's windows).
+        let usedSourceIndices = numberByUse ? packedOrder : sourcesUsed.sorted()
         return SentenceExtractionResult(
-            context: builder,
+            context: numberByUse
+                ? numberedLabels(in: builder, usedSourceIndices: usedSourceIndices, labelOffset: labelOffset) : builder,
             sourcesUsed: sourcesUsed.count,
             sentencesIncluded: sentenceCount,
-            // Sorted so the order matches the labels, which ascend with the source index.
-            usedSourceIndices: sourcesUsed.sorted()
+            // The caller's passages, in the order the labels number them.
+            usedSourceIndices: usedSourceIndices
         )
+    }
+
+    /// The candidates the whole-chunk assembler did not reach, which is what the needle rescue reads. It packs in
+    /// rank order, skipping near-duplicates, and stops at the first passage that does not fit, so these are the ones
+    /// after where it stopped: the ones the budget cut, and any near-duplicates skipped after the last one packed. A
+    /// later copy of a packed passage is not where it stopped and is not read again. `dropFirst(assembled.used)`
+    /// counted the skipped near-duplicates as packed, so it handed the rescue passages already in the prompt, and
+    /// while the assembler reordered every candidate before the cut (to 2026-10-20) it also left out the second-best
+    /// passage, which the reordering had put last.
+    nonisolated static func candidatesPastThePacked(
+        _ candidates: [RetrievedChunk], packed: [RetrievedChunk]
+    ) -> [RetrievedChunk] {
+        let packedIDs = Set(packed.map(\.chunk.id))
+        let stop = packed.compactMap { kept in candidates.firstIndex { $0.chunk.id == kept.chunk.id } }.max() ?? -1
+        return candidates[(stop + 1)...].filter { !packedIDs.contains($0.chunk.id) }
+    }
+
+    /// Each passage's place among the candidates, from 1, in the order given (5.7). The trace line that uses it shows
+    /// which candidates a whole-passage context kept and where it put them: "candidates [1, 3, 4, 2]" is the first
+    /// four, placed best first and second best last.
+    nonisolated static func candidatePlaces(of passages: [RetrievedChunk], in candidates: [RetrievedChunk]) -> [Int] {
+        passages.compactMap { passage in candidates.firstIndex { $0.chunk.id == passage.chunk.id }.map { $0 + 1 } }
+    }
+
+    /// The passages a cloud envelope carries, in its order, which is the order its [S1], [S2] ... labels number them
+    /// (`renderCloudEvidenceEnvelope`); a passage it left out is dropped (5.7). The envelope orders its evidence by
+    /// rank, so the local order filtered by the envelope could put a different passage at a label's place.
+    nonisolated static func passages(
+        _ chunks: [RetrievedChunk], inTheOrderOf envelope: CloudEvidenceEnvelope
+    ) -> [RetrievedChunk] {
+        var byID: [String: RetrievedChunk] = [:]
+        for chunk in chunks where byID[chunk.chunk.id.uuidString] == nil {
+            byID[chunk.chunk.id.uuidString] = chunk
+        }
+        return envelope.evidence.compactMap { byID[$0.sourceID] }
+    }
+
+    /// A label number not yet known: the candidate's index between two private-use characters.
+    private nonisolated static func labelPlaceholder(_ sourceIndex: Int) -> String {
+        "\u{E000}\(sourceIndex)\u{E001}"
+    }
+
+    /// The context with each source's label numbered by its place in `usedSourceIndices` (5.7), for a caller that
+    /// keeps only those sources, in that order. The Standard path numbered by candidate while keeping only the used sources, numbered from
+    /// one: on 2026-10-20 a pet-deposit question drew sentences from candidates 1, 5 and 6, the model was shown [S1],
+    /// [S5] and [S6], cited all three correctly, and the answer's passages numbered 1 to 3 opened [S1] only. The
+    /// needle rescue's labels, which start at `labelOffset`, skipped numbers the same way.
+    nonisolated static func numberedLabels(in context: String, usedSourceIndices: [Int], labelOffset: Int) -> String {
+        var numbered = context
+        for (place, sourceIndex) in usedSourceIndices.enumerated() {
+            numbered = numbered.replacingOccurrences(
+                of: labelPlaceholder(sourceIndex), with: "\(place + 1 + labelOffset)")
+        }
+        return numbered
     }
 
     private nonisolated static func exactSentenceAnchorTokens(from text: String) -> Set<String> {
@@ -4419,8 +4713,14 @@ class RAGService: ObservableObject {
     private func loadDocumentsFromDisk() {
         let loadedDocuments = loadDocumentsSnapshotFromDisk()
         Task { @MainActor [weak self] in
-            guard let loadedDocuments else { return }
-            self?.applyLoadedDocuments(loadedDocuments)
+            guard let self, let loadedDocuments else { return }
+            self.applyLoadedDocuments(loadedDocuments)
+            // An update changes every cached search's key, as does a document another device added or
+            // removed, so cached searches no question can reach are deleted at launch too (5.7).
+            await Self.deleteUnreachableCachedSearches(
+                documents: self.documents.map { (id: $0.id, passages: $0.totalChunks) })
+            // Deletions made just before the app last closed, whose undo seconds it did not live through (5.7).
+            await self.removeDocumentsLeftPending()
         }
     }
 
@@ -4474,13 +4774,29 @@ class RAGService: ObservableObject {
         // The same goes for this device's Spotlight entries, which since 5.7 do not expire.
         SpotlightIndexService.shared.documentsLoaded(
             loadedDocuments, defaultLibraryId: containerService.containers.first?.id)
+        // And for what actions handed to Shortcuts (5.7, `HandedOutItems`): kept a day, less for a passage whose
+        // document is in no library now, which goes with any answer that used it. An empty list, which a read that
+        // failed can give, only drops what has expired.
+        let documentIds = Set(loadedDocuments.map(\.id))
+        Task.detached(priority: .utility) {
+            if documentIds.isEmpty {
+                HandedOutItems.dropExpired()
+            } else {
+                HandedOutItems.keepOnly(documents: documentIds)
+            }
+        }
         hasAppliedLoadedDocuments = true
-        guard documents != loadedDocuments else { return }
-        documents = loadedDocuments
-        totalChunksStored = loadedDocuments.reduce(0) { $0 + $1.totalChunks }
+        // A document whose removal is waiting out its undo seconds stays out of the list (5.7): it is still on
+        // disk until the removal runs, and a reload in those seconds would otherwise show it again. The
+        // analysis sweep and Spotlight above are given every document, so an undo finds both as they were.
+        let hidden = PendingDocumentRemovalLedger.allIds().union(pendingRemovals.flatMap { $0.documents.map(\.id) })
+        let shown = hidden.isEmpty ? loadedDocuments : loadedDocuments.filter { !hidden.contains($0.id) }
+        guard documents != shown else { return }
+        documents = shown
+        totalChunksStored = shown.reduce(0) { $0 + $1.totalChunks }
         syncAllContainerStats()
-        Log.info("[RAGService] Loaded \(loadedDocuments.count) documents (\(totalChunksStored) chunks)")
-        if !loadedDocuments.isEmpty {
+        Log.info("[RAGService] Loaded \(shown.count) documents (\(totalChunksStored) chunks)")
+        if !shown.isEmpty {
             refreshIntelligence(for: nil)
         }
     }
@@ -4536,6 +4852,7 @@ class RAGService: ObservableObject {
                     + "\(String(format: "%.0f", Date().timeIntervalSince(queueStarted) * 1000))ms",
                 category: .pipeline
             )
+            await removeTextOfUnfinishedImports()
         }
 
         Log.info(
@@ -4561,6 +4878,87 @@ class RAGService: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Whether this launch has looked for the text of imports that never finished.
+    @MainActor private static var unfinishedImportTextChecked = false
+
+    /// Removes, once a launch, the text of documents that never finished importing (5.7, roadmap row
+    /// "Text from an unfinished import is never removed").
+    ///
+    /// An import stores the document's text in the keyword store before it cuts it into passages,
+    /// and the document's record is saved only at the end. An app that ended in the middle of an
+    /// import (closed by the person or by iOS) left that text with no document to go with it: in no
+    /// search, and taking room, since nothing removed it. 5.7 already removes it when an import is
+    /// cancelled or stops at the passage limit. This removes the text of every document the keyword
+    /// store holds and the document list does not, using the store's own calls
+    /// (`SQLiteFullTextService` is not changed). It does nothing while an import is queued or running,
+    /// whose text is stored before its record, and nothing when the list read from disk is empty or
+    /// could not be read; the next launch looks again. The file shrinks only when Optimize Database
+    /// runs.
+    @MainActor
+    func removeTextOfUnfinishedImports() async {
+        guard !Self.unfinishedImportTextChecked else { return }
+        guard ingestionTask == nil, !ingestionItems.contains(where: { !$0.stage.isTerminal }) else { return }
+        Self.unfinishedImportTextChecked = true
+        guard let listed = loadDocumentsSnapshotFromDisk(), !listed.isEmpty else { return }
+        let known = Set(listed.map(\.id)).union(documents.map(\.id))
+        let stored = await SQLiteFullTextService.shared.getAllDocumentIds()
+        let removed = await Self.removeStoredText(of: stored, notIn: known, using: SQLiteFullTextService.shared)
+        if removed > 0 {
+            Log.info(
+                "[RAGService] Removed the stored text of \(removed) document(s) whose import never finished",
+                category: .ingestion)
+        }
+        // The vector stores hold such a document's passages too (5.7). Searches leave them out
+        // (`passagesFromKnownDocuments`), and nothing removed them: on 2026-10-15 the owner's library BDB0BCA5
+        // held 27 and no document. Local Only libraries only: an iCloud library's documents can arrive after its
+        // passages, and a removal there would reach the person's other devices.
+        let localStores = containerService.containers
+            .filter { $0.syncMode != .iCloudShared }
+            .map { vectorRouter.db(for: $0) }
+        let removedPassages = await Self.removePassages(notIn: known, from: localStores)
+        if removedPassages > 0 {
+            Log.info(
+                "[RAGService] Removed the passages of \(removedPassages) document(s) in no library",
+                category: .ingestion)
+        }
+    }
+
+    /// Removes from each store, and from the keyword store, the passages of every document `known` does not
+    /// list, and returns how many documents' passages went (5.7). The caller decides which stores and checks
+    /// that `known` came from a document list that was read.
+    static func removePassages(
+        notIn known: Set<UUID>, from stores: [VectorDatabase], keywordStore: SQLiteFullTextService = .shared
+    ) async -> Int {
+        var removed = 0
+        for store in stores {
+            guard let records = try? await store.passageRecords() else { continue }
+            for id in Set(records.map(\.documentId)).subtracting(known) {
+                do {
+                    try await store.deleteChunks(forDocument: id)
+                    await keywordStore.deleteChunks(for: id)
+                    removed += 1
+                } catch {
+                    Log.warning(
+                        "[RAGService] Could not remove the passages of a document in no library: \(error.localizedDescription)",
+                        category: .ingestion)
+                }
+            }
+        }
+        return removed
+    }
+
+    /// Removes from `store` the text of each id in `stored` that `known` does not list, and returns
+    /// how many it removed.
+    nonisolated static func removeStoredText(
+        of stored: [UUID], notIn known: Set<UUID>, using store: SQLiteFullTextService
+    ) async -> Int {
+        let leftOver = Set(stored).subtracting(known)
+        for id in leftOver {
+            await store.delete(for: id)
+        }
+        return leftOver.count
     }
 
     func saveDocumentsToDisk() async {
@@ -4627,6 +5025,10 @@ class RAGService: ObservableObject {
         } catch {
             Log.error("[RAGService] Failed to save documents metadata: \(error.localizedDescription)")
         }
+
+        // Every cached search's key names the documents (`queryCacheKey`), so after a save that changed
+        // them none of the cached searches can be found again, and they are deleted (5.7).
+        await Self.deleteUnreachableCachedSearches(documents: snapshot.map { (id: $0.id, passages: $0.totalChunks) })
     }
 
     @MainActor
@@ -4828,7 +5230,18 @@ class RAGService: ObservableObject {
     /// returns of them.
     func passageCountForActiveContainer() async -> Int {
         let db = await dbForActiveContainer()
-        return (try? await db.count()) ?? 0
+        // The passages a map can draw, as `chunksForVisualization` reads them (5.7): counted with every stored passage,
+        // a library with a document in its undo seconds read as larger than its map and was called a sample.
+        return (try? await visiblePassageRecords(db: db).count) ?? 0
+    }
+
+    /// The store's passages less those of documents deleted in the last few seconds, which keep their passages until
+    /// the undo window ends (`PendingDocumentRemoval`) and are out of the document list already (5.7).
+    private func visiblePassageRecords(db: VectorDatabase) async throws -> [PassageRecord] {
+        let records = try await db.passageRecords()
+        let hidden = PendingDocumentRemovalLedger.allIds()
+            .union(pendingRemovals.flatMap { $0.documents.map(\.id) })
+        return hidden.isEmpty ? records : records.filter { !hidden.contains($0.documentId) }
     }
 
     /// Return the active container's chunks for the visualization views: every chunk when the
@@ -4837,16 +5250,111 @@ class RAGService: ObservableObject {
     /// Used by visualization views to render embedding spaces and statistics.
     func allChunksForActiveContainer() async -> [DocumentChunk] {
         let db = await dbForActiveContainer()
+        return await chunksForVisualization(db: db, limit: Self.visualizationPassageLimit)
+    }
+
+    /// The embedding space a library's vectors live in, for drawing libraries together (5.7). The Core ML and Core AI
+    /// providers are two copies of one model (`EmbeddingProviderDefaults.areCopiesOfOneModel`), so their vectors share
+    /// a space; any other provider, or another vector size, is its own.
+    nonisolated static func atlasEmbeddingSpace(providerId: String, dimension: Int) -> String {
+        let model =
+            EmbeddingProviderDefaults.areCopiesOfOneModel(providerId, EmbeddingProviderDefaults.coreML)
+            ? "bundled-sentence-model" : providerId
+        return "\(model)-\(dimension)"
+    }
+
+    /// How many passages each library gives the All Libraries map (5.7), in the order given. When every passage fits in
+    /// `visualizationPassageLimit`, each library gives all of its own. Otherwise each first gets up to 300 (fewer when
+    /// 300 each would pass the limit), so a small library still shows, and the rest of the limit is shared in
+    /// proportion to what each has left. The total never passes the limit, because the map's analysis and projection
+    /// run on the main thread (see `visualizationPassageLimit`), and no library gives more than it has.
+    nonisolated static func atlasShares(passages: [Int]) -> [Int] {
+        let counts = passages.map { max($0, 0) }
+        let limit = visualizationPassageLimit
+        let total = counts.reduce(0, +)
+        guard total > limit else { return counts }
+        let libraries = max(counts.filter { $0 > 0 }.count, 1)
+        let floor = min(300, limit / libraries)
+        let base = counts.map { min($0, floor) }
+        let remaining = limit - base.reduce(0, +)
+        let rest = zip(counts, base).map { $0 - $1 }
+        let restTotal = rest.reduce(0, +)
+        guard remaining > 0, restTotal > 0 else { return base }
+        return zip(base, rest).map { b, r in b + Int(Double(remaining) * Double(r) / Double(restTotal)) }
+    }
+
+    /// Which libraries the All Libraries map draws (5.7), from each library's embedding space
+    /// (`atlasEmbeddingSpace`) and passage count. Vectors from different models can't share one projection, so one
+    /// space is drawn: the one with the most passages, the open library's on a tie, then the first by name, so the
+    /// choice is the same on every launch. Libraries with passages in other spaces are returned as left out; a library
+    /// with no passages is neither drawn nor named. A library whose vectors wait for a rebuild after a change to the
+    /// bundled model (`EmbeddingFingerprint`) is drawn with the others: nothing here can tell it apart.
+    nonisolated static func atlasGroupChoice(
+        libraries: [(id: UUID, space: String, passages: Int)], activeId: UUID?
+    ) -> (included: [UUID], excluded: [UUID]) {
+        let withPassages = libraries.filter { $0.passages > 0 }
+        guard !withPassages.isEmpty else { return ([], []) }
+        var totals: [String: Int] = [:]
+        for library in withPassages { totals[library.space, default: 0] += library.passages }
+        let activeSpace = withPassages.first(where: { $0.id == activeId })?.space
+        let chosen = totals.keys.sorted { a, b in
+            let totalA = totals[a] ?? 0, totalB = totals[b] ?? 0
+            if totalA != totalB { return totalA > totalB }
+            if (a == activeSpace) != (b == activeSpace) { return a == activeSpace }
+            return a < b
+        }.first
+        return (
+            withPassages.filter { $0.space == chosen }.map(\.id),
+            withPassages.filter { $0.space != chosen }.map(\.id)
+        )
+    }
+
+    /// Passages from every library in the space `atlasGroupChoice` picks, for the Atlas's All Libraries view (5.7),
+    /// at most `visualizationPassageLimit` across them (`atlasShares`), and the libraries left out.
+    func atlasSamplesForAllLibraries() async -> (
+        included: [(library: KnowledgeContainer, chunks: [DocumentChunk])], excluded: [KnowledgeContainer]
+    ) {
+        let (containers, activeId) = await MainActor.run {
+            (self.containerService.containers, self.containerService.activeContainerId)
+        }
+        // `dbForContainer` fails for a library deleted since the list was read, where `dbFor` would hand back the open
+        // library's store and draw its passages twice.
+        var stores: [UUID: VectorDatabase] = [:]
+        var rows: [(id: UUID, space: String, passages: Int)] = []
+        for library in containers {
+            guard let db = try? await dbForContainer(library.id) else { continue }
+            stores[library.id] = db
+            let space = Self.atlasEmbeddingSpace(providerId: library.embeddingProviderId, dimension: library.embeddingDim)
+            rows.append((library.id, space, (try? await visiblePassageRecords(db: db).count) ?? 0))
+        }
+        let choice = Self.atlasGroupChoice(libraries: rows, activeId: activeId)
+        let byId = Dictionary(containers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let counts = Dictionary(rows.map { ($0.id, $0.passages) }, uniquingKeysWith: { first, _ in first })
+        let shares = Self.atlasShares(passages: choice.included.map { counts[$0] ?? 0 })
+        var samples: [(library: KnowledgeContainer, chunks: [DocumentChunk])] = []
+        for (id, share) in zip(choice.included, shares) {
+            guard share > 0, let library = byId[id], let db = stores[id] else { continue }
+            let chunks = await chunksForVisualization(db: db, limit: share)
+            if !chunks.isEmpty { samples.append((library, chunks)) }
+        }
+        return (samples, choice.excluded.compactMap { byId[$0] })
+    }
+
+    /// A library's passages for a map: every passage up to `limit`, past that an even sample of `limit`
+    /// (`evenSampleIndices`), with their vectors loaded.
+    private func chunksForVisualization(db: VectorDatabase, limit: Int) async -> [DocumentChunk] {
         do {
             // Only the sampled passages are read from the store. Through 5.6 every passage
             // was loaded and the sample taken from that. The sample is chosen by position
             // from the store's records and then read by id: an import or a delete can run
             // between these calls, and a position would then name another passage, or pair a
             // passage with another passage's vector.
-            let records = try await db.passageRecords()
+            // A document deleted in the last few seconds keeps its passages until its undo window ends; a map drawn in
+            // those seconds leaves them out, as the document list does, and samples from what is left (5.7).
+            let records = try await visiblePassageRecords(db: db)
             guard !records.isEmpty else { return [] }
             let keptIds = Self.evenSampleIndices(
-                count: records.count, limit: Self.visualizationPassageLimit
+                count: records.count, limit: limit
             ).map { records[$0].id }
             let chunks = try await db.chunks(withIDs: keptIds)
 
@@ -4861,7 +5369,7 @@ class RAGService: ObservableObject {
                     Log.warning(
                         "[RAGService] Embedding hydration mismatch for visualization: chunks=\(chunks.count), embeddings=\(embeddings.count)"
                     )
-                    return chunks
+                    return Self.passagesWithVectors(chunks, dimension: db.dimension)
                 }
 
                 var hydrated: [DocumentChunk] = []
@@ -4880,14 +5388,27 @@ class RAGService: ObservableObject {
                         )
                     )
                 }
-                return hydrated
+                return Self.passagesWithVectors(hydrated, dimension: db.dimension)
             }
 
-            return chunks
+            return Self.passagesWithVectors(chunks, dimension: db.dimension)
         } catch {
             Log.error("[RAGService] Failed to load all chunks: \(error.localizedDescription)")
             return []
         }
+    }
+
+    /// The passages whose vector has the store's size (5.7). A passage removed between reading it and reading its
+    /// vector comes back with an empty one (`getEmbeddings`), and the map's projection drops rows of another size, which
+    /// pairs every later point with the wrong colour and can seed the map's clustering from an empty row.
+    nonisolated static func passagesWithVectors(_ passages: [DocumentChunk], dimension: Int) -> [DocumentChunk] {
+        let kept = passages.filter { $0.embedding.count == dimension }
+        if kept.count < passages.count {
+            Log.warning(
+                "[RAGService] Map sample left out \(passages.count - kept.count) passage(s) whose vector is missing or not \(dimension) wide",
+                category: .vectorDB)
+        }
+        return kept
     }
 
     /// The most passages the suggested-question sampler scores.
@@ -5203,7 +5724,7 @@ class RAGService: ObservableObject {
     }
 
     private func suggestedQuestionSampleContent(for chunk: DocumentChunk) -> String {
-        let combined = [chunk.contextualPrefix, chunk.parentContent ?? chunk.content]
+        let combined = [chunk.contextualPrefix, chunk.contextText]
             .compactMap { value -> String? in
                 let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 return cleaned.isEmpty ? nil : cleaned
@@ -5590,21 +6111,28 @@ class RAGService: ObservableObject {
             candidates = await engine.filterBySimilarity(chunks: candidates, min: threshold)
         }
 
-        if candidates.count > topK {
-            candidates = Array(candidates.prefix(topK))
-        }
-
         let docsSnapshot = await snapshotDocuments()
-        let enriched = candidates.enumerated().map { index, chunk in
-            let docName = docsSnapshot.first(where: { $0.id == chunk.chunk.documentId })?.filename ?? "Unknown"
-            return RetrievedChunk(
+        // Passages whose document is in no library are left out (5.7, `passagesFromKnownDocuments`), before the
+        // list is cut to `topK`, so the screen still shows up to `topK` and numbers them without gaps.
+        let named = candidates.map { chunk in
+            RetrievedChunk(
                 chunk: chunk.chunk,
                 similarityScore: chunk.similarityScore,
-                rank: index + 1,
-                sourceDocument: docName,
+                rank: chunk.rank,
+                sourceDocument: docsSnapshot.first(where: { $0.id == chunk.chunk.documentId })?.filename ?? "Unknown",
                 pageNumber: chunk.chunk.metadata.pageNumber
             )
         }
+        let enriched = Self.passagesFromKnownDocuments(named, knownDocumentIds: Set(docsSnapshot.map(\.id))).kept
+            .prefix(topK).enumerated().map { index, chunk in
+                RetrievedChunk(
+                    chunk: chunk.chunk,
+                    similarityScore: chunk.similarityScore,
+                    rank: index + 1,
+                    sourceDocument: chunk.sourceDocument,
+                    pageNumber: chunk.pageNumber
+                )
+            }
         TelemetryCenter.emit(
             .retrieval,
             title: "Semantic search",
@@ -5784,6 +6312,8 @@ class RAGService: ObservableObject {
 
     @MainActor
     func continuePausedIngestionQueue() {
+        let continuedFromPause = ingestionPausedByPerson
+        ingestionPausedByPerson = false
         let pausedIndices = ingestionItems.indices.filter { ingestionItems[$0].stage == .paused }
         guard !pausedIndices.isEmpty else {
             startIngestionTaskIfNeeded()
@@ -5802,7 +6332,10 @@ class RAGService: ObservableObject {
             item.finishedAt = nil
             item.errorMessage = nil
             item.clearLease()
-            item.events.append(IngestionEvent(stage: .queued, title: "Queued", detail: "Resumed after app restart"))
+            item.events.append(
+                IngestionEvent(
+                    stage: .queued, title: "Queued",
+                    detail: continuedFromPause ? "Continued after a pause" : "Resumed after app restart"))
             ingestionItems[index] = item
         }
 
@@ -5816,6 +6349,7 @@ class RAGService: ObservableObject {
 
     @MainActor
     func discardPausedIngestionQueue() {
+        ingestionPausedByPerson = false
         let pausedItems = ingestionItems.filter { $0.stage == .paused }
         let pausedIds = Set(pausedItems.map(\.id))
         guard !pausedIds.isEmpty else { return }
@@ -5912,12 +6446,54 @@ class RAGService: ObservableObject {
         liveActivityTrackedIngestionIds.subtract(activeIds)
         isProcessing = false
         processingStatus = ""
+        // Nothing is paused once the queue is gone (5.7). Left set, it made the next import's end of background time
+        // return early in `handleContinuedIngestionExpiration`, so that import was neither set aside nor queued again.
+        ingestionPausedByPerson = false
         savePersistedIngestionQueueState()
         syncIngestionLiveActivity()
         Log.info(
             "[RAGService] User stopped and dismissed \(activeIds.count) ingestion item(s); automatic self-healing is suppressed for \(selfHealingContainerIds.count) library/libraries",
             category: .ingestion
         )
+        removeImportedCopies(of: activeItems.map(\.url), after: ingestionTaskUnwinding)
+    }
+
+    /// The app's own copies of files whose imports were stopped, once the import that was running has stopped
+    /// reading its file (5.7). "Discard" on interrupted imports always removed them; Stop and dismiss did not, so the
+    /// copy stayed in ImportedDocuments with no document, and the same file chosen again came in as "Support
+    /// Tickets-2.jsonl" (demo copy of 37330a9 in the iOS 27 Simulator, 2026-10-20). A copy that a stored document or a
+    /// queued import still names stays: a rebuild's item points at its document's own file.
+    @MainActor
+    func removeImportedCopies(of urls: [URL], after unwinding: Task<Void, Never>?) {
+        let copies = urls.filter { $0.path.contains("ImportedDocuments") }
+        guard !copies.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            await unwinding?.value
+            guard let self else { return }
+            // Before the stored documents are read, `documents` cannot say which copy a document names (a stop
+            // tapped at launch, on a restored rebuild), so every copy stays.
+            guard hasAppliedLoadedDocuments else {
+                Log.info(
+                    "[RAGService] Kept \(copies.count) stopped import file(s): the documents are not loaded yet",
+                    category: .ingestion)
+                return
+            }
+            for url in copies {
+                let path = url.standardizedFileURL.path
+                let named =
+                    documents.contains { $0.fileURL.standardizedFileURL.path == path }
+                    || ingestionItems.contains { $0.url.standardizedFileURL.path == path }
+                guard !named, FileManager.default.fileExists(atPath: url.path) else { continue }
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    Log.info("[RAGService] Removed the copy of \(url.lastPathComponent) left by a stopped import", category: .ingestion)
+                } catch {
+                    Log.warning(
+                        "[RAGService] Could not remove the copy of \(url.lastPathComponent): \(error.localizedDescription)",
+                        category: .ingestion)
+                }
+            }
+        }
     }
 
     @MainActor
@@ -5977,7 +6553,8 @@ class RAGService: ObservableObject {
                     at: next.url,
                     context: context,
                     trackingId: next.id,
-                    manageProcessingState: false
+                    manageProcessingState: false,
+                    containerId: next.containerId
                 )
                 if Task.isCancelled { break }
             } catch let error where error is CancellationError || Task.isCancelled {
@@ -6017,6 +6594,7 @@ class RAGService: ObservableObject {
             self.syncIngestionLiveActivity()
             self.pruneCompletedIngestionItems()
             self.kickPendingReembedIfNeeded()
+            self.runDeferredEnrichmentsIfNeeded()
             if isLatestLoop, shouldRestartQueueAfterUserCancellation,
                 self.ingestionItems.contains(where: { $0.stage == .queued })
             {
@@ -6116,6 +6694,17 @@ class RAGService: ObservableObject {
         savesQueue: Bool = true,
         metricsUpdate: ((inout PipelineMetrics) -> Void)? = nil
     ) {
+        // A file the person paused stays paused until Continue, Discard or its own Cancel (5.7). The task the pause
+        // cancelled runs on to its next cancellation check, and its progress can land after the pause: on
+        // 2026-10-16, in the Simulator, "Storing" replaced "Paused" on a file whose embedding had just finished, and
+        // Continue, which takes the paused files, left that one at "Storing" with nothing importing it. An end still
+        // lands: a store that finished before the check put the file in the library, and Cancel on a paused file
+        // ends it through here.
+        if let id, let index = ingestionItems.firstIndex(where: { $0.id == id }),
+            ingestionItems[index].stage == .paused, stage != .paused, !stage.isTerminal
+        {
+            return
+        }
         processingStatus = "\(filename) • \(detail)"
         guard let id, let index = ingestionItems.firstIndex(where: { $0.id == id }) else { return }
 
@@ -6358,17 +6947,29 @@ class RAGService: ObservableObject {
 
     /// Add a document to the knowledge base
     /// This performs the full ingestion pipeline: parse → chunk → embed → store
+    /// - Parameter containerId: the library to import into. `nil`, or a library that no longer exists,
+    ///   means the active one.
     func addDocument(
         at url: URL,
         context: IngestionContext = .userInitiated,
         trackingId: UUID? = nil,
-        manageProcessingState: Bool = true
+        manageProcessingState: Bool = true,
+        containerId: UUID? = nil
     ) async throws {
         let managedURL = try prepareManagedDocumentURL(from: url)
         try await WorkspaceSyncService.ensureItemAvailableLocally(at: managedURL)
         let filename = managedURL.lastPathComponent
         let managedRelativePath = AppSupportPaths.relativePath(for: managedURL)
-        let activeContainerId = await MainActor.run { self.containerService.activeContainerId }
+        // The library the file was queued for (5.7). Through 5.6 every import went to the library that
+        // was active when the queue reached it, so "Add to Library" naming another library, or a file
+        // queued before the person switched libraries, landed in the open one. The name stays: the
+        // rest of this function and the large-file paths take it as the import's library.
+        let activeContainerId = await MainActor.run { () -> UUID in
+            if let containerId, self.containerService.containers.contains(where: { $0.id == containerId }) {
+                return containerId
+            }
+            return self.containerService.activeContainerId
+        }
 
         let documentHash: String?
         do {
@@ -6477,8 +7078,12 @@ class RAGService: ObservableObject {
                     store.documentLimit, skipQuota || store.canAddDocument(currentCount: count), store.activeTier, count
                 )
             } else {
-                let limit = QuotaPolicy.documentLimit()
-                return (limit, skipQuota || count < limit, .free, count)
+                // No entitlement store: an engine a Shortcuts or Siri action built while the app is closed
+                // (`IntentSupport.engine`). Until 5.7 this used the free plan's limit, so Add to Library refused
+                // a Pro or Lifetime library of five documents or more; it reads the plan and the document packs
+                // the app's store last saved (`EntitlementStore.savedDocumentAllowance`).
+                let saved = EntitlementStore.savedDocumentAllowance()
+                return (saved.limit, skipQuota || saved.isUnlimited || count < saved.limit, saved.tier, count)
             }
         }
         let documentLimit = gating.limit
@@ -6742,8 +7347,14 @@ class RAGService: ObservableObject {
             )
             try Task.checkCancellation()
             let extractionTime = Date().timeIntervalSince(extractionStartTime)
-            let totalChars = processedChunks.reduce(0) { $0 + $1.metadata.characterCount }
-            let totalWords = processedChunks.reduce(0) { $0 + $1.metadata.wordCount }
+            // The document's own counts, of its text as it was read (5.7). Summing the passages counted
+            // the words two neighbours share twice (row "Word counts look wrong").
+            let totalChars =
+                document.processingMetadata?.totalCharacters
+                ?? processedChunks.reduce(0) { $0 + $1.metadata.characterCount }
+            let totalWords =
+                document.processingMetadata?.totalWords
+                ?? processedChunks.reduce(0) { $0 + $1.metadata.wordCount }
 
             // Calculate chunk word stats
             let chunkWordCounts = processedChunks.map { $0.metadata.wordCount }
@@ -7184,8 +7795,12 @@ class RAGService: ObservableObject {
             let filenameForProgress = filename
 
             // Batch embed with progress callback for live UI updates
+            // Kept in the import's checkpoint folder, which is removed when the import finishes (5.7).
+            let embeddingCache = documentProcessor.checkpointDirectoryURL(
+                for: documentProcessor.computeDocumentFingerprint(at: url))
             embeddings = try await containerEmbeddingService.generateEmbeddings(
                 for: textsToEmbed,
+                cacheDirectory: embeddingCache,
                 progressHandler: { [weak self] (completed: Int, total: Int) in
                     Task { @MainActor in
                         let progress = Double(completed) / Double(max(1, total))
@@ -7460,124 +8075,10 @@ class RAGService: ObservableObject {
                 ]
             )
 
-            // Step 4.5: Generate document summary (RAPTOR-lite)
-            // Creates a level-1 summary chunk for efficient overview queries
-            // Controlled by settings.enableDocumentSummaries
-            // Skipped for onboarding samples. This is a language-model call with a 12s
-            // timeout (`DocumentSummaryService.summaryGenerationTimeoutSeconds`) and it
-            // runs once per document. Together with content tagging below, it was the
-            // reason importing three small curated markdown files took **1.3 minutes** on
-            // an A18 Pro: 3,168 words and 38 chunks, of which the embedding work is a
-            // fraction of a second and the enrichment is up to 20s per document.
-            //
-            // The samples exist to demonstrate the pipeline, and the theater the user is
-            // watching shows Extract, Chunk, Embed and Index. An auto-generated overview
-            // of a document the app itself wrote adds nothing to that, and a first
-            // impression that takes over a minute costs more than the summary is worth.
-            // Anything the user imports themselves is unaffected.
-            let summariesEnabled =
-                await MainActor.run { self.settingsStore?.enableDocumentSummaries ?? true }
-                && context != .onboarding
-
-            if summariesEnabled {
-                await MainActor.run {
-                    updateIngestionItem(
-                        id: trackingId,
-                        filename: filename,
-                        stage: .storing,
-                        detail: "Optimizing overview...",
-                        progress: 0.98
-                    )
-                }
-
-                do {
-                    let summaryChunk = try await documentSummaryService.generateDocumentSummary(
-                        documentId: document.id,
-                        documentName: filename,
-                        chunks: documentChunks,
-                        embeddingService: containerEmbeddingService,
-                        embeddingTranslationTarget: translationTargetLanguage(for: container)
-                    )
-
-                    // Store the summary chunk alongside detail chunks
-                    try await db.storeBatch(chunks: [summaryChunk])
-
-                    TelemetryCenter.emit(
-                        .ingestion,
-                        title: "Document summary generated",
-                        metadata: [
-                            "file": filename,
-                            "summaryWords": "\(summaryChunk.metadata.wordCount)",
-                            "abstractionLevel": "L1",
-                        ]
-                    )
-
-                    Log.info("[RAGService] RAPTOR-lite: Generated L1 summary for '\(filename)'", category: .ingestion)
-                } catch {
-                    // Summary generation is optional - log but don't fail ingestion
-                    Log.warning(
-                        "[RAGService] Summary generation failed for '\(filename)': \(error)", category: .ingestion)
-                    TelemetryCenter.emit(
-                        .ingestion,
-                        severity: .warning,
-                        title: "Summary generation skipped",
-                        metadata: [
-                            "file": filename,
-                            "error": error.localizedDescription,
-                        ]
-                    )
-                }
-            } else {
-                Log.debug("[RAGService] Document summaries disabled in settings, skipping", category: .ingestion)
-            }
-
-            // Step 4.9: Persist vector store to disk (single write after all batch stores)
+            // Step 4.9: Persist vector store to disk (single write after all batch stores). Before the
+            // model work in `enrichImportedDocument`, which comes after the document is saved (5.7).
             // Deferred persistence avoids redundant JSON serialization after each storeBatch call
             try await db.persist()
-
-            // Step 5: Generate content tags using Apple's content tagging model (iOS 26+)
-            await MainActor.run {
-                updateIngestionItem(
-                    id: trackingId,
-                    filename: filename,
-                    stage: .storing,
-                    detail: "Generating tags...",
-                    progress: 0.99
-                )
-            }
-
-            var generatedContentTags: [String]?
-            // Skipped for onboarding samples, same reasoning as the summary above: this is
-            // a language-model call with an 8s timeout, once per document.
-            let contentTaggingEnabled =
-                await contentTaggingEnabled(for: container)
-                && context != .onboarding
-            if #available(iOS 26.0, *), contentTaggingEnabled {
-                let taggingService = ContentTaggingService.shared
-                if taggingService.isAvailable {
-                    do {
-                        let chunkTexts = processedChunks.map { $0.text }
-                        let tags = try await taggingService.generateTagsForDocument(
-                            chunks: chunkTexts,
-                            documentName: filename
-                        )
-                        if !tags.displayTags.isEmpty {
-                            generatedContentTags = tags.displayTags
-                            TelemetryCenter.emit(
-                                .generation,
-                                title: "Content tags generated",
-                                metadata: [
-                                    "file": filename,
-                                    "tags": tags.displayTags.joined(separator: ", "),
-                                    "count": "\(tags.displayTags.count)",
-                                ]
-                            )
-                        }
-                    } catch {
-                        Log.warning("[RAGService] Content tagging failed for \(filename): \(error)", category: .llm)
-                    }
-                }
-            }
 
             // Calculate total pipeline time
             let totalTime = Date().timeIntervalSince(pipelineStartTime)
@@ -7641,7 +8142,7 @@ class RAGService: ObservableObject {
                     totalChunks: document.totalChunks,
                     processingMetadata: completeMetadata,
                     containerId: document.containerId,
-                    contentTags: generatedContentTags
+                    contentTags: nil
                 )
             }
 
@@ -7657,12 +8158,14 @@ class RAGService: ObservableObject {
                 totalChunks: updatedDocument.totalChunks,
                 processingMetadata: updatedDocument.processingMetadata,
                 containerId: activeContainerId,
-                contentTags: generatedContentTags ?? updatedDocument.contentTags
+                contentTags: updatedDocument.contentTags
             )
             updatedDocument = docWithContainer
 
             // Create processing summary with embedding provider info
-            let activeProviderId = containerService.activeContainer?.embeddingProviderId ?? "coreml_sentence_embedding"
+            let activeProviderId =
+                containerService.containers.first { $0.id == activeContainerId }?.embeddingProviderId
+                ?? "coreml_sentence_embedding"
             let summary = ProcessingSummary(
                 filename: filename,
                 fileSize: fileSizeStr,
@@ -7711,21 +8214,23 @@ class RAGService: ObservableObject {
             // Save documents metadata to disk
             await saveDocumentsToDisk()
 
-            // Generate suggested questions for the document
-            await MainActor.run {
-                updateIngestionItem(
-                    id: trackingId,
-                    filename: filename,
-                    stage: .storing,
-                    detail: "Generating suggested questions...",
-                    progress: 0.99
-                )
+            // The document is saved and can be searched. What follows is model work that improves it
+            // and is not needed to answer from it (5.7). In the background it waits for the app to be
+            // in front: on 2026-10-15 iOS ended a background import 53 s in, during this work, and the Lock
+            // Screen said "Task failed"; the overview and the tags then came before the save, so an earlier
+            // end would have stopped the import before its document was recorded.
+            let enrichLater = await MainActor.run { Self.appIsInBackground }
+            if enrichLater && context != .onboarding {
+                Self.deferEnrichment(of: updatedDocument.id, in: activeContainerId)
+                Log.info(
+                    "[RAGService] Saved '\(filename)'; its overview, tags and suggested questions wait until the app is in front",
+                    category: .ingestion)
+            } else {
+                await enrichImportedDocument(
+                    updatedDocument, chunks: documentChunks, container: container,
+                    embeddingService: containerEmbeddingService, db: db, context: context,
+                    trackingId: trackingId, containerId: activeContainerId)
             }
-            await SuggestedQuestionsService.shared.generateQuestionsForIngestedDocument(
-                updatedDocument,
-                chunks: documentChunks,
-                in: activeContainerId
-            )
 
             // Brief yield for UI to catch up before marking complete
             await Task.yield()
@@ -7828,6 +8333,312 @@ class RAGService: ObservableObject {
         }
     }
 
+    /// The model work an import does after its document is saved (5.7): the RAPTOR-lite overview, the
+    /// content tags and the suggested questions. None of it is needed to search or answer from the
+    /// document. Through 5.6 the overview and the tags ran before the save, so iOS ending a background
+    /// import during them stopped it before its document was recorded.
+    private func enrichImportedDocument(
+        _ document: Document,
+        chunks documentChunks: [DocumentChunk],
+        container: KnowledgeContainer?,
+        embeddingService containerEmbeddingService: EmbeddingService,
+        db: VectorDatabase,
+        context: IngestionContext,
+        trackingId: UUID?,
+        containerId activeContainerId: UUID
+    ) async {
+        let filename = document.filename
+        let chunkTexts = documentChunks.map(\.content)
+
+        // Step 4.5: Generate document summary (RAPTOR-lite)
+        // Creates a level-1 summary chunk for efficient overview queries
+        // Controlled by settings.enableDocumentSummaries
+        // Skipped for onboarding samples. This is a language-model call with a 12s
+        // timeout (`DocumentSummaryService.summaryGenerationTimeoutSeconds`) and it
+        // runs once per document. Together with content tagging below, it was the
+        // reason importing three small curated markdown files took **1.3 minutes** on
+        // an A18 Pro: 3,168 words and 38 chunks, of which the embedding work is a
+        // fraction of a second and the enrichment is up to 20s per document.
+        //
+        // The samples exist to demonstrate the pipeline, and the theater the user is
+        // watching shows Extract, Chunk, Embed and Index. An auto-generated overview
+        // of a document the app itself wrote adds nothing to that, and a first
+        // impression that takes over a minute costs more than the summary is worth.
+        // Anything the user imports themselves is unaffected.
+        let summariesEnabled =
+            await MainActor.run { self.settingsStore?.enableDocumentSummaries ?? true }
+            && context != .onboarding
+
+        if summariesEnabled {
+            await MainActor.run {
+                updateIngestionItem(
+                    id: trackingId,
+                    filename: filename,
+                    stage: .storing,
+                    detail: "Optimizing overview...",
+                    progress: 0.98
+                )
+            }
+
+            do {
+                let summaryChunk = try await documentSummaryService.generateDocumentSummary(
+                    documentId: document.id,
+                    documentName: filename,
+                    chunks: documentChunks,
+                    embeddingService: containerEmbeddingService,
+                    embeddingTranslationTarget: translationTargetLanguage(for: container)
+                )
+
+                // The overview takes up to 12 s to write, and the document can be deleted meanwhile
+                // (`enrichmentTargetState`, 5.7).
+                if await enrichmentTargetState(document.id) != .listed {
+                    Log.info(
+                        "[RAGService] Not storing the overview of '\(filename)': the document was deleted while it was written",
+                        category: .ingestion)
+                } else {
+                    // Store the summary chunk alongside detail chunks
+                    try await db.storeBatch(chunks: [summaryChunk])
+                    try await db.persist()
+
+                    if await enrichmentTargetState(document.id) == .removalStarted {
+                        // The deletion began while the overview was stored and may have taken the document's
+                        // passages out before it, so the overview is taken out here.
+                        do {
+                            try await db.deleteChunks(forDocument: document.id)
+                            Log.info(
+                                "[RAGService] Took out the overview of '\(filename)': the document was deleted while it was stored",
+                                category: .ingestion)
+                        } catch {
+                            Log.error(
+                                "[RAGService] Could not take out the overview of '\(filename)', whose document was deleted while it was stored: \(error.localizedDescription)",
+                                category: .ingestion)
+                        }
+                    } else {
+                        TelemetryCenter.emit(
+                            .ingestion,
+                            title: "Document summary generated",
+                            metadata: [
+                                "file": filename,
+                                "summaryWords": "\(summaryChunk.metadata.wordCount)",
+                                "abstractionLevel": "L1",
+                            ]
+                        )
+
+                        Log.info("[RAGService] RAPTOR-lite: Generated L1 summary for '\(filename)'", category: .ingestion)
+                    }
+                }
+            } catch {
+                // Summary generation is optional - log but don't fail ingestion
+                Log.warning(
+                    "[RAGService] Summary generation failed for '\(filename)': \(error)", category: .ingestion)
+                TelemetryCenter.emit(
+                    .ingestion,
+                    severity: .warning,
+                    title: "Summary generation skipped",
+                    metadata: [
+                        "file": filename,
+                        "error": error.localizedDescription,
+                    ]
+                )
+            }
+        } else {
+            Log.debug("[RAGService] Document summaries disabled in settings, skipping", category: .ingestion)
+        }
+
+
+        // Step 5: Generate content tags using Apple's content tagging model (iOS 26+)
+        await MainActor.run {
+            updateIngestionItem(
+                id: trackingId,
+                filename: filename,
+                stage: .storing,
+                detail: "Generating tags...",
+                progress: 0.99
+            )
+        }
+
+        var generatedContentTags: [String]?
+        // Skipped for onboarding samples, same reasoning as the summary above: this is
+        // a language-model call with an 8s timeout, once per document.
+        let contentTaggingEnabled =
+            await contentTaggingEnabled(for: container)
+            && context != .onboarding
+        if #available(iOS 26.0, *), contentTaggingEnabled {
+            let taggingService = ContentTaggingService.shared
+            if taggingService.isAvailable {
+                do {
+                    let tags = try await taggingService.generateTagsForDocument(
+                        chunks: chunkTexts,
+                        documentName: filename
+                    )
+                    if !tags.displayTags.isEmpty {
+                        generatedContentTags = tags.displayTags
+                        TelemetryCenter.emit(
+                            .generation,
+                            title: "Content tags generated",
+                            metadata: [
+                                "file": filename,
+                                "tags": tags.displayTags.joined(separator: ", "),
+                                "count": "\(tags.displayTags.count)",
+                            ]
+                        )
+                    }
+                } catch {
+                    Log.warning("[RAGService] Content tagging failed for \(filename): \(error)", category: .llm)
+                }
+            }
+        }
+
+        if let tags = generatedContentTags {
+            await MainActor.run {
+                if let index = documents.firstIndex(where: { $0.id == document.id }) {
+                    let saved = documents[index]
+                    documents[index] = Document(
+                        id: saved.id,
+                        filename: saved.filename,
+                        fileURL: saved.fileURL,
+                        storageRelativePath: saved.storageRelativePath,
+                        fileHash: saved.fileHash,
+                        contentType: saved.contentType,
+                        addedAt: saved.addedAt,
+                        totalChunks: saved.totalChunks,
+                        processingMetadata: saved.processingMetadata,
+                        containerId: saved.containerId,
+                        contentTags: tags
+                    )
+                }
+            }
+            await saveDocumentsToDisk()
+        }
+
+        // Generate suggested questions for the document
+        await MainActor.run {
+            updateIngestionItem(
+                id: trackingId,
+                filename: filename,
+                stage: .storing,
+                detail: "Generating suggested questions...",
+                progress: 0.99
+            )
+        }
+        guard await enrichmentTargetState(document.id) == .listed else {
+            Log.info(
+                "[RAGService] No suggested questions for '\(filename)': the document was deleted after its import",
+                category: .ingestion)
+            return
+        }
+        await SuggestedQuestionsService.shared.generateQuestionsForIngestedDocument(
+            document,
+            chunks: documentChunks,
+            in: activeContainerId
+        )
+        if await enrichmentTargetState(document.id) == .removalStarted {
+            await SuggestedQuestionsService.shared.removeQuestions(for: document.id, in: activeContainerId)
+        }
+    }
+
+    /// Where a document stands for the model work that follows its import (5.7), which takes seconds per step:
+    /// listed (in the list, or out of it for its undo seconds), recorded as deleted, which `removeDocument` and
+    /// `clearAllDocuments` do before they take anything out, or neither. Since that work moved after the document
+    /// is saved (2026-10-15, during 5.7), a document deleted while its overview was written kept that overview as
+    /// a passage of no document, and later answers cited it as "Unknown Document Summary" (seen in the iOS 27
+    /// Simulator on 2026-10-19, `ShortcutsActionTests`); no release had it. What a step makes is stored only for a
+    /// listed document, and taken out again when the deletion began while it was stored. A document in its undo
+    /// seconds gets its overview and questions: an Undo brings it back with them, and a removal that runs takes them
+    /// out with the rest (review, 2026-10-19).
+    enum EnrichmentTargetState: Equatable { case listed, unlisted, removalStarted }
+
+    private func enrichmentTargetState(_ id: UUID) async -> EnrichmentTargetState {
+        let url = AppSupportPaths.baseDir().appendingPathComponent("deleted_documents.json")
+        if let data = try? Data(contentsOf: url), let ids = try? JSONDecoder().decode([String].self, from: data),
+            ids.contains(id.uuidString)
+        {
+            return .removalStarted
+        }
+        let listed = await MainActor.run { self.documents.contains { $0.id == id } || self.isRemovalPending(id) }
+        return listed ? .listed : .unlisted
+    }
+
+    /// Whether the app is in the background, where iOS ends an import that stalls (5.7).
+    @MainActor static var appIsInBackground: Bool {
+        #if canImport(UIKit)
+            UIApplication.shared.applicationState == .background
+        #else
+            false
+        #endif
+    }
+
+    /// Documents whose overview, tags and suggested questions wait for the app to be in front (5.7),
+    /// each as "<library id> <document id>".
+    nonisolated static let deferredEnrichmentKey = "deferredDocumentEnrichment"
+
+    nonisolated static func deferredEnrichments(defaults: UserDefaults = .standard) -> [(document: UUID, library: UUID)] {
+        (defaults.stringArray(forKey: deferredEnrichmentKey) ?? []).compactMap { entry in
+            let parts = entry.split(separator: " ")
+            guard parts.count == 2, let library = UUID(uuidString: String(parts[0])),
+                let document = UUID(uuidString: String(parts[1]))
+            else { return nil }
+            return (document, library)
+        }
+    }
+
+    nonisolated static func deferEnrichment(
+        of document: UUID, in library: UUID, defaults: UserDefaults = .standard
+    ) {
+        let entry = "\(library.uuidString) \(document.uuidString)"
+        var entries = defaults.stringArray(forKey: deferredEnrichmentKey) ?? []
+        guard !entries.contains(entry) else { return }
+        entries.append(entry)
+        defaults.set(entries, forKey: deferredEnrichmentKey)
+    }
+
+    nonisolated static func finishDeferredEnrichment(of document: UUID, defaults: UserDefaults = .standard) {
+        let entries = (defaults.stringArray(forKey: deferredEnrichmentKey) ?? []).filter {
+            !$0.hasSuffix(document.uuidString)
+        }
+        defaults.set(entries, forKey: deferredEnrichmentKey)
+    }
+
+    /// Runs the model work background imports left for later, one document at a time, while the app
+    /// is in front and no import is running (5.7). Called when the app comes to the front and when the
+    /// import queue empties. A document deleted in the meantime is dropped from the list.
+    @MainActor
+    func runDeferredEnrichmentsIfNeeded() {
+        guard !deferredEnrichmentIsRunning, !isProcessing, !Self.appIsInBackground else { return }
+        let pending = Self.deferredEnrichments()
+        guard !pending.isEmpty else { return }
+        deferredEnrichmentIsRunning = true
+        Task { @MainActor in
+            defer {
+                deferredEnrichmentIsRunning = false
+                if !isProcessing { processingStatus = "" }
+            }
+            for item in pending {
+                guard !Self.appIsInBackground, !isProcessing else { return }
+                guard let document = documents.first(where: { $0.id == item.document }) else {
+                    Self.finishDeferredEnrichment(of: item.document)
+                    continue
+                }
+                let container = containerService.containers.first { $0.id == item.library }
+                guard let db = try? await dbForContainer(item.library),
+                    let stored = try? await db.chunks(forDocument: document.id), !stored.isEmpty
+                else { continue }
+                let chunks = stored.sorted { $0.metadata.chunkIndex < $1.metadata.chunkIndex }
+                let service = EmbeddingService.forProvider(
+                    id: container?.embeddingProviderId ?? "coreml_sentence_embedding",
+                    targetDimension: container?.embeddingDim ?? 384,
+                    allowFallback: true)
+                Log.info(
+                    "[RAGService] Adding the overview, tags and suggested questions that waited for '\(document.filename)'",
+                    category: .ingestion)
+                await enrichImportedDocument(
+                    document, chunks: chunks, container: container, embeddingService: service, db: db,
+                    context: .userInitiated, trackingId: nil, containerId: item.library)
+                Self.finishDeferredEnrichment(of: document.id)
+            }
+        }
+    }
+
     private func prepareManagedDocumentURL(from url: URL) throws -> URL {
         if let relativePath = AppSupportPaths.relativePath(for: url) {
             return AppSupportPaths.documentURL(forRelativePath: relativePath)
@@ -7861,7 +8672,7 @@ class RAGService: ObservableObject {
     /// it demonstrably came from the current pipeline. Never overwrites an existing fingerprint: a
     /// store that already held vectors may hold two populations, and that is exactly the case the
     /// staleness check exists to flag.
-    private func stampEmbeddingFingerprintIfAbsent(for containerId: UUID) {
+    func stampEmbeddingFingerprintIfAbsent(for containerId: UUID) {
         guard var container = containerService.containers.first(where: { $0.id == containerId }),
             container.embeddingFingerprint == nil
         else { return }
@@ -8622,6 +9433,198 @@ class RAGService: ObservableObject {
         }
     }
 
+    // MARK: - Deleting with undo (5.7)
+
+    /// Takes documents out of the list now and removes them for good after `window`, unless `undoRemoval` puts
+    /// them back first (5.7, `PendingDocumentRemoval`). `beforeRemoving` runs for each document just before its
+    /// removal, as deleting a shared document's file from iCloud does. With an `undoManager`, its Undo (Edit,
+    /// Undo on the Mac, shaking the iPhone) puts them back too, until the removal runs. Returns the removal's
+    /// id, or nil when none of the documents is in the list.
+    @MainActor
+    @discardableResult
+    func scheduleRemoval(
+        of documentsToRemove: [Document],
+        window: Duration = PendingDocumentRemoval.undoWindow,
+        undoManager: UndoManager? = nil,
+        actionName: String = "Delete Document",
+        beforeRemoving: (@MainActor (Document) async -> Void)? = nil
+    ) -> UUID? {
+        let wanted = Set(documentsToRemove.map(\.id))
+        var taken: [Document] = []
+        var positions: [Int] = []
+        for (position, document) in documents.enumerated() where wanted.contains(document.id) {
+            taken.append(document)
+            positions.append(position)
+        }
+        guard !taken.isEmpty else { return nil }
+        let removal = PendingDocumentRemoval(
+            id: UUID(), documents: taken, positions: positions,
+            deadline: Date().addingTimeInterval(window / .seconds(1)))
+        let takenIds = Set(taken.map(\.id))
+        documents.removeAll { takenIds.contains($0.id) }
+        totalChunksStored -= taken.reduce(0) { $0 + $1.totalChunks }
+        syncContainerStats(forLibrariesOf: taken)
+        PendingDocumentRemovalLedger.add(takenIds)
+
+        let work = PendingDocumentRemovalWork(beforeRemoving: beforeRemoving, undoManager: undoManager)
+        if let undoManager {
+            let removalId = removal.id
+            let target = work.undoTarget
+            // An undo manager does not keep its target alive, so the entry holds it (`[target]`): the work
+            // record that also holds it goes when the removal runs or is undone.
+            undoManager.registerUndo(withTarget: target) { [weak self, target] _ in
+                withExtendedLifetime(target) { _ = self?.undoRemoval(removalId) }
+            }
+            undoManager.setActionName(actionName)
+        }
+        pendingRemovals.append(removal)
+        pendingRemovalWork[removal.id] = work
+        // The timer keeps the engine until it fires, so a Mac window closed in those seconds still has its
+        // removal run, rather than at the next launch.
+        work.timer = Task { @MainActor in
+            try? await Task.sleep(for: window)
+            guard !Task.isCancelled else { return }
+            await self.commitRemoval(removal.id)
+        }
+        Log.info(
+            "[RAGService] Took \(taken.count) document(s) out of the list; removed in \(window) unless undone",
+            category: .ingestion)
+        return removal.id
+    }
+
+    /// Puts back the documents of a removal that has not run, where they were in the list (5.7). Returns false
+    /// when it has run already, or was undone.
+    @MainActor
+    @discardableResult
+    func undoRemoval(_ id: UUID) -> Bool {
+        guard let index = pendingRemovals.firstIndex(where: { $0.id == id }) else { return false }
+        let removal = pendingRemovals.remove(at: index)
+        if let work = pendingRemovalWork.removeValue(forKey: id) {
+            work.timer?.cancel()
+            // Not while the undo manager is running this undo itself.
+            if let undoManager = work.undoManager, !undoManager.isUndoing {
+                undoManager.removeAllActions(withTarget: work.undoTarget)
+            }
+        }
+        // A document already back in the list, from a reload, is not added twice.
+        var listed = Set(documents.map(\.id))
+        for (document, position) in zip(removal.documents, removal.positions) where !listed.contains(document.id) {
+            documents.insert(document, at: min(position, documents.count))
+            totalChunksStored += document.totalChunks
+            listed.insert(document.id)
+        }
+        syncContainerStats(forLibrariesOf: removal.documents)
+        PendingDocumentRemovalLedger.remove(Set(removal.documents.map(\.id)))
+        Log.info("[RAGService] Put back \(removal.documents.count) document(s): the deletion was undone", category: .ingestion)
+        return true
+    }
+
+    /// Removals that have started and not finished, each with its documents (5.7).
+    @MainActor private var removalsRunning: [UUID: (task: Task<Void, Never>, documentIds: Set<UUID>)] = [:]
+
+    /// Runs a pending removal now, and returns when it has finished (5.7). Returns false when there is none by
+    /// that id to start: it was undone, it has run, or it is running, in which case this waits for it.
+    @MainActor
+    @discardableResult
+    func commitRemoval(_ id: UUID) async -> Bool {
+        if let running = removalsRunning[id] {
+            await running.task.value
+            return false
+        }
+        guard let index = pendingRemovals.firstIndex(where: { $0.id == id }) else { return false }
+        let removal = pendingRemovals.remove(at: index)
+        // The timer is not cancelled here: this can be the timer's own call.
+        let work = pendingRemovalWork.removeValue(forKey: id)
+        if let work, let undoManager = work.undoManager {
+            undoManager.removeAllActions(withTarget: work.undoTarget)
+        }
+        // A task of its own: no caller's cancellation stops it halfway, and a caller that must wait for every
+        // removal can (`commitPendingRemovals`).
+        let task = Task { @MainActor in
+            for document in removal.documents {
+                await work?.beforeRemoving?(document)
+                do {
+                    try await self.removeDocument(document)
+                } catch {
+                    Log.error(
+                        "[RAGService] Could not remove \(document.filename): \(error.localizedDescription)",
+                        category: .ingestion)
+                }
+            }
+            PendingDocumentRemovalLedger.remove(Set(removal.documents.map(\.id)))
+            // Cleared by the removal itself, so whoever awaits it finds it gone; a caller clearing it after its
+            // own wait could resume after another waiter (`PendingDocumentRemovalTests`, 2026-10-15).
+            self.removalsRunning[id] = nil
+        }
+        // Set before the task can start: it waits for the main actor, which this holds until the await below.
+        removalsRunning[id] = (task, Set(removal.documents.map(\.id)))
+        await task.value
+        return true
+    }
+
+    /// Whether a removal is waiting or running (5.7).
+    @MainActor
+    var hasUnfinishedRemovals: Bool { !pendingRemovals.isEmpty || !removalsRunning.isEmpty }
+
+    /// Whether this document's removal is waiting or running (5.7).
+    @MainActor
+    func isRemovalPending(_ documentId: UUID) -> Bool {
+        pendingRemovals.contains { $0.documents.contains { $0.id == documentId } }
+            || removalsRunning.values.contains { $0.documentIds.contains(documentId) }
+    }
+
+    /// Runs every waiting removal now and waits for those already running (5.7): when the app goes to the
+    /// background, before a library is deleted or emptied, and before Clear All.
+    @MainActor
+    func commitPendingRemovals() async {
+        for removal in pendingRemovals {
+            pendingRemovalWork[removal.id]?.timer?.cancel()
+            await commitRemoval(removal.id)
+        }
+        for running in removalsRunning.values {
+            await running.task.value
+        }
+    }
+
+    /// Whether this launch has run the removals an earlier run of the app left pending.
+    @MainActor private static var removalsLeftPendingChecked = false
+
+    /// Runs, once a launch, the removals an earlier run of the app scheduled and did not live to run (5.7):
+    /// the app was closed, or ended, in a deletion's undo seconds. Their deletion was asked for and never
+    /// undone, and the documents are out of the list already (`applyLoadedDocuments`). `force` runs it again,
+    /// for a test.
+    @MainActor
+    func removeDocumentsLeftPending(
+        ledgerURL: URL = PendingDocumentRemovalLedger.defaultURL, force: Bool = false
+    ) async {
+        guard force || !Self.removalsLeftPendingChecked else { return }
+        Self.removalsLeftPendingChecked = true
+        let leftOver = PendingDocumentRemovalLedger.earlierRunIds(at: ledgerURL)
+        guard !leftOver.isEmpty, let listed = loadDocumentsSnapshotFromDisk() else { return }
+        let documentsToRemove = listed.filter { leftOver.contains($0.id) }
+        for document in documentsToRemove {
+            do {
+                try await removeDocument(document)
+            } catch {
+                Log.error(
+                    "[RAGService] Could not remove \(document.filename): \(error.localizedDescription)",
+                    category: .ingestion)
+            }
+        }
+        PendingDocumentRemovalLedger.remove(leftOver, at: ledgerURL)
+        Log.info(
+            "[RAGService] Removed \(documentsToRemove.count) document(s) deleted just before the app last closed",
+            category: .ingestion)
+    }
+
+    @MainActor
+    private func syncContainerStats(forLibrariesOf affected: [Document]) {
+        let firstLibrary = containerService.containers.first?.id
+        for containerId in Set(affected.compactMap { $0.containerId ?? firstLibrary }) {
+            syncContainerStats(for: containerId)
+        }
+    }
+
     /// Remove a document from the knowledge base
     func removeDocument(_ document: Document, keepPhysicalFile: Bool = false) async throws {
         registerDeletedDocuments([document])
@@ -8658,8 +9661,12 @@ class RAGService: ObservableObject {
         await SuggestedQuestionsService.shared.removeQuestions(for: document.id, in: targetContainerId)
 
         await MainActor.run {
+            let listedBefore = documents.count
             documents.removeAll { $0.id == document.id }
-            totalChunksStored -= document.totalChunks
+            // A document a pending removal took out of the list had its passages subtracted then (5.7).
+            if documents.count < listedBefore {
+                totalChunksStored -= document.totalChunks
+            }
             syncContainerStats(for: targetContainerId)
         }
 
@@ -8672,10 +9679,26 @@ class RAGService: ObservableObject {
 
     /// Clear all documents from the knowledge base
     func clearAllDocuments() async throws {
-        let db = await dbForActiveContainer()
-        try await db.clear()
-
+        // A deletion still in its undo seconds runs first (5.7): its document is out of the list, so this would
+        // empty its stores without recording it as deleted, and an Undo would bring back an empty document.
+        await commitPendingRemovals()
         let activeId = await MainActor.run { self.containerService.activeContainerId }
+        let docsToDelete = await MainActor.run {
+            self.documents.filter { $0.containerId == activeId }
+        }
+        // Recorded as deleted before anything is removed, as `removeDocument` does (5.7): the model work that follows
+        // an import reads the record to know its document is going (`enrichmentTargetState`), and through 5.6 this
+        // wrote it after the store was emptied (review, 2026-10-19). A store that cannot be emptied leaves the
+        // documents as they were, record included.
+        registerDeletedDocuments(docsToDelete)
+        let db = await dbForActiveContainer()
+        do {
+            try await db.clear()
+        } catch {
+            clearDeletionTombstones(for: docsToDelete.map(\.id))
+            throw error
+        }
+
         // Invalidate visualization cache for the cleared container
         ProjectionCache.shared.invalidate(forContainer: activeId)
 
@@ -8685,10 +9708,6 @@ class RAGService: ObservableObject {
         await SQLiteFullTextService.shared.deleteChunksForContainer(containerId: activeId)
 
         // Legacy file storage: Delete individual documents
-        let docsToDelete = await MainActor.run {
-            self.documents.filter { $0.containerId == activeId }
-        }
-        registerDeletedDocuments(docsToDelete)
         for doc in docsToDelete {
             await FullTextStorageService.shared.delete(for: doc.id)
         }
@@ -8913,6 +9932,21 @@ class RAGService: ObservableObject {
             }
 
             let trackingId = rebuildItems[index].id
+
+            // A document deleted while the rebuild runs is waiting out its undo seconds with its file still
+            // there, and rebuilding it would import it again under a new id (5.7, `scheduleRemoval`).
+            if await MainActor.run(body: { self.isRemovalPending(document.id) }) {
+                await MainActor.run {
+                    updateIngestionItem(
+                        id: trackingId,
+                        filename: document.filename,
+                        stage: .complete,
+                        detail: "Skipped (deleted)",
+                        progress: 1.0
+                    )
+                }
+                continue
+            }
 
             let targetWindow = container?.chunkingDirective?.targetWordWindow ?? ChunkingDefaults.targetWindow
             let targetOverlap = container?.chunkingDirective?.overlapWords ?? ChunkingDefaults.overlap
@@ -9251,25 +10285,15 @@ class RAGService: ObservableObject {
         // Get recommended config based on document types
         let recommended = RetrievalConfig.recommended(forDocumentTypes: documentTypes)
 
-        // Only update if the recommended config differs from current
-        // and the user hasn't manually customized (check if it matches a known preset)
+        // Values the person chose in Library Settings are left alone (`RetrievalConfig.autoTuned`).
         let current = container.retrievalConfig
-
-        // Skip if user has a high-accuracy or custom config (likely intentional)
-        if current.minSimilarity >= 0.5 || current.requireExplicitCitations {
-            Log.debug(
-                "[RAGService] Skipping auto-tune: user has high-accuracy or custom config",
-                category: .retrieval
-            )
-            return
+        if current.isChosenByPerson {
+            Log.debug("[RAGService] Skipping auto-tune: the person chose this library's search settings", category: .retrieval)
         }
 
-        // Apply if recommended differs significantly
-        if recommended.vectorWeight != current.vectorWeight || recommended.lexicalWeight != current.lexicalWeight
-            || abs(recommended.minSimilarity - current.minSimilarity) > 0.05
-        {
+        if let tuned = RetrievalConfig.autoTuned(current: current, recommended: recommended) {
             var updatedContainer = container
-            updatedContainer.retrievalConfig = recommended
+            updatedContainer.retrievalConfig = tuned
 
             containerService.updateContainer(updatedContainer)
             Log.info(
@@ -9895,10 +10919,13 @@ class RAGService: ObservableObject {
         }
 
         let modeTitle = isUnlimitedMode ? "Maximum Mode" : "Deep Think Mode"
+        // Sessions, not the orchestrator's step budget (5.7): Deep Think's chain stops at 8 sessions on every device
+        // (`AgenticPolicyService.maxSessionsForMode`), where this printed 5 on an iPhone 15 Pro and 13 on an 18 GB M3
+        // Pro; what differs by device is the confidence it aims for. Maximum's step budget is its 50 sessions.
         let modeDetail =
             isUnlimitedMode
-            ? "Unlimited reasoning until 98% confident (up to \(optimizedConfig.maxSteps) steps)"
-            : "Starting multi-step reasoning (\(deviceService.tier.displayName) mode, up to \(optimizedConfig.maxSteps) steps)"
+            ? "Reasoning until \(Int(optimizedConfig.confidenceThreshold * 100))% confident (up to \(optimizedConfig.maxSteps) sessions)"
+            : "Starting multi-step reasoning (a chain of up to 8 sessions, aiming for \(Int(optimizedConfig.confidenceThreshold * 100))% confidence on the \(deviceService.chipName))"
 
         // Always start agentic work from a clean FM session.
         // Reusing transcript state across Go Deeper or repeated Deep Think queries
@@ -10256,6 +11283,31 @@ class RAGService: ObservableObject {
                 }
             #endif
 
+            // Deep Think and Maximum run the verification gates too (5.7, roadmap row "The Verified
+            // badge shows for answers whose checks failed or never ran, and Deep Think and Maximum
+            // run no verification gates"). Every mode was listed as verifying
+            // (`RAGQualityMode.usesVerificationGates`), and these two returned before the gates, so
+            // their answers read Not Checked unless the source-only check ran. The gates label the
+            // answer and leave it as written: the badge and the warnings say what passed. Standard
+            // abstains when its gates fail, but these answers took minutes, and a structured answer
+            // rebuilt from a failed check can turn into a refusal (`resolvedDisplayResponse`), so the
+            // result is not passed into it. Skipped when the source-only check ran, which is a check.
+            if gatingDecision == nil, qualityMode.usesVerificationGates {
+                let gated = await verifyAgenticAnswer(
+                    question: question,
+                    answer: agenticAnswer,
+                    chunks: result.retrievedChunks,
+                    containerId: containerId,
+                    answerIntent: agenticAnswerIntent,
+                    qualityMode: qualityMode)
+                gatingDecision = gated.summary
+                if let gates = gated.result, !gates.passed {
+                    for gateResult in gates.gateResults where !gateResult.passed {
+                        agenticWarnings.append("Verification \(gateResult.gate.rawValue): \(gateResult.details)")
+                    }
+                }
+            }
+
             let displayResponseText = resolvedDisplayResponse(
                 fallback: agenticAnswer,
                 structuredAnswer: structuredAnswer
@@ -10392,16 +11444,20 @@ class RAGService: ObservableObject {
     ) async throws -> RAGResponse {
         resetThinkingTimeline()
         finishAnswerNowRequested = false
-        let response = try await LLMStreamingContext.$handler.withValue(streamHandler) {
-            try await self.queryInternal(
-                question,
-                topK: topK,
-                config: config,
-                containerId: containerId,
-                qualityModeOverride: qualityModeOverride,
-                externalEvidence: externalEvidence,
-                trace: trace
-            )
+        // Apple's usage for every model call this answer makes is added up (`AnswerUsageTally`, 5.7) and put in
+        // its metadata by `finalizeResponse`.
+        let response = try await AnswerUsageTally.$current.withValue(AnswerUsageTally()) {
+            try await LLMStreamingContext.$handler.withValue(streamHandler) {
+                try await self.queryInternal(
+                    question,
+                    topK: topK,
+                    config: config,
+                    containerId: containerId,
+                    qualityModeOverride: qualityModeOverride,
+                    externalEvidence: externalEvidence,
+                    trace: trace
+                )
+            }
         }
         return applyingJurisdictionCaveat(to: response, query: question)
     }
@@ -10486,6 +11542,14 @@ class RAGService: ObservableObject {
         // Mark query start in trace file for pipeline debugging
         Log.traceQueryStart(question)
         let queryStartTime = CFAbsoluteTimeGetCurrent()
+
+        // A day written beside a month as an ordinal ("September 30th") is searched as its number (`DayOrdinals`,
+        // 5.7): "30th" is a word no passage dated "September 30" contains.
+        let askedQuestion = question
+        let question = DayOrdinals.cardinal(question)
+        if question != askedQuestion {
+            Log.info("[Query] Day read as a number for the search: \"\(question)\"", category: .retrieval)
+        }
 
         // Flush trace on exit regardless of how the function returns
         defer {
@@ -10670,6 +11734,9 @@ class RAGService: ObservableObject {
         }
 
         let allowUngroundedFallback = reliabilityModeEnabled || developerTuningEnabled
+        // A question an action asks (Siri, Shortcuts) of a library with no documents is answered with that, not by the
+        // model alone (5.7); see the no-documents branch below.
+        let asksForAnAction = await MainActor.run { asksThroughRelay }
 
         let selectedContainer = await MainActor.run {
             self.containerService.containers.first { $0.id == selectedId }
@@ -10946,7 +12013,7 @@ class RAGService: ObservableObject {
                 var cachedAllChunks: [DocumentChunk]?
                 if corpusVocabulary.keywords.isEmpty {
                     let allChunks = try await vdb.readableChunks()
-                    cachedAllChunks = allChunks  // Store for HybridSearchService lexical recall
+                    cachedAllChunks = await chunksOfListedDocuments(allChunks)  // Store for HybridSearchService lexical recall
 
                     // Run viscosity scan when building vocabulary (first query)
                     await runViscosityScan(allChunks, query: question)
@@ -10969,7 +12036,7 @@ class RAGService: ObservableObject {
                     // Previously only loaded when pipelineTraceEnabled, which silently broke
                     // parent doc expansion on repeat queries to the same container.
                     let allChunks = try await vdb.readableChunks()
-                    cachedAllChunks = allChunks
+                    cachedAllChunks = await chunksOfListedDocuments(allChunks)
                     if Log.pipelineTraceEnabled {
                         await runViscosityScan(allChunks, query: question)
                     }
@@ -11179,7 +12246,9 @@ class RAGService: ObservableObject {
                     let gazetteerMatches = await GazetteerService.shared.matchingTerms(for: effectiveQuery)
                     if !gazetteerMatches.isEmpty {
                         let gazetteerTerms = gazetteerMatches.map { $0.term }
-                        let uniqueGazetteerTerms = gazetteerTerms.filter { !expandedQueries.contains($0) }
+                        let uniqueGazetteerTerms = gazetteerTerms.filter { term in
+                            !expandedQueries.contains { $0.caseInsensitiveCompare(term) == .orderedSame }
+                        }
                         let gazetteerSpace = qualityModeMaxQueryExpansions - expandedQueries.count
                         let gazetteerToAdd = Array(uniqueGazetteerTerms.prefix(max(0, gazetteerSpace)))
                         expandedQueries.append(contentsOf: gazetteerToAdd)
@@ -11859,6 +12928,17 @@ class RAGService: ObservableObject {
                     }
                 }
 
+                // Passages whose document is in no library are left out (5.7, `passagesFromKnownDocuments`).
+                let liveDocumentIds = await MainActor.run { Set(self.documents.map(\.id)) }
+                let fromKnownDocuments = Self.passagesFromKnownDocuments(
+                    retrievedChunks, knownDocumentIds: liveDocumentIds)
+                if fromKnownDocuments.dropped > 0 {
+                    Log.warning(
+                        "[RAGService] Left out \(fromKnownDocuments.dropped) passage(s) whose document is in no library",
+                        category: .retrieval)
+                    retrievedChunks = fromKnownDocuments.kept
+                }
+
                 // Edge case: No relevant chunks found
                 if retrievedChunks.isEmpty {
                     Log.warning(
@@ -12162,7 +13242,17 @@ class RAGService: ObservableObject {
                             )
                         }
 
-                        let mergedCandidates = mergeUniqueChunks(rerankedChunks, cascadeChunksWithSources)
+                        // Passages whose document is in no library are left out here too (5.7,
+                        // `passagesFromKnownDocuments`): this search runs after the first check, and on 2026-10-19 it
+                        // brought back the overview of a deleted note, which the answer then cited as "Unknown".
+                        let cascadeFromKnown = Self.passagesFromKnownDocuments(
+                            cascadeChunksWithSources, knownDocumentIds: Set(docsSnapshot.map(\.id)))
+                        if cascadeFromKnown.dropped > 0 {
+                            Log.warning(
+                                "[RAGService] Left out \(cascadeFromKnown.dropped) cascade passage(s) whose document is in no library",
+                                category: .retrieval)
+                        }
+                        let mergedCandidates = mergeUniqueChunks(rerankedChunks, cascadeFromKnown.kept)
                         if mergedCandidates.count > rerankedChunks.count {
                             let cascadeRerankStart = Date()
                             rerankedChunks = await engine.rerank(
@@ -12276,6 +13366,12 @@ class RAGService: ObservableObject {
                                     )
                                 }
                             }
+
+                            // Passages whose document is in no library are left out here too (5.7,
+                            // `passagesFromKnownDocuments`), as in the retrieval cascade above.
+                            cleanedRetryChunks = Self.passagesFromKnownDocuments(
+                                cleanedRetryChunks, knownDocumentIds: Set(docsSnapshot.map(\.id))
+                            ).kept
 
                             // Merge retry results with existing reranked chunks
                             let mergedChunks = mergeUniqueChunks(rerankedChunks, cleanedRetryChunks)
@@ -12450,7 +13546,7 @@ class RAGService: ObservableObject {
                         let specThreshold = 5  // Minimum spec pattern score to rescue
 
                         for chunk in droppedChunks {
-                            let content = chunk.chunk.parentContent ?? chunk.chunk.content
+                            let content = chunk.chunk.contextText
                             let specScore = countSpecPatterns(content)
 
                             // Also check for table structure (specs often in tables)
@@ -12762,63 +13858,71 @@ class RAGService: ObservableObject {
                     )
                 }
 
-                // High Accuracy enforcement: require sufficient high-confidence evidence
-                let minConfidentChunks = retrievalConfig.minConfidentChunks
-                if retrievalConfig == .highAccuracy, !(lenient || acceptanceOverride) {
-                    let supporting = diverseChunks.filter { $0.similarityScore >= retrievalConfig.minSimilarity }
-                    if supporting.count < minConfidentChunks {
-                        // Build cautious response with citations of top candidates
-                        let topSources = diverseChunks.prefix(3).enumerated().map { idx, r in
-                            let src = r.sourceDocument.isEmpty ? "Unknown" : r.sourceDocument
-                            let page = r.pageNumber.map { " (p.\($0))" } ?? ""
-                            return "- [\(idx + 1)] \(src)\(page) — \(String(format: "%.0f%%", r.similarityScore * 100))"
-                        }.joined(separator: "\n")
-                        let caution =
-                            "High Accuracy mode is enabled. Not enough high-confidence evidence across the retrieved sources to answer reliably. Top sources retrieved:\n\(topSources)"
+                // The passages-needed rule of Library Settings (5.7, `RetrievalPolicyService.strongPassageShortfall`):
+                // with two or more required, too few passages at the library's minimum score get the closest
+                // sources instead of an answer. Each passage counts at the score the re-ranker gave it: a rescued table
+                // passage is raised to just under the best score so it reaches the answer, and that is not a close
+                // match (review, 2026-10-20). "high_accuracy_blocked" is the rule's older name, which
+                // `VerificationOutcome` reads.
+                let rerankedScores = Dictionary(
+                    rerankedChunks.map { ($0.chunk.id, $0.similarityScore) }, uniquingKeysWith: { first, _ in first })
+                if let shortfall = RetrievalPolicyService.strongPassageShortfall(
+                    diverseChunks, config: retrievalConfig,
+                    score: { rerankedScores[$0.chunk.id] ?? $0.similarityScore })
+                {
+                    let topSources = diverseChunks.prefix(3).enumerated().map { idx, r in
+                        let src = r.sourceDocument.isEmpty ? "Unknown" : r.sourceDocument
+                        let page = r.pageNumber.map { " (p.\($0))" } ?? ""
+                        let score = rerankedScores[r.chunk.id] ?? r.similarityScore
+                        return "- [\(idx + 1)] \(src)\(page), \(String(format: "%.0f%%", score * 100))"
+                    }.joined(separator: "\n")
+                    let cleared = shortfall.found == 0 ? "none did" : "only \(shortfall.found) did"
+                    let minimum = String(format: "%.0f%%", retrievalConfig.minSimilarity * 100)
+                    let caution =
+                        "This library is set to answer only when at least \(shortfall.needed) of the passages found score \(minimum) or more for your question, and \(cleared). The closest passages:\n\(topSources)\n\nTo answer from fewer, lower Passages Needed in Library Settings, under Search."
 
-                        emitThinkingEvent(
-                            .warning,
-                            title: "High accuracy mode paused answer",
-                            detail: "\(supporting.count) strong chunk(s) found"
-                        )
+                    emitThinkingEvent(
+                        .warning,
+                        title: "Too few passages at the minimum score",
+                        detail: "\(shortfall.found) of \(shortfall.needed) scored \(minimum) or more"
+                    )
 
-                        let metadata = ResponseMetadata(
-                            timeToFirstToken: nil,
-                            totalGenerationTime: 0,
-                            tokensGenerated: 0,
-                            tokensPerSecond: nil,
-                            modelUsed: llmService.modelName,
-                            retrievalTime: retrievalTime,
-                            retrievalConfigSummary: retrievalConfig.summary,
-                            gatingDecision: "high_accuracy_blocked",
-                            toolCallsMade: 0,
-                            embeddingProvider: embeddingProviderId
-                        )
+                    let metadata = ResponseMetadata(
+                        timeToFirstToken: nil,
+                        totalGenerationTime: 0,
+                        tokensGenerated: 0,
+                        tokensPerSecond: nil,
+                        modelUsed: llmService.modelName,
+                        retrievalTime: retrievalTime,
+                        retrievalConfigSummary: retrievalConfig.summary,
+                        gatingDecision: "high_accuracy_blocked",
+                        toolCallsMade: 0,
+                        embeddingProvider: embeddingProviderId
+                    )
 
-                        let response = RAGResponse(
-                            queryId: ragQueryValue.id,
-                            retrievedChunks: diverseChunks,
-                            generatedResponse: caution,
-                            metadata: metadata,
-                            confidenceScore: 0.0,
-                            qualityWarnings: ["High Accuracy mode: insufficient supporting evidence"],
-                            structuredAnswer: StructuredAnswer.refusal(
-                                reason: caution,
-                                missing: [
-                                    "High Accuracy mode blocked the answer because the retrieved evidence was too weak."
-                                ],
-                                topScore: diverseChunks.first?.similarityScore ?? 0,
-                                loops: 1,
-                                retrievedChunks: diverseChunks
-                            )
+                    let response = RAGResponse(
+                        queryId: ragQueryValue.id,
+                        retrievedChunks: diverseChunks,
+                        generatedResponse: caution,
+                        metadata: metadata,
+                        confidenceScore: 0.0,
+                        qualityWarnings: ["Passages needed: \(shortfall.found) of \(shortfall.needed) scored \(minimum) or more"],
+                        structuredAnswer: StructuredAnswer.refusal(
+                            reason: caution,
+                            missing: [
+                                "At least \(shortfall.needed) passages scoring \(String(format: "%.0f%%", retrievalConfig.minSimilarity * 100)) or more, which Library Settings asks for."
+                            ],
+                            topScore: diverseChunks.first?.similarityScore ?? 0,
+                            loops: 1,
+                            retrievedChunks: diverseChunks
                         )
-                        return await finalizeResponse(
-                            query: question,
-                            containerId: selectedId,
-                            containerName: selectedName,
-                            response: response
-                        )
-                    }
+                    )
+                    return await finalizeResponse(
+                        query: question,
+                        containerId: selectedId,
+                        containerName: selectedName,
+                        response: response
+                    )
                 }
 
                 let isAppleFMOnDevice = llmService is AppleFoundationLLMService
@@ -13536,8 +14640,11 @@ class RAGService: ObservableObject {
                     // Extract core chunks from candidates
                     let coreChunks = contextCandidates.map { $0.chunk }
 
-                    // Calculate token budget dynamically based on model context size
-                    let graphTokenBudget = allowLargeContext ? 24000 : (isAppleFMOnDevice ? 6000 : 6000)
+                    // Sized to the window the device reports (5.7): see `graphPackingTokenBudget(windowTokens:)`.
+                    let graphTokenBudget = allowLargeContext
+                        ? 24000
+                        : Self.graphPackingTokenBudget(
+                            windowTokens: FoundationModelTokenBudget.contextSize(isAppleFMOnDevice: isAppleFMOnDevice))
 
                     // Pack with graph context
                     let packedContext = await contextPackingService.pack(
@@ -13612,7 +14719,7 @@ class RAGService: ObservableObject {
                     let preCorrectiveTopSim = contextCandidates.first?.similarityScore ?? 0
                     let hadStructuredEvidence = contextCandidates.prefix(5).contains { candidate in
                         looksTableLike(
-                            text: candidate.chunk.parentContent ?? candidate.chunk.content,
+                            text: candidate.chunk.contextText,
                             structureType: candidate.chunk.metadata.structureType
                         )
                     }
@@ -13655,7 +14762,7 @@ class RAGService: ObservableObject {
                             let postCorrectiveTopSim = correctedCandidates.first?.similarityScore ?? 0
                             let hasStructuredEvidence = correctedCandidates.prefix(5).contains { candidate in
                                 looksTableLike(
-                                    text: candidate.chunk.parentContent ?? candidate.chunk.content,
+                                    text: candidate.chunk.contextText,
                                     structureType: candidate.chunk.metadata.structureType
                                 )
                             }
@@ -13853,7 +14960,7 @@ class RAGService: ObservableObject {
                         for kw in queryKeywords {
                             var count = 0
                             for c in contextCandidates {
-                                let text = (c.chunk.parentContent ?? c.chunk.content).lowercased()
+                                let text = c.chunk.contextText.lowercased()
                                 if text.contains(kw) { count += 1 }
                             }
                             freq[kw] = count
@@ -13871,9 +14978,9 @@ class RAGService: ObservableObject {
                             category: .retrieval)
                     }
 
-                    orderedCandidates = contextCandidates.sorted(by: { (a: RetrievedChunk, b: RetrievedChunk) -> Bool in
-                        let aContent = a.chunk.parentContent ?? a.chunk.content
-                        let bContent = b.chunk.parentContent ?? b.chunk.content
+                    let byPriority = contextCandidates.sorted(by: { (a: RetrievedChunk, b: RetrievedChunk) -> Bool in
+                        let aContent = a.chunk.contextText
+                        let bContent = b.chunk.contextText
                         let aPriority = EvidenceScoringPolicyService.extractivePriorityScore(
                             content: aContent,
                             queryKeywords: discriminativeKeywords,
@@ -13895,6 +15002,9 @@ class RAGService: ObservableObject {
                             rhsPriority: bPriority, rhsRelevance: b.similarityScore
                         )
                     })
+                    // Retrieval's best passage stays first, whatever the question's words say (5.7):
+                    // the keyword priority orders the rest. Sentence extraction below puts it in whole.
+                    orderedCandidates = Self.leadingWithTopRanked(contextCandidates.first, then: byPriority)
                     Log.info(
                         "[RAG] Extractive query - prioritizing specs (discriminative: [\(discriminativeKeywords.joined(separator: ", "))])",
                         category: .retrieval)
@@ -13924,6 +15034,9 @@ class RAGService: ObservableObject {
                 // this rather than letting the caller recompute `prefix(actualChunksUsed)`, which
                 // is what silently mismatched labels against sources.
                 var promptSources: [RetrievedChunk] = []
+                // Whether the whole-chunk assembler placed the passages for attention, which it does only when it
+                // packs four or more; the "Position reorder" event reports that and nothing else.
+                var placedForAttention = false
 
                 if answerIntentIsExtractive && !isProceduralQuery {
                     let extractionResult = await extractRelevantSentences(
@@ -13931,7 +15044,10 @@ class RAGService: ObservableObject {
                         query: question,
                         maxChars: maxContextChars,
                         compact: useCompactMode,
-                        isExtractiveFirst: answerIntentIsExtractive
+                        isExtractiveFirst: answerIntentIsExtractive,
+                        leadingCandidateWhole: true,
+                        // The answer keeps only the sources used (`promptSources` below), so the labels number those.
+                        numberByUse: true
                     )
 
                     // Sentence extraction is a narrowing filter, and a filter that matches nothing
@@ -13963,6 +15079,11 @@ class RAGService: ObservableObject {
                         context = assembled.context
                         actualChunksUsed = assembled.used
                         promptSources = assembled.sources
+                        placedForAttention = useLostInMiddleMitigation && assembled.used >= 4
+                        Log.info(
+                            "[RAG] Whole-passage context keeps candidates \(Self.candidatePlaces(of: assembled.sources, in: orderedCandidates)) "
+                                + "of \(orderedCandidates.count), in label order",
+                            category: .retrieval)
                         Log.warning(
                             "[RAG] Sentence extraction matched nothing across \(orderedCandidates.count) candidate(s); "
                                 + "falling back to whole-chunk assembly (\(assembled.used) chunks, \(assembled.context.count) chars) "
@@ -13989,6 +15110,11 @@ class RAGService: ObservableObject {
                     var assembledContext = assembled.context
                     actualChunksUsed = assembled.used
                     promptSources = assembled.sources
+                    placedForAttention = useLostInMiddleMitigation && assembled.used >= 4
+                    Log.info(
+                        "[RAG] Whole-passage context keeps candidates \(Self.candidatePlaces(of: assembled.sources, in: orderedCandidates)) "
+                            + "of \(orderedCandidates.count), in label order",
+                        category: .retrieval)
 
                     // UNIVERSAL FIX 10: Needle rescue from dropped chunks.
                     // When assembleContext runs out of budget, chunks at positions 4+ are dropped
@@ -13997,7 +15123,7 @@ class RAGService: ObservableObject {
                     // appending high-value sentences into any remaining budget.
                     // This catches needles across ALL intents (summarize, procedure, compare, etc.)
                     // without replacing whole-chunk packing for the primary chunks.
-                    let droppedChunks = Array(orderedCandidates.dropFirst(assembled.used))
+                    let droppedChunks = Self.candidatesPastThePacked(orderedCandidates, packed: assembled.sources)
                     let remainingBudget = maxContextChars - assembledContext.count
                     let rescueBudgetFloor = (answerIntentIsExtractive || isPrecisionValueQuery(question)) ? 80 : 160
 
@@ -14015,7 +15141,9 @@ class RAGService: ObservableObject {
                             // from one again, and an answer citing [S5] and [S6], which are the
                             // fifth and sixth sources the model was shown and which resolved to
                             // nothing downstream.
-                            labelOffset: assembled.used
+                            labelOffset: assembled.used,
+                            // Only the rescued sources join the answer (`rescuedChunks`), so the labels number those.
+                            numberByUse: true
                         )
                         if rescueResult.sentencesIncluded > 0 {
                             rescuedChunks = rescueResult.usedSourceIndices.compactMap {
@@ -14037,7 +15165,7 @@ class RAGService: ObservableObject {
                 }
 
                 // Emit lost-in-middle event if it was applied
-                if useLostInMiddleMitigation && orderedCandidates.count >= 4 {
+                if placedForAttention {
                     emitThinkingEvent(
                         .lostInMiddle,
                         title: "Position reorder",
@@ -14631,8 +15759,9 @@ class RAGService: ObservableObject {
                 // Use adaptive mode's temperature
                 genConfig.temperature = min(genConfig.temperature, qualityModeTemperature)
 
-                // High Accuracy retrieval config overrides quality mode
-                if retrievalConfig == .highAccuracy {
+                // High Accuracy retrieval config overrides quality mode. By style, so the cap holds while the library
+                // reads as High Precision in Library Settings (5.7).
+                if retrievalConfig.style == .precise {
                     genConfig.temperature = min(genConfig.temperature, 0.2)
                 }
 
@@ -14774,10 +15903,10 @@ class RAGService: ObservableObject {
                             maximumCharacters: maximumCloudCharacters
                         )
                         generationContext = renderCloudEvidenceEnvelope(envelope)
-                        let includedIDs = Set(envelope.evidence.map(\.sourceID))
-                        generationRetrievedChunks = generationRetrievedChunks.filter {
-                            includedIDs.contains($0.chunk.id.uuidString)
-                        }
+                        // The envelope numbers its evidence [S1], [S2] ... in its own order, by rank, so the answer
+                        // keeps the passages in that order (5.7). Filtered in the local order, a label could open
+                        // the passage at that place in the local list (found by review, 2026-10-20).
+                        generationRetrievedChunks = Self.passages(generationRetrievedChunks, inTheOrderOf: envelope)
                         generationChunks = generationRetrievedChunks.map(\.chunk)
 
                         do {
@@ -15455,20 +16584,30 @@ class RAGService: ObservableObject {
 
                     var sourceLockedFinalResponse = false
                     if answerIntentIsExtractive || isPrecisionValueQuery(question),
-                        let extractiveOverride = await highPrecisionLookupOverrideAnswer(
+                        let extractiveOverride = await highPrecisionLookupOverride(
                             question: question,
                             answerIntent: answerIntent,
                             retrievedChunks: generationRetrievedChunks
                         )
                     {
-                        sourceLockedFinalResponse = true
                         let normalizedLLM = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let normalizedOverride = extractiveOverride.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if normalizedLLM != normalizedOverride {
+                        let normalizedOverride = extractiveOverride.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // The model's answer stands when it already states the value the extractor found (5.7):
+                        // it can answer the rest of the question, and the gates check it. On 2026-10-19 "What is
+                        // the harbor lantern code, and where is it kept?" had its answer replaced by the
+                        // extractor's text, which began mid-word and left out where the code is kept.
+                        if Self.answerStates(value: extractiveOverride.value, in: normalizedLLM) {
                             Log.info(
-                                "[ExtractiveQA] Overriding lookup response with direct source extraction",
+                                "[ExtractiveQA] Kept the model's answer: it states the extracted value \"\(extractiveOverride.value)\"",
                                 category: .retrieval)
-                            responseText = normalizedOverride
+                        } else {
+                            sourceLockedFinalResponse = true
+                            if normalizedLLM != normalizedOverride {
+                                Log.info(
+                                    "[ExtractiveQA] Overriding lookup response with direct source extraction",
+                                    category: .retrieval)
+                                responseText = normalizedOverride
+                            }
                         }
                     }
 
@@ -15591,10 +16730,14 @@ class RAGService: ObservableObject {
                                 ])
 
                             // Emit verification thinking event
+                            // A failure names its gates (5.7): the Details panel showed every step green while
+                            // Gate I had failed, because nothing it reads said which.
+                            let failedGateNames = vr.gateResults.filter { !$0.passed }.map(\.gate.rawValue)
                             emitThinkingEvent(
                                 .verification,
                                 title: vr.passed ? "Gates passed ✓" : "Gates failed ✗",
-                                detail: "Confidence: \(String(format: "%.0f", vr.overallConfidence * 100))%"
+                                detail: (failedGateNames.isEmpty ? "" : "Failed: \(failedGateNames.joined(separator: ", ")). ")
+                                    + "Confidence: \(String(format: "%.0f", vr.overallConfidence * 100))%"
                             )
 
                             if !vr.passed {
@@ -15983,8 +17126,12 @@ class RAGService: ObservableObject {
                     )
                 }
             } else {
-                // No documents case
-                if !allowUngroundedFallback {
+                // No documents case. An action's question never gets the direct chat below (5.7): its answer goes back
+                // as "Ask My Documents" or "Ask a Library", and one written by the model alone would read as if it came
+                // from the library. `reliabilityModeEnabled` is on by default, so through the first 5.7 builds an
+                // action asking an empty library got the model's own answer; `ShortcutsActionTests` found it on
+                // 2026-10-19 ("Direct chat mode" in the trace).
+                if !allowUngroundedFallback || asksForAnAction {
                     let response = await makeGroundedAbstainResponse(
                         question: question,
                         ragQuery: ragQueryValue,
@@ -16039,10 +17186,15 @@ class RAGService: ObservableObject {
                     title: "Generating answer",
                     detail: llmService.modelName
                 )
+                // A library with no documents gives the library's tools nothing to find, so they are not handed to
+                // the model here (5.7): their descriptions took part of the window, and a call could only come back
+                // empty (found by the PostDesk session's code trace, 2026-10-21).
+                var noDocumentsConfig = inferenceConfig
+                noDocumentsConfig.disableTools = true
                 let llmResponse = try await generateWithFallback(
                     prompt: question,
                     context: nil,  // No document context
-                    config: inferenceConfig,
+                    config: noDocumentsConfig,
                     sourceChunks: []
                 )
 
@@ -17131,6 +18283,61 @@ class RAGService: ObservableObject {
         // so downstream Markdown rendering can format them properly
         let compacted = chosen.joined(separator: "\n\n")
         return normalizeMalformedResponseArtifacts(compacted)
+    }
+
+    /// The verification gates for a Deep Think or Maximum answer, and the status string the badge
+    /// reads (5.7): `verified:NN%` when they pass, `unverified:<gates>` when they don't, and
+    /// `verification_skipped` when there is nothing to check. The same `VerificationGateService.verify`
+    /// and confidence policy Standard uses, on the passages the reasoning ended with, with the
+    /// answer's and the question's vectors and the passages' stored vectors for the grounding gate.
+    private func verifyAgenticAnswer(
+        question: String,
+        answer: String,
+        chunks: [RetrievedChunk],
+        containerId: UUID,
+        answerIntent: AnswerIntent,
+        qualityMode: RAGQualityMode
+    ) async -> (summary: String, result: RAGVerificationResult?) {
+        let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !chunks.isEmpty else { return ("verification_skipped", nil) }
+
+        let policy = ConfidencePolicyService.policy(for: question, answerIntent: answerIntent, qualityMode: qualityMode)
+        let gates = VerificationGateService(config: policy.verificationConfig)
+        let embeddingContext = await resolveEmbeddingContext(preferredContainerId: containerId)
+        let responseEmbedding = try? await embeddingContext.service.generateEmbedding(
+            for: boundedVerificationResponseText(trimmed, answerIntent: answerIntent))
+        let queryEmbedding = try? await embeddingContext.service.generateEmbedding(for: question)
+        let vdb = await dbFor(embeddingContext.containerId)
+        let chunkEmbeddings = await vdb.getEmbeddings(forChunkIDs: chunks.map(\.chunk.id))
+        let scores = chunks.map(\.similarityScore).sorted(by: >)
+        let averageTopFive = scores.isEmpty ? 0 : scores.prefix(5).reduce(0, +) / Float(min(5, scores.count))
+        let topScores = [scores.first ?? 0, scores.count > 1 ? scores[1] : 0, averageTopFive].filter { $0 > 0 }
+
+        let result = await gates.verify(
+            response: trimmed,
+            query: question,
+            retrievedChunks: chunks,
+            topScores: topScores,
+            allCandidateChunks: chunks,
+            responseEmbedding: responseEmbedding,
+            queryEmbedding: queryEmbedding,
+            chunkEmbeddings: chunkEmbeddings.allSatisfy(\.isEmpty) ? nil : chunkEmbeddings,
+            answerIntent: answerIntent)
+        Log.info(
+            "[RAGService] \(qualityMode.canonical == .maximum ? "Maximum" : "Deep Think") answer gates: "
+                + (result.passed ? "passed" : "failed")
+                + " (\(result.gateResults.map { "\($0.gate.rawValue):\($0.passed ? "pass" : "fail")" }.joined(separator: " ")))",
+            category: .pipeline)
+        return (Self.verificationSummary(for: result), result)
+    }
+
+    /// The status string Standard writes for a verification result: `verified:NN%` or
+    /// `unverified:<failed gates>`.
+    nonisolated static func verificationSummary(for result: RAGVerificationResult) -> String {
+        if result.passed {
+            return "verified:\(String(format: "%.0f", result.overallConfidence * 100))%"
+        }
+        return "unverified:" + result.gateResults.filter { !$0.passed }.map { $0.gate.rawValue }.joined(separator: "+")
     }
 
     private func boundedVerificationResponseText(
@@ -18298,6 +19505,22 @@ class RAGService: ObservableObject {
         let cleanedResponse = cleanupResponseText(response.generatedResponse)
         let stabilizedResponse = trimIncompleteResponseTail(cleanedResponse)
         let repairedResponse = repairMalformedURLs(stabilizedResponse)
+        // A label past the end of the answer's passages opens nothing, and it means the labels the model was shown
+        // and the passages the answer keeps were numbered differently. It is logged, not removed, as for the
+        // reasoning trace above ("This logs rather than rewrites"): on 2026-10-20 "$300.00 [S1], [S5], [S6]" was the
+        // model citing correctly from a context the sentence extractor numbered by candidate, against three passages
+        // numbered 1 to 3, and taking the labels out would have hidden that (fixed where the labels are made,
+        // `extractRelevantSentencesOffMain` and `RAGEngine.assembleContext`).
+        let unmatched = AgenticOrchestrator.danglingCitations(
+            in: repairedResponse, sourceCount: response.retrievedChunks.count)
+        if !unmatched.isEmpty {
+            Log.warning(
+                "[RAGService] The answer cites \(unmatched.map { "[S\($0)]" }.joined(separator: ", ")) against "
+                    + "\(response.retrievedChunks.count) source(s); the labels and the answer's passages were numbered "
+                    + "differently, so those labels open nothing.",
+                category: .llm
+            )
+        }
         let finalizedStructuredAnswer = response.structuredAnswer?.updatingAnswer(repairedResponse)
         let fallbackReasoningTrace = await MainActor.run {
             self.thinkingEvents.compactReasoningTrace()
@@ -18307,6 +19530,10 @@ class RAGService: ObservableObject {
         // saved answer or an exported trace never reads as checked when the check was skipped.
         if await MainActor.run(body: { self.finishAnswerNowRequested }) {
             finalizedMetadata = finalizedMetadata.appendingGatingDecision("finished_early_by_person")
+        }
+        // Apple's count for the whole answer (5.7), set by `query`'s tally.
+        if let usage = AnswerUsageTally.current?.total {
+            finalizedMetadata.appleUsage = usage
         }
         var finalResponse = response
         finalResponse = RAGResponse(
@@ -19056,6 +20283,17 @@ class RAGService: ObservableObject {
         answerIntent: AnswerIntent,
         retrievedChunks: [RetrievedChunk]
     ) async -> String? {
+        await highPrecisionLookupOverride(
+            question: question, answerIntent: answerIntent, retrievedChunks: retrievedChunks)?.answer
+    }
+
+    /// The direct answer an extracted value gives, and the value itself (5.7: the value, so a caller holding the
+    /// model's answer can tell whether that answer already states it).
+    private func highPrecisionLookupOverride(
+        question: String,
+        answerIntent: AnswerIntent,
+        retrievedChunks: [RetrievedChunk]
+    ) async -> (answer: String, value: String)? {
         guard !retrievedChunks.isEmpty else { return nil }
         guard !isConceptualLookupQuery(question) else { return nil }
 
@@ -19094,18 +20332,134 @@ class RAGService: ObservableObject {
             return nil
         }
 
+        // The value has to be about what was asked (5.7). Every one of the five places that let an
+        // extracted value stand in for the answer comes through here.
+        guard
+            Self.extractedValueAnswersQuestion(
+                question, label: result.matchedLabel,
+                context: Self.valueLine(result.answerSpan, in: result.sourceChunk.chunk) ?? result.surroundingContext)
+        else {
+            Log.info(
+                "[RAGService] Extracted value not used as the answer: \"\(result.matchedLabel ?? result.answerSpan)\" "
+                    + "shares no subject word with the question",
+                category: .pipeline)
+            return nil
+        }
+
         let answerSpan = enrichedPrecisionAnswerSpan(for: result)
 
         if let label = result.matchedLabel, !label.isEmpty {
-            return "\(label): \(answerSpan). \(result.citation)"
+            return ("\(label): \(answerSpan). \(result.citation)", result.answerSpan)
         }
 
         if isPrecisionValueQuery(question) || result.specificationType == "Measurement" {
-            return "\(answerSpan). \(result.citation)"
+            return ("\(answerSpan). \(result.citation)", result.answerSpan)
         }
 
-        return result.formattedAnswer
+        // The sentence that holds the value, whole (5.7). `formattedAnswer` used the extractor's window of
+        // characters around the value, which can start mid-word and stop at the value: on 2026-10-19 it gave
+        // "e harbor the crew measured 3163 units … the harbor lantern code is VERMILION-4417" for a row that goes
+        // on ", kept in the blue ledger."
+        if let line = Self.valueLine(result.answerSpan, in: result.sourceChunk.chunk) {
+            return ("\(Self.readableValueLine(line)) \(result.citation)", result.answerSpan)
+        }
+        return (result.formattedAnswer, result.answerSpan)
     }
+
+    /// Whether an answer already states a value, ignoring case and spacing (5.7).
+    nonisolated static func answerStates(value: String, in answer: String) -> Bool {
+        func squeezed(_ text: String) -> String { text.lowercased().filter { !$0.isWhitespace } }
+        let wanted = squeezed(value)
+        return !wanted.isEmpty && squeezed(answer).contains(wanted)
+    }
+
+    /// A table row's line as a sentence (5.7): "ROW 19: The final instruction | the code is X." reads
+    /// "The final instruction: the code is X.". Other lines are returned trimmed.
+    nonisolated static func readableValueLine(_ line: String) -> String {
+        var text = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let row = text.range(of: #"^ROW \d+:\s*"#, options: .regularExpression) {
+            text.removeSubrange(row)
+            if let bar = text.range(of: " | ") { text.replaceSubrange(bar, with: ": ") }
+            text = text.replacingOccurrences(of: " | ", with: ", ")
+        }
+        return text
+    }
+
+    /// Whether an extracted value is about what the question asks (5.7, roadmap row "Regex extraction
+    /// can pre-empt or replace the model's answer at five places, with no check that it answers the
+    /// question").
+    ///
+    /// A value locked by score alone: on 2026-09-26 a probe over a car manual's capacities list
+    /// locked the engine oil's 4.5 L for "What is the fuel tank capacity?" and for "How much fuel does
+    /// the tank hold?", and its 4.8 US qt for "How much coolant does it need?". Now the value's label,
+    /// or the line that holds it (`valueLine`), must share a word with the question's subject: its
+    /// words without the ones any value question uses ("how much", "capacity", a unit, "give"), with
+    /// the extractor's synonyms added (`SpecificationExtractor.subjectSynonyms`). A question with no
+    /// subject words left is not checked. A value that fails is not used, and the model answers as it
+    /// would without one.
+    nonisolated static func extractedValueAnswersQuestion(_ question: String, label: String?, context: String) -> Bool {
+        var subject = lookupWords(in: question).subtracting(genericValueWords)
+        guard !subject.isEmpty else { return true }
+        for (word, synonyms) in SpecificationExtractor.subjectSynonyms where subject.contains(word) {
+            subject.formUnion(synonyms)
+        }
+        let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let about = lookupWords(in: trimmedLabel.isEmpty ? context : trimmedLabel)
+        return !subject.isDisjoint(with: about)
+    }
+
+    /// Lowercased words of three letters or more, with a plural's final "s" dropped from a word of five
+    /// letters or more ("tanks", "quarts"), so "does", "this" and "gas" stay whole, and not after "ss",
+    /// "us" or "is" ("glass", "status", "analysis").
+    nonisolated static func lookupWords(in text: String) -> Set<String> {
+        Set(
+            text.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count >= 3 && !$0.allSatisfy(\.isNumber) }
+                .map { word in
+                    guard word.count >= 5, word.hasSuffix("s"),
+                        !word.hasSuffix("ss"), !word.hasSuffix("us"), !word.hasSuffix("is")
+                    else { return word }
+                    return String(word.dropLast())
+                })
+    }
+
+    /// The sentence of a passage's line that holds an extracted value (5.7). Its label is there, as in
+    /// "Fuel tank: 14.3 US gal (54 L)". The extractor's `surroundingContext` cut sentences at every ".",
+    /// so it never held a value with a decimal point and fell back to 50 characters each side, which in a
+    /// capacities list reached the neighbouring lines' labels. A decimal point is not a sentence end
+    /// here: a sentence ends at ".", "!" or "?" followed by a space.
+    nonisolated static func valueLine(_ value: String, in chunk: DocumentChunk) -> String? {
+        for text in [chunk.content, chunk.parentContent].compactMap({ $0 }) {
+            guard let range = text.range(of: value) else { continue }
+            let start = text[..<range.lowerBound].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+            let end = text[range.upperBound...].firstIndex(of: "\n") ?? text.endIndex
+            let line = String(text[start..<end])
+            let sentences = line.replacingOccurrences(
+                of: #"(?<=[.!?])\s+"#, with: "\n", options: .regularExpression
+            ).split(separator: "\n")
+            return sentences.first { $0.contains(value) }.map(String.init) ?? line
+        }
+        return nil
+    }
+
+    /// Words any question about a value can use, which say nothing about which value: question words,
+    /// quantity words, units, function words and the verbs a question asks with ("give", "move out"
+    /// keeps "move"), in the singular `lookupWords` gives.
+    nonisolated static let genericValueWords: Set<String> = [
+        "what", "which", "how", "much", "many", "does", "the", "for", "and", "with", "that", "this", "there",
+        "need", "take", "use", "hold", "require", "have", "can", "get", "should", "must", "will", "would",
+        "capacity", "size", "amount", "number", "total", "value", "level", "rating", "volume", "weight",
+        "length", "height", "width", "depth", "limit", "maximum", "minimum", "max", "min", "spec",
+        "specification", "type", "kind", "long", "big", "far", "often", "cost", "price",
+        "day", "days", "week", "month", "year", "hour", "minute", "second", "liter", "litre", "quart", "gallon",
+        "pound", "ounce", "inch", "foot", "feet", "meter", "metre", "mile", "percent",
+        "are", "was", "were", "been", "has", "had", "did", "could", "may", "might", "not", "but", "out",
+        "off", "over", "under", "into", "from", "about", "before", "after", "during", "between", "through",
+        "these", "those", "here", "then", "than", "when", "where", "who", "why", "all", "any", "each",
+        "every", "some", "only", "also", "just", "very", "your", "you", "our", "their", "they", "them",
+        "his", "her", "him", "she", "its", "give", "got", "put", "make", "know", "tell", "keep", "let",
+    ]
 
     private func prioritizedStateLookupCandidates(
         from chunks: [RetrievedChunk],
@@ -19125,7 +20479,7 @@ class RAGService: ObservableObject {
     }
 
     private func stateLookupCandidatePriority(_ chunk: RetrievedChunk, query: String) -> Int {
-        let content = (chunk.chunk.parentContent ?? chunk.chunk.content).lowercased()
+        let content = chunk.chunk.contextText.lowercased()
         var score = 0
 
         if EvidenceScoringPolicyService.satisfiesStateLookupAnchors(query: query, content: content) {
@@ -19157,7 +20511,7 @@ class RAGService: ObservableObject {
         let base = result.answerSpan.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !base.isEmpty, !base.contains("(") else { return base }
 
-        let content = result.sourceChunk.chunk.parentContent ?? result.sourceChunk.chunk.content
+        let content = result.sourceChunk.chunk.contextText
         guard let baseRange = content.range(of: base) else { return base }
 
         let suffix = String(content[baseRange.upperBound...].prefix(40))
@@ -19827,6 +21181,8 @@ class RAGService: ObservableObject {
 // MARK: - Device Capability Detection
 
 @MainActor private var cachedDeviceCapabilities: DeviceCapabilities?
+/// One run of the deferred model work at a time, across every engine in the process (5.7).
+@MainActor private var deferredEnrichmentIsRunning = false
 @MainActor private var isLifecycleObserverRegistered = false
 
 extension RAGService {
@@ -19918,7 +21274,6 @@ extension RAGService {
                         capabilities.supportsCoreML = true
                         capabilities.supportsAppIntents = true
                         capabilities.supportsVision = true
-                        capabilities.supportsVisionKit = true
                         capabilities.deviceTier = determineDeviceTier(
                             chip: capabilities.deviceChip,
                             hasAppleIntelligence: capabilities.supportsAppleIntelligence,
@@ -20036,9 +21391,6 @@ extension RAGService {
 
         // Vision framework available on all devices
         capabilities.supportsVision = true
-
-        // VisionKit (document scanning) available on all devices
-        capabilities.supportsVisionKit = true
 
         // Determine device tier
         capabilities.deviceTier = determineDeviceTier(
@@ -20251,7 +21603,7 @@ struct DeviceCapabilities {
     /// says nothing about whether *this binary* can route a request there. Four screens read it
     /// as the latter and told 5.1 users the app would ask before sending, in a build that could
     /// not send. The flag now means "compiled in, and on an OS that has the API"; the runtime
-    /// entitlement and quota checks stay in `FoundationModelRoutePolicy.isPCCAvailable`.
+    /// entitlement and quota checks stay in `FoundationModelSessionFactory` and `FoundationModelCapabilityProvider`.
     static let pccRoutingCompiledIn: Bool = {
         #if compiler(>=6.4)
             return true
@@ -20285,7 +21637,6 @@ struct DeviceCapabilities {
     var supportsCoreML = false
     var supportsAppIntents = false
     var supportsVision = false
-    var supportsVisionKit = false
 
     // Hardware Features
     var hasNeuralEngine: Bool {
@@ -20494,7 +21845,8 @@ extension RAGService: RAGToolHandler {
         // is holding. That is what makes Deep Think measurable without touching nine call sites.
         let effectiveTrace = trace ?? activeRetrievalTrace
         let chunks = try await performFullRetrievalPipeline(
-            query: query,
+            // Deep Think's and Maximum's own searches read a day the same way as the question (`DayOrdinals`).
+            query: DayOrdinals.cardinal(query),
             topK: topK,
             minSimilarity: minSimilarity,
             qualityMode: qualityMode,
@@ -20555,7 +21907,10 @@ extension RAGService: RAGToolHandler {
         }
         let effectiveMinSimilarity = minSimilarity ?? resolvedRetrievalConfig.minSimilarity
         let db = await dbFor(embeddingContext.containerId)
-        let allChunks = RAGQueryScope.apply(to: try await db.readableChunks())  // narrowed when the question names documents
+        // Narrowed when the question names documents, and without passages of no document (5.7,
+        // `chunksOfListedDocuments`): this list feeds the overview routing, lexical recall, the spec sniper and
+        // sibling expansion below, the way `cachedAllChunks` does for Standard (review, 2026-10-19).
+        let allChunks = RAGQueryScope.apply(to: await chunksOfListedDocuments(try await db.readableChunks()))
 
         // Skip if no chunks
         guard !allChunks.isEmpty else { return [] }
@@ -20644,7 +21999,11 @@ extension RAGService: RAGToolHandler {
         // Gazetteer domain vocabulary enrichment
         let gazetteerMatchesFR = await GazetteerService.shared.matchingTerms(for: semanticQuery)
         if !gazetteerMatchesFR.isEmpty {
-            let uniqueGazetteer = gazetteerMatchesFR.map { $0.term }.filter { !expandedQueries.contains($0) }
+            // A matched term is in the question already; appended again it only repeats words (5.7).
+            let uniqueGazetteer = gazetteerMatchesFR.map { $0.term }.filter { term in
+                !semanticQuery.localizedCaseInsensitiveContains(term)
+                    && !expandedQueries.contains { $0.caseInsensitiveCompare(term) == .orderedSame }
+            }
             expandedQueries.append(contentsOf: uniqueGazetteer.prefix(5))
             if !uniqueGazetteer.isEmpty {
                 Log.debug(
@@ -20788,7 +22147,7 @@ extension RAGService: RAGToolHandler {
 
             func projectedTokenCost(_ chunk: DocumentChunk) -> Int {
                 FoundationModelTokenBudget.estimateTokens(
-                    charsCount: (chunk.parentContent ?? chunk.content).count,
+                    charsCount: chunk.contextText.count,
                     isAppleFMOnDevice: true
                 )
             }
@@ -20864,6 +22223,18 @@ extension RAGService: RAGToolHandler {
             }
             retrievedChunks = reordered
             await onDetailedEvent?(.lostInMiddle, "Lost-in-Middle reorder", "Best evidence at start/end of context")
+        }
+
+        // Passages whose document is in no library are left out (5.7, `passagesFromKnownDocuments`): the vector
+        // search above reads the whole store. Deep Think and Maximum search through here, not through
+        // `searchDocumentsRaw` (review, 2026-10-19).
+        let listedDocumentIds = await MainActor.run { Set(self.documents.map(\.id)) }
+        let fromListedDocuments = Self.passagesFromKnownDocuments(retrievedChunks, knownDocumentIds: listedDocumentIds)
+        if fromListedDocuments.dropped > 0 {
+            Log.warning(
+                "[FullRetrieval] Left out \(fromListedDocuments.dropped) passage(s) whose document is in no library",
+                category: .retrieval)
+            retrievedChunks = fromListedDocuments.kept
         }
 
         // Enrich with document names
@@ -20953,6 +22324,10 @@ extension RAGService: RAGToolHandler {
             chunks: retrievedChunks,
             min: minSimilarity ?? retrievalConfig.minSimilarity
         )
+
+        // Passages whose document is in no library are left out (5.7, `passagesFromKnownDocuments`).
+        let liveDocumentIds = await MainActor.run { Set(self.documents.map(\.id)) }
+        retrievedChunks = Self.passagesFromKnownDocuments(retrievedChunks, knownDocumentIds: liveDocumentIds).kept
 
         // Enrich with source document names
         var enrichedChunks: [RetrievedChunk] = []

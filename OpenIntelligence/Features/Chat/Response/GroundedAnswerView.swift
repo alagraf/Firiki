@@ -22,7 +22,7 @@ struct GroundedAnswerView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             // Main answer text with interactive citations. `CitationLinker` resolves each label
             // to a chunk when it builds the link: before 5.6 only a bare `[3]` became a link, and
             // the answer prompt asks for `[S3]`, so no citation in a real answer could be tapped.
@@ -32,9 +32,10 @@ struct GroundedAnswerView: View {
                 retrievedChunks: retrievedChunks
             )
             
+            // Dynamic Type body prose for assistant responses (5.7).
             MarkdownText(
                 linkedAnswer,
-                font: .system(size: 14, weight: .regular),
+                font: .body,
                 foregroundColor: DSColors.primaryText
             )
             .environment(\.openURL, OpenURLAction { url in
@@ -50,48 +51,63 @@ struct GroundedAnswerView: View {
                 get: { selectedCitationChunk.map { IdentifiableChunk(chunk: $0) } },
                 set: { selectedCitationChunk = $0?.chunk }
             )) { identifiableChunk in
-                NavigationStack {
-                    DocumentDetailsView(
-                        document: CitationSourceDocument.resolve(
-                            identifiableChunk.chunk, found: libraryDocumentLookup?.document(identifiableChunk.chunk.chunk.documentId)),
-                        embeddingProviderId: nil,
-                        highlightedChunk: identifiableChunk.chunk
-                    )
+                let chunk = identifiableChunk.chunk
+                let document = CitationSourceDocument.resolve(
+                    chunk, found: libraryDocumentLookup?.document(chunk.chunk.documentId))
+                // The page itself when the source is a PDF on this device, with the passage highlighted (5.7);
+                // anything else opens the document's details, as before.
+                if let page = CitationSourceDocument.page(of: chunk, in: document) {
+                    SourcePageView(
+                        document: document, pageNumber: page, passage: chunk.chunk.content, chunk: chunk,
+                        lookup: libraryDocumentLookup)
+                } else {
+                    NavigationStack {
+                        DocumentDetailsView(document: document, embeddingProviderId: nil, highlightedChunk: chunk)
+                    }
                 }
             }
 
             
             if !answer.claims.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
                     HStack {
                         Text("FACT CHECK")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .scaledFont(size: 9, weight: .bold)
+                            .foregroundStyle(DSColors.secondaryText)
                             .tracking(1)
                         
                         Spacer()
                         
-                        HStack(spacing: 3) {
+                        // The words in the label color and the mode's color in the icon and the tint, as on the
+                        // other tinted chips (5.7).
+                        HStack(spacing: DSSpacing.xxs) {
                             Image(systemName: "shield.checkered")
-                                .font(.system(size: 9))
+                                .scaledFont(size: 9)
+                                .foregroundStyle(DSColors.readable(modeColor))
                             Text(Self.factCheckSummary(for: answer.claims))
-                                .font(.system(size: 9, weight: .medium))
+                                .scaledFont(size: 9, weight: .medium)
+                                .monospacedDigit()
                         }
-                        .foregroundStyle(modeColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
+                        .foregroundStyle(DSColors.primaryText)
+                        .padding(.horizontal, DSSpacing.xs)
+                        .padding(.vertical, DSSpacing.xxs)
                         .background(modeColor.opacity(0.1))
                         .clipShape(Capsule())
                     }
-                    .padding(.top, 2)
+                    .padding(.top, DSSpacing.xxs)
                     
+                    let destinations = evidenceDestinations
                     ForEach(Array(answer.claims.enumerated()), id: \.offset) { index, claim in
                         ClaimCard(
                             claim: claim,
                             evidence: answer.evidence,
+                            evidenceDestinations: destinations,
+                            onOpenEvidence: { evidence in
+                                selectedCitationChunk = retrievedChunks.first { $0.chunk.id.uuidString == evidence.evidenceId }
+                            },
                             isExpanded: expandedClaimIndex == index,
                             onTap: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                withAnimation(DSAnimations.snappySpring) {
                                     if expandedClaimIndex == index {
                                         expandedClaimIndex = nil
                                     } else {
@@ -103,36 +119,50 @@ struct GroundedAnswerView: View {
                         )
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, DSSpacing.sm)
             }
             
             if !answer.missing.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                    HStack(spacing: DSSpacing.xs) {
                         Image(systemName: "questionmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.orange)
+                            .scaledFont(size: 12)
+                            .foregroundStyle(DSColors.readable(.orange))
                         Text("Information Gaps")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.orange)
+                            .scaledFont(size: 12, weight: .semibold)
+                            .foregroundStyle(DSColors.readable(.orange))
                     }
                     
                     ForEach(answer.missing, id: \.self) { item in
                         Text("• \(item)")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .scaledFont(size: 12)
+                            .foregroundStyle(DSColors.secondaryText)
                     }
                 }
-                .padding(10)
+                .padding(DSSpacing.sm)
                 .background(Color.orange.opacity(0.05))
-                .cornerRadius(8)
-                .padding(.top, 4)
+                .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
+                .padding(.top, DSSpacing.xs)
             }
         }
     }
 }
 
 extension GroundedAnswerView {
+    /// What tapping each Fact Check quote opens, by evidence id (a passage's id): its page, for a PDF on this device
+    /// with a page number, or else its document's details (5.7). A quote whose passage this answer did not retrieve
+    /// opens nothing.
+    private var evidenceDestinations: [String: EvidenceDestination] {
+        var destinations: [String: EvidenceDestination] = [:]
+        for chunk in retrievedChunks {
+            let document = CitationSourceDocument.resolve(
+                chunk, found: libraryDocumentLookup?.document(chunk.chunk.documentId))
+            destinations[chunk.chunk.id.uuidString] =
+                CitationSourceDocument.page(of: chunk, in: document).map { EvidenceDestination.page($0) } ?? .details
+        }
+        return destinations
+    }
+
     /// "3 Verified" was printed for any three claims. Count the verdicts instead.
     nonisolated static func factCheckSummary(for claims: [StructuredAnswer.Claim]) -> String {
         let supported = claims.filter { $0.verificationVerdict == .supported }.count
@@ -152,16 +182,48 @@ extension GroundedAnswerView {
     }
 }
 
+/// What a Fact Check quote opens when it is tapped (5.7).
+private enum EvidenceDestination: Equatable {
+    /// The quote's page in its PDF, with the passage highlighted.
+    case page(Int)
+    /// Its document's details.
+    case details
+}
+
 private struct ClaimCard: View {
+    @Environment(\.showsTechnicalDetails) private var showsTechnicalDetails
     let claim: StructuredAnswer.Claim
     let evidence: [StructuredAnswer.Evidence]
+    /// What each quote opens, by evidence id; a quote with none opens nothing (5.7).
+    let evidenceDestinations: [String: EvidenceDestination]
+    let onOpenEvidence: (StructuredAnswer.Evidence) -> Void
     let isExpanded: Bool
     let onTap: () -> Void
+
+    /// " • 1 Source", " • 3 Sources", or nothing when no source backs the claim.
+    private var sourcesSuffix: String {
+        switch claim.evidenceIds.count {
+        case 0: return ""
+        case 1: return " • 1 Source"
+        default: return " • \(claim.evidenceIds.count) Sources"
+        }
+    }
     
+    /// What VoiceOver says a quote does when it is opened (5.7).
+    private static func hint(for destination: EvidenceDestination?) -> String {
+        switch destination {
+        case .page(let page): return "Shows page \(page) of the document, with the passage highlighted."
+        case .details: return "Shows the document's details."
+        case nil: return ""
+        }
+    }
+
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            // The claim is the card's button, and the card's padding is part of it, so a one-line claim is a target
+            // more than 44 points tall; the quotes under it are buttons of their own (5.7).
+            Button(action: onTap) {
+                HStack(alignment: .top, spacing: DSSpacing.sm) {
                     // Verdict Icon
                     ZStack {
                         Circle()
@@ -169,145 +231,170 @@ private struct ClaimCard: View {
                             .frame(width: 20, height: 20)
                         
                         Image(systemName: verdictIcon)
-                            .font(.system(size: 10, weight: .bold))
+                            .scaledFont(size: 10, weight: .bold)
                             .foregroundStyle(verdictColor)
                     }
                     
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                         Text(GroundedAnswerView.inlineMarkdown(claim.claim))
-                            .font(.system(size: 12, weight: .medium))
+                            .scaledFont(size: 12, weight: .medium)
                             .foregroundStyle(DSColors.primaryText)
-                            .lineLimit(isExpanded ? nil : 2)
+                            // The whole claim, open or closed: opening adds the evidence, and two lines cut a
+                            // claim off at the larger text sizes (5.7).
+                            .fixedSize(horizontal: false, vertical: true)
                             .multilineTextAlignment(.leading)
                         
                         if !isExpanded {
-                            HStack(spacing: 3) {
-                                Text(verdictTitle)
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(verdictColor)
-                                
-                                Text("•")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(.tertiary)
-                                
-                                Text("\(Int(claim.confidence * 100))% Conf.")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(.secondary)
-                                
-                                if claim.evidenceIds.count > 0 {
-                                    Text("•")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.tertiary)
-                                    
-                                    Text("\(claim.evidenceIds.count) Sources")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.secondary)
+                            // One text, so that at the largest sizes it wraps between words: as five texts side by
+                            // side it was squeezed until "SUPPORTED" broke into "SUPP / ORTE / D" (5.7). The word is
+                            // in the label color, the verdict's color in the icon: Apple's high-contrast green
+                            // measured 4.07 to 1 on the card's gray.
+                            Group {
+                                if showsTechnicalDetails {
+                                    Text(
+                                        "\(Text(verdictTitle).fontWeight(.bold).foregroundStyle(DSColors.primaryText)) • \(Int(claim.confidence * 100))% Conf.\(sourcesSuffix)"
+                                    )
+                                } else {
+                                    // The plain chat says where the claim was found, not a confidence (5.7).
+                                    Text("\(Text(plainVerdict).fontWeight(.bold).foregroundStyle(DSColors.primaryText))\(foundWhere)")
                                 }
                             }
+                            .scaledFont(size: 8)
+                            .monospacedDigit()
+                            .foregroundStyle(DSColors.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     
                     Spacer()
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.tertiary)
+                        .scaledFont(size: 9, weight: .bold)
+                        .foregroundStyle(DSColors.secondaryText)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
+                .padding([.horizontal, .top], DSSpacing.md)
+                .padding(.bottom, isExpanded ? 0 : DSSpacing.md)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
                 
-                if isExpanded {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if let details = claim.verificationDetails {
-                            Text(details)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 6)
-                                .background(verdictColor.opacity(0.05))
-                                .cornerRadius(6)
+            if isExpanded {
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                    if let details = claim.verificationDetails {
+                        Text(details)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(DSColors.secondaryText)
+                            .padding(.horizontal, DSSpacing.sm)
+                            .padding(.vertical, DSSpacing.xs)
+                            .background(verdictColor.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
+                            .padding(.leading, 28)
+                    }
+                    
+                    // Supporting Evidence Quotes
+                    let relevantEvidence = matchingEvidence
+                    if !relevantEvidence.isEmpty {
+                        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                            Text("SUPPORTING EVIDENCE")
+                                .scaledFont(size: 8, weight: .bold)
+                                .foregroundStyle(DSColors.secondaryText)
                                 .padding(.leading, 28)
-                        }
-                        
-                        // Supporting Evidence Quotes
-                        let relevantEvidence = matchingEvidence
-                        if !relevantEvidence.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("SUPPORTING EVIDENCE")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.leading, 28)
-                                
-                                ForEach(relevantEvidence, id: \.evidenceId) { ev in
-                                    VStack(alignment: .leading, spacing: 3) {
+                            
+                            ForEach(relevantEvidence, id: \.evidenceId) { ev in
+                                // Opens the page the quote is on, or its document (5.7).
+                                let destination = evidenceDestinations[ev.evidenceId]
+                                Button {
+                                    onOpenEvidence(ev)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                                         Text("\"\(ev.quote)\"")
-                                            .font(.system(size: 10, weight: .medium, design: .serif))
+                                            .scaledFont(size: 10, weight: .medium, design: .serif)
                                             .foregroundStyle(DSColors.primaryText.opacity(0.9))
                                             .italic()
-                                        
-                                        HStack(spacing: 3) {
+
+                                        HStack(spacing: DSSpacing.xxs) {
                                             Image(systemName: "doc.fill")
-                                                .font(.system(size: 7))
+                                                .scaledFont(size: 7)
                                             Text(ev.documentName ?? "Unknown")
                                             if let page = ev.page {
                                                 Text("• P.\(page)")
                                             }
+                                            if destination != nil {
+                                                Image(systemName: "chevron.right")
+                                                    .scaledFont(size: 7, weight: .bold)
+                                            }
                                         }
-                                        .font(.system(size: 8, weight: .bold))
-                                        .foregroundStyle(DSColors.accent)
+                                        .scaledFont(size: 8, weight: .bold)
+                                        // The accent on a quote that opens something, gray on one that does not.
+                                        .foregroundStyle(
+                                            destination == nil ? DSColors.secondaryText : DSColors.readable(DSColors.accent))
                                     }
-                                    .padding(8)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(DSSpacing.sm)
+                                    .frame(maxWidth: .infinity, minHeight: DSSpacing.tapTarget, alignment: .leading)
                                     .background(DSColors.background.opacity(0.5))
-                                    .cornerRadius(6)
-                                    .padding(.leading, 28)
+                                    .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                                .disabled(destination == nil)
+                                .accessibilityHint(Self.hint(for: destination))
+                                .padding(.leading, 28)
                             }
                         }
-                        
-                        HStack(spacing: 6) {
+                    }
+                    
+                    // The confidence goes with the technical view (5.7).
+                    if showsTechnicalDetails {
+                        HStack(spacing: DSSpacing.xs) {
                             Spacer().frame(width: 20)
-                            
+                        
                             Text("CONFIDENCE")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.tertiary)
-                            
+                                .scaledFont(size: 8, weight: .bold)
+                                .foregroundStyle(DSColors.secondaryText)
+                        
                             ProgressView(value: claim.confidence)
                                 .progressViewStyle(.linear)
                                 .tint(verdictColor)
                                 .frame(width: 50)
-                            
+                        
                             Text("\(Int(claim.confidence * 100))%")
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                .foregroundStyle(verdictColor)
+                                .scaledFont(size: 9, weight: .bold, design: .rounded)
+                                .monospacedDigit()
+                                .foregroundStyle(DSColors.primaryText)
                         }
                     }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+                .padding([.horizontal, .bottom], DSSpacing.md)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(DSColors.surface)
-                    .shadow(color: .black.opacity(isExpanded ? 0.08 : 0.02), radius: isExpanded ? 4 : 2, x: 0, y: 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(verdictColor.opacity(isExpanded ? 0.3 : 0.1), lineWidth: 1)
-            )
         }
-        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .fill(DSColors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .stroke(verdictColor.opacity(isExpanded ? 0.3 : 0.1), lineWidth: 1)
+        )
+        // A tap anywhere else on the card opens or closes the claim, as the whole card did through 5.6, instead of
+        // reaching the message under it, whose tap shows its actions (5.7).
+        .contentShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
+        .onTapGesture(perform: onTap)
     }
     
     private var matchingEvidence: [StructuredAnswer.Evidence] {
         evidence.filter { claim.evidenceIds.contains($0.evidenceId) }
     }
     
+    /// The readable variants (5.7), for the verdict's icon and tints. Its word ("SUPPORTED") is in the label color:
+    /// Apple's high-contrast green measured 4.07 to 1 on the card.
     private var verdictColor: Color {
         switch claim.verificationVerdict {
-        case .supported: return .green
-        case .partial: return .orange
-        case .unsupported: return .red
-        case nil: return .blue
+        case .supported: return DSColors.readable(.green)
+        case .partial: return DSColors.readable(.orange)
+        case .unsupported: return DSColors.readable(.red)
+        case nil: return DSColors.readable(.blue)
         }
     }
     
@@ -320,6 +407,26 @@ private struct ClaimCard: View {
         }
     }
     
+    /// The verdict in words for the plain chat (5.7).
+    private var plainVerdict: String {
+        switch claim.verificationVerdict {
+        case .supported: return "Found in your documents"
+        case .partial: return "Partly found in your documents"
+        case .unsupported: return "Not found in your documents"
+        case nil: return "Not checked"
+        }
+    }
+
+    /// Where the plain chat says a claim was found: " · page 23 of Handpiece IFU.pdf" from its first quote with a
+    /// page, else " · 1 source" (5.7).
+    private var foundWhere: String {
+        if let quote = matchingEvidence.first(where: { $0.page != nil }), let page = quote.page {
+            if let name = quote.documentName, !name.isEmpty { return " · page \(page) of \(name)" }
+            return " · page \(page)"
+        }
+        return claim.evidenceIds.isEmpty ? "" : (claim.evidenceIds.count == 1 ? " · 1 source" : " · \(claim.evidenceIds.count) sources")
+    }
+
     private var verdictTitle: String {
         switch claim.verificationVerdict {
         case .supported: return "SUPPORTED"

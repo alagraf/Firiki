@@ -328,23 +328,31 @@ final class SpotlightIndexService {
             // A document stored before libraries existed has no library id and lives in the first one.
             guard let libraryId = record.containerId ?? defaultLibrary else { continue }
             let document = OIDocumentEntityQuery.entity(for: record, libraryNames: libraryNames)
-            let attributes = CSSearchableItemAttributeSet(contentType: .plainText)
-            attributes.title = document.filename
-            // In an update a nil attribute is deleted (`isUpdate`), so one the record lacks is
-            // left unset rather than set to nil.
-            if let libraryName = document.libraryName { attributes.containerTitle = libraryName }
-            attributes.containerDisplayName = "OpenIntelligence"
-            if let pages = document.pageCount { attributes.pageCount = pages as NSNumber }
-            if let added = document.addedAt { attributes.addedDate = added }
-            attributes.kind = "Ingested Document"
-            let item = CSSearchableItem(
-                uniqueIdentifier: "document-\(document.id.uuidString)",
-                domainIdentifier: "\(domain).\(libraryId.uuidString)", attributeSet: attributes)
-            item.expirationDate = .distantFuture
-            item.associateAppEntity(document)
-            items.append((item, document))
+            items.append((documentItem(document, domain: "\(domain).\(libraryId.uuidString)"), document))
         }
         return items
+    }
+
+    /// A document's entry, carrying the document as its app item so Siri and Apple Intelligence can
+    /// use it. A tap on it in the Simulator ran an App Shortcut that takes a document (Ask About a
+    /// Document) instead of `OpenDocumentIntent` [measured 2026-10-20]; dropping the app item would
+    /// hand the tap to the app by identifier, but loses that link, so it is the owner's call.
+    nonisolated static func documentItem(_ document: OIDocumentEntity, domain: String) -> CSSearchableItem {
+        let attributes = CSSearchableItemAttributeSet(contentType: .plainText)
+        attributes.title = document.filename
+        // In an update a nil attribute is deleted (`isUpdate`), so one the record lacks is
+        // left unset rather than set to nil.
+        if let libraryName = document.libraryName { attributes.containerTitle = libraryName }
+        attributes.containerDisplayName = "OpenIntelligence"
+        if let pages = document.pageCount { attributes.pageCount = pages as NSNumber }
+        if let added = document.addedAt { attributes.addedDate = added }
+        attributes.kind = "Ingested Document"
+        let item = CSSearchableItem(
+            uniqueIdentifier: "document-\(document.id.uuidString)", domainIdentifier: domain,
+            attributeSet: attributes)
+        item.expirationDate = .distantFuture
+        item.associateAppEntity(document)
+        return item
     }
 
     // MARK: - Chunk Indexing
@@ -388,6 +396,14 @@ final class SpotlightIndexService {
         passageIndexing[documentId] = (containerId, token, task)
     }
 
+    /// A passage's title in Spotlight: its document, and its page where it has one (5.7). It read
+    /// "Juniper Flats Lease - Unit 4B.pdf — Page 3 [Chunk 13]", the passage's internal number in front of
+    /// people, and "Page 1" for a text file, which has no pages (iOS 27 Simulator, 2026-10-20).
+    nonisolated static func passageTitle(documentName: String, pageNumber: Int?) -> String {
+        guard let pageNumber, pageNumber > 0 else { return documentName }
+        return "\(documentName), page \(pageNumber)"
+    }
+
     /// A passage's entry is named `passage-<document>-<passage>`, so a tap opens its document
     /// (`AppLink.destination(forSpotlightIdentifier:)`); through 5.6 it was `chunk-<passage>`,
     /// which opened nothing. It lasts as long as its document: `deindexDocument` removes the
@@ -398,7 +414,7 @@ final class SpotlightIndexService {
     ) async -> sending [CSSearchableItem] {
         chunks.map { chunk -> CSSearchableItem in
             let attributeSet = CSSearchableItemAttributeSet(contentType: .text)
-            attributeSet.title = "\(documentName) — Page \(chunk.metadata.pageNumber ?? 1) [Chunk \(chunk.metadata.chunkIndex)]"
+            attributeSet.title = passageTitle(documentName: documentName, pageNumber: chunk.metadata.pageNumber)
             attributeSet.contentDescription = String(chunk.content.prefix(300))
             attributeSet.containerTitle = containerName
             attributeSet.containerDisplayName = "OpenIntelligence"

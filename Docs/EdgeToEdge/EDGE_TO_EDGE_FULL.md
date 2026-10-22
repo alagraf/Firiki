@@ -15,6 +15,14 @@
 > place. The same pass corrected modules 00, 02, 05, 06, 08, 10, 13, 15 and 16; each records what
 > changed, with its code lines, in a dated evidence tag.
 > `[evidence_level: code_verified, confidence: exact, evidence_source: RAGStructuredResponse.swift:28-29, 49-50; StructuredAnswer.swift:65-117, 436-440; CloudConsentPromptView.swift:162-184, 199-203; RAGService.swift:2065-2067, 3729-3733]`
+>
+> **Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress)**, where the
+> modules described the agentic loop, tools, routing, packing or checks differently from the code.
+> Sentences 9 and 11 below and the corrections table are corrected in place, and modules 00, 03, 06, 07,
+> 08, 09, 10, 11, 12, 15 and 16 carry a dated correction after their ladder or on the concept it
+> concerns. `Docs/CANONICAL_OPENINTELLIGENCE_SOURCE_OF_TRUTH.md`, section 19, has the loop with its file
+> and line citations. `[evidence_level: code_verified, confidence: high, evidence_source: the file:line
+> tags at each correction]`
 
 This is every one of the 612 concepts in the word bank, in pipeline order, explained at more than one level, with what was verified and what was corrected. It is the document you asked for so you never have to do this again. You will turn it into audio; it is written to be read aloud, so identifiers are kept to the expert rungs and every module opens with plain language.
 
@@ -46,32 +54,43 @@ The status labels are the word bank's audit vocabulary, not a runtime type: **Co
 6. A question is profiled and planned first: intent, complexity, mode, and whether it is agentic.
 7. Vector search and BM25 run in parallel and are fused with reciprocal rank fusion at k = 60.
 8. A cross-encoder reranks the shortlist; a similarity floor and maximal marginal relevance cut it; neighbours are added.
-9. Evidence is packed under the real token budget, strongest first and last.
+9. Evidence is packed under the token budget: a lookup gets its best passage first (from 5.7, whole up to three fifths of the budget), then the sentences that match the question, and any other question gets the strongest first and last.
 10. A post-retrieval plan chooses abstain, deterministic, on-device, or Private Cloud Compute, and only then asks for consent, unless Always Allow has already given it.
-11. The model streams a typed answer with citations; nine deterministic gates decide what survives.
+11. The model streams an answer with citations, as typed claims when the request fits 3,600 tokens, and nine deterministic gates then label it, abstaining only on a low score or with reliability mode off.
 12. What comes back is inspectable: claims, chunk-level citations with page and quote, the completed route, and a trace.
+
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** sentence 9 read "strongest first and last", which is the order for every question except a lookup, and sentence 11 read "nine deterministic gates decide what survives". The gates run once, after the answer is written, and label it. Standard abstains only when reliability mode is off (on by default) or their overall score is under the bar, 0.50 or 0.25 for a lookup, and otherwise shows the answer marked Unverified. These sentences are the Standard path. Deep Think and Maximum leave it after sentence 6 for their own front half and loop (module 11), and in the shipped 5.6 their answers get no gates. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:14935-14975, :3756-3813 (the lead passage, 5.7), :18766, :16652-16709, :11668, :11578-11594, OpenIntelligence/Services/RAG/Orchestration/RAGEngine.swift:495-504, OpenIntelligence/Services/RAG/Tuning/ConfidencePolicyService.swift:48-54]`
 
 ## The thread through all of it
 
-Every mechanism in this app is one of two things. It keeps the promise, that your documents stay yours: container isolation, local-first, on-device everything, memory-mapped vectors so a phone can hold a library, one outside room used only after retrieval and only with your consent, given on a sheet that shows how much would be sent and why. Or it defends against the danger, that a language model invents: two indexes, a cross-encoder second opinion, a similarity floor, diversity, a recorded budget, exactly two generative stages with nine deterministic gates aimed at them, citations to a chunk, its page and a quote, and a badge that reports what completed rather than what was requested. If you cannot say which of the two a piece serves, you do not understand that piece yet.
+Every mechanism in this app is one of two things. It keeps the promise, that your documents stay yours: container isolation, local-first, on-device everything, memory-mapped vectors so a phone can hold a library, one outside room used only after retrieval and only with your consent, given on a sheet that shows how much would be sent and why. Or it defends against the danger, that a language model invents: two indexes, a cross-encoder second opinion, a similarity floor, diversity, a recorded budget, exactly two generative stages with nine deterministic gates aimed at them, citations to a chunk, its page and a quote, and a badge that reports what completed rather than what was requested. If you cannot say which of the two a piece serves, you do not understand that piece yet. (Corrected 2026-10-20 against the working tree, `b868fc0` plus the 5.7 work in progress: "exactly two generative stages" is Standard's list, the rewrite of an unclear question and the answer. Every question also gets an on-device planning call, a guided generation that proposes search phrasings and sub-questions and says whether documents are needed, and Deep Think and Maximum make many more model calls. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/RAG/Orchestration/QueryRuntimeCoordinator.swift:202-207, OpenIntelligence/Services/Query/Analysis/QueryExecutionPlannerService.swift:67-99 and :330-418, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:11982-11983]`)
 
 ## Corrections to the earlier documents, in one place
 
 | Claim as taught | What the source says | Module |
 |---|---|---|
-| Audio goes through `SpeechAnalyzer` | The branch never compiles. `SFSpeechRecognizer`, on device, 600-second segments. | 02, 16 |
+| Audio goes through `SpeechAnalyzer` | The branch never compiles. `SFSpeechRecognizer`, on device, 600-second segments. (Corrected 2026-10-20: true through 5.6. From 5.7 `SpeechAnalyzer` with `SpeechTranscriber` runs first and `SFSpeechRecognizer` is the fallback.) | 02, 16 |
 | Embeddings run on the Neural Engine | Requested, not placed. Efficiency and Balanced request CPU + Neural Engine; Performance and Maximum request all units; Core ML decides; Core AI exposes nothing. | 05, 15 |
 | The GPU profile decides whether vector search uses Metal | It does, with two other conditions: 1,000 vectors and a Metal device. Efficiency and Balanced, the default, keep vector search on the CPU. The profile also gates Core ML units and the MMR matrix. Until 2026-09-29 this row said it does not. | 06, 15 |
 | `RecognizeDocumentsRequest` does OCR | It parses structure and tables. `VNRecognizeTextRequest` does OCR. | 02 |
 | Page rendering is zero-copy | The PNG round trip is skipped; a full-page bitmap is still allocated. | 02 |
-| Maximum's verification bar is 0.98 | 0.80. The 0.98 is the agentic loop's stopping target. | 00, 11, 12 |
-| The advanced on-device model | Executes the default model. No advanced model exists in the SDK. | 10 |
-| Core AI is a fallback | On iOS 27 and macOS 27 it is the default and saved Core ML defaults are migrated. | 05 |
-| About six registered tools | Six registered, of twelve defined. This row said ten until 2026-09-29. | 10 |
+| Maximum's verification bar is 0.98 | 0.80. The 0.98 is the agentic loop's stopping target. (Corrected 2026-10-20: the 0.80 is read only on Standard's abstain path, so no Maximum answer meets it. From 5.7 a Maximum answer is labelled Verified only when all nine gates pass, with Gate A's floor raised to 0.50.) | 00, 11, 12 |
+| The advanced on-device model | Executes the default model. No advanced model exists in the SDK. (Corrected 2026-10-20, as `Docs/LIMITATIONS.md` was on 2026-10-05: the app cannot select a model, but the release SDK names the one `default` runs through `SystemLanguageModel.variant`, `.core3` or `.coreAdvanced3`, and the app does not read it.) | 10 |
+| Core AI is a fallback | On iOS 27 and macOS 27 it is the default and saved Core ML defaults are migrated. (Corrected 2026-10-20: through 5.6. From 5.7 a new library on iPhone and iPad uses Core ML and only macOS 27 defaults to Core AI, and a saved default naming the other copy is moved to this platform's.) | 05 |
+| About six registered tools | Six registered, of twelve defined. This row said ten until 2026-09-29. (Corrected 2026-10-20: and none reaches the model in Deep Think or Maximum, whose every session and synthesis passes `disableTools: true`.) | 10 |
 | `NO_RELEVANT_CONTENT` triggers rescue or passthrough | Inside the compressor, yes; the caller in `RAGService` removes the chunk entirely. | 09 |
 | Weighted progress has no named constant | It does: `pipelineStageWeights`, extraction 0.52. | 01 |
 | TinyBERT reranker name is unverified | It is documented provenance: `cross-encoder/ms-marco-TinyBERT-L2-v2` in the notices file. | 08 |
 | Fourteen ingestion stages | Fifteen; the enum also has `paused`. | 01 |
+| (Added 2026-10-20) Deep Think searches again every round | Its chain reads windows cut from one retrieval, at most 8 sessions on every device and fewer when the windows run out. Only research rounds after the chain search again, and Maximum's own loop never does. | 11 |
+| (Added 2026-10-20) Three ways into the loop | Planner escalation is off while Apple's model writes the answers, so only the mode and Go Deeper start it. | 07, 11 |
+| (Added 2026-10-20) HyDE and contextual compression run in Deep Think | Neither runs in any user-selectable mode. | 07, 09 |
+| (Added 2026-10-20) MMR λ 0.60, 0.55, 0.50 by mode | Every mode uses the library's λ, 0.6 by default, at least 0.85 for a procedure. In 5.6 MMR got no vectors and removed nothing. | 08 |
+| (Added 2026-10-20) Only the final write-up can leave the device | Under the default Hybrid route, the syntheses. With Private Cloud Compute picked in the model picker, the sessions too. | 10, 11 |
+| (Added 2026-10-20) The deterministic target skips the model | No plan reaches it today, because no code asks for exact extraction, and one would run on the on-device branch. The answers with no model call come from Deep Think and Maximum's precision shortcut and from Standard's reliability fallback, an extracted value or excerpts alone. | 10 |
+| (Added 2026-10-20) The gates decide what survives | They label. Standard abstains only with reliability mode off or a low score. In 5.6 Deep Think and Maximum answers get none. | 12 |
+| (Added 2026-10-20) Minimal mode stops the loop, and a step cooldown paces it | Nothing reads the zero agentic steps, `agenticStepCooldownMs` has no caller, and the optimizer's step cooldown delays only Standard's generation. | 15 |
+| (Added 2026-10-20) The entity index powers GraphRAG-lite | Nothing fills it. | 03 |
 
 ## The modules
 
@@ -123,6 +142,8 @@ Fourteen concepts. This module is the walls, the rooms, and the house rules. Not
 
 **Expert's expert.** Three things people get wrong at this layer. First, "local-first" is a constraint applied before every pipeline choice, not a stage; it is why exact vector scan over an mmap replaced any hosted vector database and why the context budget is a hard number instead of a hope. Second, the mode confidence bar for Maximum was 0.98 until it turned out to be unreachable and every Maximum answer failed verification; it is 0.80 now, and the 0.98 you will see elsewhere is the agentic loop's stopping target, a different number for a different job. Third, the status vocabulary the word bank uses (Core, Conditional, Support, Dormant, Future, Historical) is an audit layer, not a runtime type; there is no enum in the app that says "Dormant". Treat it as a reading aid that was checked against source on 2026-09-01, with the corrections listed per module in this document.
 
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** four statements in the ladder above need limits. The "bouncer" does not check every sentence before you see it: nine deterministic gates run once, after the answer is written, and label it. Standard holds an answer back only when reliability mode is off or the gates' overall confidence is under the bar, and otherwise shows it marked Unverified. In the shipped 5.6 Deep Think and Maximum answers get no gates, and from 5.7 the gates only label them. "Exactly two places" is Standard's count, and even there the question is rewritten only when the ambiguity check flags it, never for a lookup. Deep Think and Maximum also call the model for search phrasings, a reading order, every session, research decisions and the synthesis. MMR's λ is the library's (0.6 by default, at least 0.85 for a procedure) in every mode, and the per-mode 0.60, 0.55 and 0.50 are read by nothing. The temperatures 0.4, 0.4 and 0.3 are read only on Standard's path, and Deep Think and Maximum's calls use the step's own value, the adaptive profile's or 0.5. "Only the final synthesis can leave the device" holds under the default Hybrid route, which a new install starts on with permission "Ask when needed". With Private Cloud Compute picked in the model picker, Deep Think and Maximum's sessions can leave too, each after consent. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:16652-16709, :11238-11262, :11982-11983, :13692-13708, :21990, :11639, OpenIntelligence/Core/Models/RAGQualityMode.swift:210-217, OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:9179, :9234-9240, OpenIntelligence/Services/Infrastructure/Configuration/SettingsStore.swift:50 and :454-461]`
+
 ## Every concept
 
 ### Container isolation (Core, verified)
@@ -132,7 +153,7 @@ Fourteen concepts. This module is the walls, the rooms, and the house rules. Not
 
 ### Deep Think mode (Conditional, verified)
 - **Idiot:** the "try harder" setting. It searches more than once and thinks in between.
-- **Dot-connector:** it flips on query rewriting, expansion, HyDE, iterative retrieval and the agentic orchestrator, and it raises the verification bar. You pay in time and heat for a better shot at multi-part questions.
+- **Dot-connector:** it flips on query rewriting, expansion, HyDE, iterative retrieval and the agentic orchestrator, and it raises the verification bar. You pay in time and heat for a better shot at multi-part questions. **Corrected 2026-10-20:** the flags are on, but Deep Think's path never reaches HyDE, the iterative-retrieval step or compression, which sit in Standard's pipeline. It writes up to 5 search phrasings instead. From 5.7 the nine gates label its answers, Verified when all nine pass with Gate A's floor raised to 0.45, and its 0.60 bar, read only on Standard's abstain path, decides nothing for them. In 5.6 no gates ran on it (`RAGService.swift:11578-11594`, `:21863-21866`, `:11238-11262`, `:16670`, `ConfidencePolicyService.swift:26-46`).
 - **Expert:** resolved by `QueryRuntimeCoordinator` into an agentic decision of `.agentic`; the orchestrator's profile comes from the device tier, not the mode: 5 steps, 0.85 confidence target, escalation below 0.35 on baseline (A17 Pro); 8, 0.90, 0.40 on enhanced; 10, 0.92, 0.45 on advanced; 12 to 32 steps by memory, 0.95, 0.50 on ultra-advanced. Retrieval floor 0.25, MMR λ 0.55, mode confidence 0.60, reasoning chain 4 sessions on baseline and 5 above it (the policy allows up to 8), PCC reasoning level moderate if the cloud is chosen. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGService.swift:8874-8880, DeviceCapabilityService.swift:985-1032, AgenticOrchestrator.swift:203-217, 4442-4452, AgenticPolicyService.swift:300-304; corrected 2026-09-29 from the orchestrator's default profile, which Deep Think does not use]`
 
 ### Deterministic stage (Core, verified)
@@ -167,8 +188,8 @@ Fourteen concepts. This module is the walls, the rooms, and the house rules. Not
 
 ### Maximum mode (Conditional, verified)
 - **Idiot:** the "spend everything" setting. Widest search, most thinking, strictest checking.
-- **Dot-connector:** it enters the agentic loop immediately and keeps going until it is confident, stalls, times out or hits the cap. Missing evidence costs more than waiting, so it prefers gathering.
-- **Expert:** initial top-K 50, floor 0.20, MMR λ 0.50, mode confidence 0.80. The unlimited reasoning path targets 0.98, caps at 50 sessions scaled to three chunks per session, disables tools inside sessions to stop overflow, and stops on target, saturation, cancellation or cap. Correction to the bank: the "highest verification threshold" is 0.80, not 0.98; 0.98 is the loop target.
+- **Dot-connector:** it enters the agentic loop immediately and keeps going until it is confident, stalls, times out or hits the cap. Missing evidence costs more than waiting, so it prefers gathering. **Corrected 2026-10-20:** a lookup can be answered by the extractor first, with no loop. Maximum's own loop runs only when retrieval grades excellent: a good grade runs Deep Think's chain, moderate and low one synthesis. Its loop has no clock: the 180 seconds bound only Deep Think's research rounds (`RAGService.swift:10898-10912`, `AgenticOrchestrator.swift:544-631`).
+- **Expert:** initial top-K 50, floor 0.20, MMR λ 0.50, mode confidence 0.80. The unlimited reasoning path targets 0.98, caps at 50 sessions scaled to three chunks per session, disables tools inside sessions to stop overflow, and stops on target, saturation, cancellation or cap. Correction to the bank: the "highest verification threshold" is 0.80, not 0.98; 0.98 is the loop target. **Corrected 2026-10-20:** its loop stops when completed (0.98 and sub-question coverage on target together), when converged (checked from the start of session 6), at the ceiling, or after 3 failed sessions. It never searches again: the re-retrieval branch cannot be reached. MMR uses the library's λ, not 0.50. And the 0.80 is read only on Standard's abstain path, so from 5.7 a Maximum answer is labelled by the nine gates, Verified when all pass with Gate A's floor at 0.50 (`AgenticOrchestrator.swift:6572-6807`, `RAGService.swift:21990`, `:16670`, `ConfidencePolicyService.swift:26-46`).
 
 ### OpenIntelligence engine (Core, verified)
 - **Idiot:** the machine. Files in, cited answers out.
@@ -193,7 +214,7 @@ Fourteen concepts. This module is the walls, the rooms, and the house rules. Not
 ### Standard mode (Core, verified)
 - **Idiot:** the normal setting. One pass, fast.
 - **Dot-connector:** it still does the non-negotiables: hybrid retrieval, rerank, MMR, citations, generation, gates. What it skips is the loop.
-- **Expert:** top-K 30, floor 0.28, λ 0.60, confidence 0.50, temperature 0.4, single `LanguageModelSession`. A Standard query can still become agentic through planner escalation, which is the third of the three agentic paths.
+- **Expert:** top-K 30, floor 0.28, λ 0.60, confidence 0.50, temperature 0.4, single `LanguageModelSession`. A Standard query can still become agentic through planner escalation, which is the third of the three agentic paths. **Corrected 2026-10-20:** planner escalation is switched off whenever Apple's model writes the answers, which it always does in this build, so a Standard question becomes agentic only through Go Deeper. The λ is the library's, 0.6 by default (`QueryRuntimeCoordinator.swift:203-205`, `RAGService.swift:13692-13708`).
 # Module 01. Ingestion control, identity, and lifecycle
 
 Nineteen concepts. This is the loading dock: how a file becomes a job that survives your phone killing the app, and how the app knows which job is which.
@@ -522,7 +543,7 @@ Fifty-two concepts. This is the reading room: getting the words, tables and pict
 - **Dot-connector:** Vision and Metal race, exhaust command buffers and destabilise memory when launched without bounds.
 - **Expert:** an actor-based semaphore sized once, at first use, by `DeviceCapabilityService.visionOperationConcurrency` (2 to 8 by chip, or 1 if first used during CPU-only background ingestion), with a 1 to 6 ms cooldown between operations. `[evidence_level: code_verified, confidence: exact, evidence_source: VisionOCRThrottle.swift:100-109, 159, 169; DeviceCapabilityService.swift:412-466; corrected 2026-09-29 from "2 to 64 by tier", the range of visionParsingConcurrency, the page pipeline ahead of the throttle]`
 
-### Visual evidence source (Conditional, verified) and VisualCaptioningService (Conditional, verified)
+### Visual evidence source (Conditional, verified) and VisualCaptioningService (Conditional, verified; removed in 5.7 on 2026-10-20: nothing referenced it)
 - **Idiot:** a picture can be evidence too, and the app says which picture.
 - **Dot-connector:** captions bridge images into text retrieval; the provenance object keeps the caption tied to the real region so it can't pass as prose.
 - **Expert:** `VisualEvidenceSource` in the response model and `VisualEvidenceCard` in the UI; captioning after image understanding, before embedding.
@@ -596,7 +617,7 @@ Fifteen concepts. Reading between the lines: the extras the app derives from a d
 ### Entity index (Conditional, verified)
 - **Idiot:** a phone book from names to chunks.
 - **Dot-connector:** O(1)-style lookup from an entity to every chunk that mentions it; the basis of GraphRAG-lite expansion.
-- **Expert:** forward and reverse maps, document- and container-scoped, populated after chunks receive entities, queried during agentic or graph expansion.
+- **Expert:** forward and reverse maps, document- and container-scoped, populated after chunks receive entities, queried during agentic or graph expansion. **Corrected 2026-10-20:** nothing populates it: `EntityIndexService.indexChunk` and `indexChunks` have no caller outside the service, so the index is empty in every library and no expansion reads it (`EntityIndexService.swift:31`, `:137`). Read it as Dormant.
 
 ### Entity normalization (Conditional, verified)
 - **Idiot:** "U.S.A." and "USA" count as the same name.
@@ -606,7 +627,7 @@ Fifteen concepts. Reading between the lines: the extras the app derives from a d
 ### GraphRAG-lite (Conditional, verified)
 - **Idiot:** hop from a good chunk to its relatives.
 - **Dot-connector:** vector similarity misses a relevant passage that uses different words but shares a key name or a "see page 12." The graph catches those.
-- **Expert:** `EntityIndexService` plus `GraphIndexService` edges (next, previous, sibling, reference, same section, shared entity), traversed after initial retrieval in deeper paths.
+- **Expert:** `EntityIndexService` plus `GraphIndexService` edges (next, previous, sibling, reference, same section, shared entity), traversed after initial retrieval in deeper paths. **Corrected 2026-10-20:** the `EntityIndexService` half is empty, as above. What runs is Standard's graph packing through `GraphIndexService` (parents, neighbours, references) for investigate, compare and findings questions, and in Deep Think and Maximum a "graph expansion" for a moderate or low pool that asks the model to name up to 3 entities and searches each one (`ContextPackingService.swift:55-85`, `RAGService.swift:14558-14590`, `AgenticOrchestrator.swift:487-502`, `:2524-2595`).
 
 ### Predictive pre-scan (Core, described in docs, behaviour in `DocumentProcessor`)
 - **Idiot:** look at the first few pages to decide how to handle the rest.
@@ -1186,7 +1207,7 @@ Forty-nine concepts. Two filing systems for the same cards, plus the machinery t
 ### VecturaVectorDatabase (Conditional, verified)
 - **Idiot:** the alternative pin store some old libraries use.
 - **Dot-connector:** kept for compatibility, not the architecture.
-- **Expert:** selected only when the library's vector kind requests it.
+- **Expert:** selected only when the library's vector kind requests it. **Corrected 2026-10-20:** it never compiles: it sits behind `#if canImport(VecturaKit)`, VecturaKit is not a dependency of the app, and a library whose kind requests it falls back to the BNNS store. Read it as Dormant (`VectorStoreRouter.swift:167-172`).
 
 ### Virtual table (Core, verified)
 - **Idiot:** a table whose insides are run by a plugin.
@@ -1207,15 +1228,17 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 
 **Like an idiot.** The app profiles your question before it searches. Lookup, table lookup, procedure, comparison, summary, investigation, computation, findings: each wants different evidence and a different-shaped answer. It rates complexity, decides whether this is a one-pass job or a loop, may clean up your question, may expand it with the library's own vocabulary, and may write an imaginary answer just to search with. All of that gets resolved once, up front, into a plan.
 
-**Like less of an idiot.** Two objects matter. `QueryProfile` describes the question: word count, entities, answer intent, search intent, routing class, complexity. `QueryExecutionPlan` says what the engine will do about it: direct or decomposed, tools or not, escalate to agentic or not, which response strategy. The runtime coordinator resolves both plus quality mode, PCC eligibility and adaptive configuration before any search runs. There are exactly three ways a run becomes agentic: the mode is Deep Think or Maximum, the user pressed Go Deeper, or the planner escalated a Standard query. A `GroundedAnswerPolicy` then decides whether the answer should be extracted by rules, extracted by a tightly constrained prompt, or synthesised with citations.
+**Like less of an idiot.** Two objects matter. `QueryProfile` describes the question: word count, entities, answer intent, search intent, routing class, complexity. `QueryExecutionPlan` says what the engine will do about it: direct or decomposed, tools or not, escalate to agentic or not, which response strategy. The runtime coordinator resolves both plus quality mode, PCC eligibility and adaptive configuration before any search runs. There are exactly three ways a run becomes agentic: the mode is Deep Think or Maximum, the user pressed Go Deeper, or the planner escalated a Standard query. A `GroundedAnswerPolicy` then decides whether the answer should be extracted by rules, extracted by a tightly constrained prompt, or synthesised with citations. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 **Average Joe.** Why rewrite the question? Users type short, vague, conversational questions ("what about the other one?") and the index was built from long, specific text. A standalone rewrite resolves the pronouns from conversation memory. HyDE has the model write a plausible answer passage and searches with that, because passages land near passages on the map and questions don't; it's off in Standard on purpose, because a hypothetical can poison exact lookups. Corpus vocabulary expansion uses words that actually exist in your library instead of a generic thesaurus that would drag in unrelated meanings.
 
 **Dot-connector.** Two things people conflate. Query complexity (trivial, standard, complex, agentic) is about how much work is justified; answer intent is about the shape of the result. A trivial lookup and a trivial summary get different packing. Also: "touchy" is decided here in policy terms but consumed in module 12, where it raises the retrieval-confidence bar from 0.40 to 0.55. And the semantic query cache lives in module 05's territory but is checked here, before embedding, keyed on the normalised question.
 
-**Expert.** `QueryRuntimeCoordinator.resolveContext` is the first call in `queryInternal`: reads `SettingsStore` (summaries, HyDE, rewriting, compression flags), resolves `RAGQualityMode`, computes `QueryExecutionPath` (`.agentic`, `.forcedAgentic`, `.plannerEscalated`, `.standard`), checks the PCC suppression cooldown, builds `AdaptivePipelineConfig`. `QueryProfileService` builds the profile; `QueryComplexityAnalyzer` scores length, conjunctions, comparisons, reasoning markers, entities and intent; `QueryEnhancementService` classifies intent and expands; `QueryRewriterService` rewrites standalone; `HyDEService` generates the hypothetical only when `usesHyDE` is true (false in Standard); `ContainerVocabularyService` reads `documents_vocab`; `QueryRouterService` decides overview versus detail and hands overview to `RAPTORSummaryRouter`; `SpecificationExtractor` pulls the primary entity and descriptive keywords for spec-heavy questions; `GroundedAnswerPolicy` picks deterministic extraction, direct-extraction prompting, constrained synthesis or source-only verification. `[evidence_level: code_verified, confidence: exact, evidence_source: QueryRuntimeCoordinator.swift:25-34, 212-228; corrected 2026-09-29 from AgenticDecision, a name no commit on main declares]`
+**Expert.** `QueryRuntimeCoordinator.resolveContext` is the first call in `queryInternal`: reads `SettingsStore` (summaries, HyDE, rewriting, compression flags), resolves `RAGQualityMode`, computes `QueryExecutionPath` (`.agentic`, `.forcedAgentic`, `.plannerEscalated`, `.standard`), checks the PCC suppression cooldown, builds `AdaptivePipelineConfig`. `QueryProfileService` builds the profile; `QueryComplexityAnalyzer` scores length, conjunctions, comparisons, reasoning markers, entities and intent; `QueryEnhancementService` classifies intent and expands; `QueryRewriterService` rewrites standalone; `HyDEService` generates the hypothetical only when `usesHyDE` is true (false in Standard); `ContainerVocabularyService` reads `documents_vocab`; `QueryRouterService` decides overview versus detail and hands overview to `RAPTORSummaryRouter`; `SpecificationExtractor` pulls the primary entity and descriptive keywords for spec-heavy questions; `GroundedAnswerPolicy` picks deterministic extraction, direct-extraction prompting, constrained synthesis or source-only verification (removed in 5.7 on 2026-10-20: nothing referenced it). `[evidence_level: code_verified, confidence: exact, evidence_source: QueryRuntimeCoordinator.swift:25-34, 212-228; corrected 2026-09-29 from AgenticDecision, a name no commit on main declares]`
 
 **Expert's expert.** The rewrite and HyDE are the two generative steps before retrieval, and they can both mislead: a rewrite that drops a qualifier retrieves the wrong thing confidently. That is why the original user message is never replaced in the conversation, only the effective search string. The planner-escalation path is also the one most likely to surprise a user who chose Standard, because it changes the run from one pass to a loop without a mode change on screen; the diagnostics record it as `plannerEscalated`. And "Subquestion" is the one concept in the whole bank whose name does not appear as an identifier in code; the behaviour exists inside the orchestrator's decomposition under other names.
+
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** three statements in the ladder above do not hold for the current code. Planner escalation needs the answer writer not to be Apple's model, and no other model writes answers in this build (without Apple Intelligence a stand-in that only throws takes its place), so in practice a run becomes agentic only by the mode or by Go Deeper, and the escalation that would "surprise a user who chose Standard" does not happen. Go Deeper keeps the chat's mode, so from Standard it runs the orchestrator with mode Standard. HyDE runs in no user-selectable mode: its only construction is in Standard's pipeline behind `usesHyDE`, which is false for Standard, and Deep Think and Maximum leave for the agentic path before that step and embed without it. So, besides the on-device planning call every question gets (a guided generation that proposes search phrasings and sub-questions and says whether documents are needed, with a heuristic plan as its fallback), the rewrite is the only generative step before retrieval in Standard, and Deep Think and Maximum's are more planning calls and the search phrasings. The rewrite itself is on by default but keeps a lookup literal, and it calls the model only for a question the ambiguity check flags, a follow-up with conversation behind it or a pronoun. And an exact cache hit reuses the cached passages as well as the vector, so it skips rewriting, expansion, embedding and the hybrid search, not only the embedding. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/RAG/Orchestration/QueryRuntimeCoordinator.swift:202-229, OpenIntelligence/Services/Query/Analysis/QueryExecutionPlannerService.swift:67-99 and :330-418, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:11501, :2322-2346, :11374, :12278-12325, :21863-21866, :11982-11983, :11896-11910, :11994, :12117, :12356, :12496-12701, OpenIntelligence/Core/Models/RAGQualityMode.swift:189-195, OpenIntelligence/Services/Query/Rewriting/QueryRewriterService.swift:83-100, OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:1916-2060]`
 
 ## Every concept
 
@@ -1247,7 +1270,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Constrained-synthesis prompt mode (Core, verified)
 - **Idiot:** write it in your own words, but every sentence must point at a source.
 - **Dot-connector:** procedures, comparisons and explanations need composition, still bounded by retrieved context.
-- **Expert:** `GroundedAnswerPolicy` after packing, before structured generation.
+- **Expert:** `GroundedAnswerPolicy` after packing, before structured generation. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Container vocabulary expansion (Conditional, verified)
 - **Idiot:** use the library's own words to widen the search.
@@ -1277,7 +1300,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Direct-extraction prompt mode (Conditional, verified)
 - **Idiot:** copy the answer out, don't rephrase it.
 - **Dot-connector:** for lookup-style questions where rules couldn't decide, minimise paraphrase.
-- **Expert:** `GroundedAnswerPolicy` and the prompt compiler for extractive-first intents.
+- **Expert:** `GroundedAnswerPolicy` and the prompt compiler for extractive-first intents. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Entity extraction from query (Core, verified)
 - **Idiot:** notice the names and numbers in your question.
@@ -1292,9 +1315,9 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Forced agentic execution (Conditional, verified as `.forcedAgentic`)
 - **Idiot:** you pressed Go Deeper.
 - **Dot-connector:** user-requested extra search and reasoning even after the planner chose Standard.
-- **Expert:** overrides at `QueryRuntimeCoordinator` resolution.
+- **Expert:** overrides at `QueryRuntimeCoordinator` resolution. **Corrected 2026-10-20:** it keeps the chat's mode, so from Standard the orchestrator runs with mode Standard, the device's configuration and no Deep Think Self-RAG check (`RAGService.swift:11374`, `AgenticOrchestrator.swift:200-208`).
 
-### GroundedAnswerPolicy (Core, verified)
+### GroundedAnswerPolicy (Core, verified; removed in 5.7 on 2026-10-20: nothing referenced it)
 - **Idiot:** the rule for how careful the answer has to be.
 - **Dot-connector:** deterministic extraction, direct-extraction prompt, constrained synthesis, source-only verification; exact lookups don't get needlessly generated.
 - **Expert:** resolved after intent classification, before extraction or generation.
@@ -1302,7 +1325,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### HyDE (Conditional, verified) and Hypothetical document (Conditional, verified)
 - **Idiot:** write a fake answer, search with it, throw it away.
 - **Dot-connector:** a passage lands near passages; a short question doesn't. The hypothetical is a probe, never evidence.
-- **Expert:** `HyDEService`; `usesHyDE` is false in Standard "to prevent hypothetical hallucinations from poisoning exact lookups."
+- **Expert:** `HyDEService`; `usesHyDE` is false in Standard "to prevent hypothetical hallucinations from poisoning exact lookups." **Corrected 2026-10-20:** and Deep Think and Maximum embed without it, so no user-selectable mode runs HyDE. Read it as Dormant (`RAGService.swift:12278-12325`, `:21863-21866`).
 
 ### Investigate intent (Conditional, verified)
 - **Idiot:** "dig into this."
@@ -1327,7 +1350,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Planner escalation (Conditional, verified as `.plannerEscalated`)
 - **Idiot:** the app decided your easy setting wasn't enough.
 - **Dot-connector:** complexity, not the mode label, controls the work; the third agentic path.
-- **Expert:** resolved by the coordinator before retrieval; recorded in diagnostics.
+- **Expert:** resolved by the coordinator before retrieval; recorded in diagnostics. **Corrected 2026-10-20:** it requires `!isAppleFMService`, and no other model writes answers (without Apple Intelligence a stand-in that only throws takes its place), so read it as Dormant (`QueryRuntimeCoordinator.swift:211`, `RAGService.swift:11501`, `:2322-2346`).
 
 ### Primary entity (Core, verified)
 - **Idiot:** the main thing your question is about.
@@ -1362,7 +1385,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Query rewriting (Conditional, verified)
 - **Idiot:** rephrase the question so a search engine likes it.
 - **Dot-connector:** conversational phrasing lowers both lexical and dense quality; the rewrite is a generative step and can drop a qualifier.
-- **Expert:** `QueryRewriterService` after profiling and conversation context, before embedding.
+- **Expert:** `QueryRewriterService` after profiling and conversation context, before embedding. **Corrected 2026-10-20:** a lookup is kept literal, and the model is called only when `detectAmbiguity` flags the question (`RAGService.swift:11982-11983`, `QueryRewriterService.swift:83-100`).
 
 ### Query variation (Conditional, verified)
 - **Idiot:** try asking it a different way.
@@ -1382,7 +1405,7 @@ Forty-five concepts. Understanding the question before searching: what kind of a
 ### Response strategy (Core, verified)
 - **Idiot:** how the answer will be produced.
 - **Dot-connector:** deterministic extraction, constrained synthesis, extractive summarisation, agentic synthesis; falls back when a path lacks confidence.
-- **Expert:** `GroundedAnswerPolicy` and the planner.
+- **Expert:** `GroundedAnswerPolicy` and the planner. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Routing classification (Core, verified)
 - **Idiot:** direct, cross-topic, overview.
@@ -1445,7 +1468,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 
 **Like less of an idiot.** Reciprocal rank fusion gives each chunk points for its rank in each list (1 over k plus rank, k = 60), weighted 0.50 for the vector list and 0.50 for keywords in a default library (the question's intent moves each weight, within 0.35 to 0.65), and needs no score calibration because the two arms produce scores on different scales. Keyword-only hits that fell below the cut are re-attached, so an exact part number is never buried by paraphrase. The cross-encoder is a small Core ML model reading 512-token query-passage pairs. Maximal marginal relevance trades a little relevance for coverage. Parent-document retrieval restores the paragraph around a precise hit and deduplicates by token overlap. For spec questions, a "sniper" path scores chunks that jointly match several concepts and contain numeric or key-value signals, then a deterministic extractor tries structured rows, then patterns, before any model is asked.
 
-**Average Joe.** The numbers for a Standard query: 30 is the target; the vector side gathers 90 and the keyword side up to 60; fusion merges; up to 90 are reranked; the floor at 0.28 and diversity at λ 0.60 cut from there. Deep Think starts at 35 with a 0.25 floor and λ 0.55; Maximum at 50, 0.20, 0.50. Lower floor and lower lambda mean "gather more, spread wider, let later stages sort it out." Why does the cross-encoder only see the shortlist? Because it can't precompute anything; every pair is a fresh inference.
+**Average Joe.** The numbers for a Standard query: 30 is the target; the vector side gathers 90 and the keyword side up to 60; fusion merges; up to 90 are reranked; the floor at 0.28 and diversity at λ 0.60 cut from there. Deep Think starts at 35 with a 0.25 floor and λ 0.55; Maximum at 50, 0.20, 0.50. Lower floor and lower lambda mean "gather more, spread wider, let later stages sort it out." Why does the cross-encoder only see the shortlist? Because it can't precompute anything; every pair is a fresh inference. **Corrected 2026-10-20:** the per-mode λ 0.60, 0.55 and 0.50 are in `RAGQualityMode.mmrLambda`, which nothing reads. Both Standard and the agentic pipeline use the library's λ, 0.6 in a default library, raised to at least 0.85 for a procedure. The floors and the starting counts are the modes' own (`RAGService.swift:13692-13708`, `:21990`, `KnowledgeContainer.swift:266-273`).
 
 **Dot-connector.** Recall first, precision second, and never the other way around: a reranker can only reorder what it received, so the first stage must be broad enough to contain the answer. That single sentence explains why top-K is multiplied by three before rerank, why the floor is dynamic rather than fixed, why there's an acceptance override, why lexical survivors exist, and why a retrieval cascade re-runs wider with more lexical weight when the first pass is weak. Also note the hardware: the vector arm is module 06's CPU-or-Metal scan; the reranker is Core ML with all units permitted; the MMR pairwise matrix goes to Metal above 50 candidates when the profile allows.
 
@@ -1528,7 +1551,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Extractive QA (Conditional, verified as the heuristic path)
 - **Idiot:** copy the answer out instead of writing one.
 - **Dot-connector:** the value must exist in the source, which kills a whole class of hallucination.
-- **Expert:** `ExtractiveQAService` heuristic scorer plus `SpecificationExtractor`; the neural span model is a stub.
+- **Expert:** `ExtractiveQAService` heuristic scorer plus `SpecificationExtractor`; the neural span model is a stub. `ExtractiveQAService` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Extractive summarization (Conditional, verified)
 - **Idiot:** pick the best sentences rather than writing new ones.
@@ -1548,7 +1571,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Heuristic extractive QA (Conditional, verified)
 - **Idiot:** the rule-based copy-out that actually runs.
 - **Dot-connector:** keyword overlap, entity types, proximity, passage rank, question type.
-- **Expert:** `ExtractiveQAService` when the span model is unavailable, which is always.
+- **Expert:** `ExtractiveQAService` when the span model is unavailable, which is always. `ExtractiveQAService` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Hybrid search (Core, verified)
 - **Idiot:** both searches, then merge.
@@ -1588,7 +1611,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Maximal marginal relevance (Core, verified), MMR lambda (Core, verified), Redundancy penalty (Core, verified), Pairwise similarity matrix (Support, verified)
 - **Idiot:** don't pick five cards that say the same thing; the dial says how much variety to insist on.
 - **Dot-connector:** greedy selection: relevance minus the max similarity to anything already chosen; lower lambda means more variety; the matrix precomputes the similarities.
-- **Expert:** `RAGEngine`; λ 0.60/0.55/0.50; matrix on Metal above 50 candidates when the profile allows and a GPU exists, else each similarity is computed on the CPU with vDSP as candidates are picked, inside `RAGEngine.applyMMR`; `BNNSGraphService.pairwiseSimilarityMatrix` exists but nothing calls it. Until 2026-09-29 this line named `BNNSGraphService` as the CPU path. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:155-160, 213-219, 247-258; BNNSGraphService.swift:275; git grep finds BNNSGraphService in no file but its own]`
+- **Expert:** `RAGEngine`; λ 0.60/0.55/0.50; matrix on Metal above 50 candidates when the profile allows and a GPU exists, else each similarity is computed on the CPU with vDSP as candidates are picked, inside `RAGEngine.applyMMR`; `BNNSGraphService.pairwiseSimilarityMatrix` existed but nothing called it, and the file was removed in 5.7 on 2026-10-20. Until 2026-09-29 this line named `BNNSGraphService` as the CPU path. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:155-160, 213-219, 247-258; BNNSGraphService.swift:275; git grep finds BNNSGraphService in no file but its own]` **Corrected 2026-10-20:** the λ is the library's, not 0.60, 0.55 or 0.50 by mode (see above). In the shipped 5.6 neither MMR call passed the passages' stored vectors, and the 5.7 notes record that every pair then measured 0 alike, so MMR removed no near-duplicate. From 5.7 both calls pass them (`RAGService.swift:13703-13708`, `:22014-22019`, the v5.6.0 tag, `Docs/RETRIEVAL_PIPELINE.md` lines 262-263).
 
 ### Metadata boost (Core, verified)
 - **Idiot:** extra credit for headings, names, tables, numbers.
@@ -1608,7 +1631,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Neural start/end span model (Dormant, verified as a stub)
 - **Idiot:** a reader that's on the blueprint shelf.
 - **Dot-connector:** would find exact answer spans; the placeholder returns nil.
-- **Expert:** `ExtractiveQAService` protocol and template; never active.
+- **Expert:** `ExtractiveQAService` protocol and template; never active. `ExtractiveQAService` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Parallel retrieval arms (Core, verified)
 - **Idiot:** both helpers run at once.
@@ -1633,7 +1656,7 @@ Sixty concepts. Finding the evidence: two searches in parallel, one merged ranki
 ### Reciprocal rank fusion (Core, verified) and RRF constant k (Core, verified)
 - **Idiot:** points for being near the top of either pile.
 - **Dot-connector:** ranks are comparable across arms; scores aren't. k smooths the top positions.
-- **Expert:** sum over lists of 1/(k + rank), k exactly 60, each list weighted by the fusion weights (0.50/0.50 by default, 0.35 to 0.65 after the intent delta); `HybridSearchService` through `RAGEngine.reciprocalRankFusion`; `BNNSGraphService` holds an unweighted version. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:963, 995, 1006; HybridSearchService.swift:297, 1189; BNNSGraphService.swift:249-259; corrected 2026-09-29 from "weighted 0.7/0.3"]`
+- **Expert:** sum over lists of 1/(k + rank), k exactly 60, each list weighted by the fusion weights (0.50/0.50 by default, 0.35 to 0.65 after the intent delta); `HybridSearchService` through `RAGEngine.reciprocalRankFusion`; `BNNSGraphService` held an unweighted version until the file was removed in 5.7 on 2026-10-20 (nothing referenced it). `[evidence_level: code_verified, confidence: exact, evidence_source: RAGEngine.swift:963, 995, 1006; HybridSearchService.swift:297, 1189; BNNSGraphService.swift:249-259; corrected 2026-09-29 from "weighted 0.7/0.3"]`
 
 ### Rerank batch size (Core, verified) and Rerank score (Core, verified) and Reranker tokenizer (Core, verified)
 - **Idiot:** how many pairs the smart reader takes at once, the score it gives, and its own ruler.
@@ -1699,12 +1722,14 @@ Twenty-seven concepts. Deciding what the model actually reads: a hard token budg
 
 **Expert's expert.** The word bank says the sentinel "triggers information-dense source rescue or passthrough." Inside the service that is true; at the call site in `RAGService` the chunk is removed, with a comment explaining why. Both are real; the caller wins for what the model sees. The tool-schema overhead is only counted when tools are attached, which is why Maximum's inner sessions disable tools: schema tokens plus tool output tokens were part of what overflowed. And the 4,096 figure is Apple's per-session limit for both on-device and PCC (Technote 3193, cited in `LLMModel.swift`), so the cloud route does not buy a bigger window; it buys a bigger model.
 
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** five statements in the ladder above do not hold for the current code. The window is the one the device reports: 4,096 on the owner's iPhone 16 Pro Max and 8,192 on his Mac, and the app assumes 32,768 for Private Cloud Compute (a hard-coded fallback and the figure Apple documents, while the route planner reads the window PCC reports), so the cloud route does buy a bigger window. Standard's evidence budget is not a fixed 3,200. It is computed for each question as the window less 120 tokens, the system prompt, the question and an output reserve of 150 to 300, times 0.88, at 1.4 characters a token, capped at 10,000 characters, which came to 3,190 tokens, about 4,470 characters, on that iPhone on 2026-10-16. When Hybrid can reach Private Cloud Compute, the first pass is sized for 32,768 tokens at 2.5 characters a token instead, capped at 45,000 characters. The 3,200 is `ContextPackingService`'s default, which its one caller overrides, and that caller is graph packing for investigate, compare and findings questions only, so the packer described above is not what packs most answers. "Strongest first and last" is the order for every intent except a lookup, which gets retrieval's best passage first (from 5.7, whole up to three fifths of the budget), then the sentences that match the question from every candidate, and a procedure, which keeps document order. For other intents the reorder runs over all candidates before the budget cut, so with room for about 3, ranks 1, 3 and 5 are packed and rank 2 is neither packed nor rescued (read in the code, not run). And contextual compression runs in no user-selectable mode: its only call is in Standard's pipeline behind a mode flag that is false for Standard and true only for Deep Think, which never reaches that step, so neither the compression call nor the one-second sleep happens. Tools are off in every Deep Think and Maximum session, not only Maximum's. `[evidence_level: code_verified, measured for the 3,190, confidence: high, evidence_source: OpenIntelligence/Services/AIPlatform/AppleFoundationModels/FoundationModelTokenBudget.swift:25-40, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:14784-14838, :14532-14543, :3746-3747, :14558-14590, :14935-14975, :15035, :14320-14326, :14406, OpenIntelligence/Services/RAG/Orchestration/RAGEngine.swift:495-504, :569-600, :773-790, OpenIntelligence/Services/RAG/Retrieval/ContextPackingService.swift:60, OpenIntelligence/Core/Models/RAGQualityMode.swift:277-284, OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:5313]`
+
 ## Every concept
 
 ### 4,096-token on-device limit (Core, verified)
 - **Idiot:** the desk holds about four thousand tokens.
 - **Dot-connector:** a naive top-20 chunk set plus prompt and schema overflows; everything upstream exists to choose what fits.
-- **Expert:** `contextLength` 4,096 per TN3193, on device and PCC alike; real window read at runtime.
+- **Expert:** `contextLength` 4,096 per TN3193, on device and PCC alike; real window read at runtime. **Corrected 2026-10-20:** the window the code uses on device is `SystemLanguageModel.default.contextSize` (4,096 on the owner's iPhone, 8,192 on his Mac), and for PCC the app assumes 32,768 (hard-coded, while the route planner reads the window PCC reports), so the two are not alike (`FoundationModelTokenBudget.swift:25-40`, `RAGService.swift:18509-18521`).
 
 ### Available context tokens (Core, verified)
 - **Idiot:** what's left for evidence after everything else.
@@ -1739,12 +1764,12 @@ Twenty-seven concepts. Deciding what the model actually reads: a hard token budg
 ### ContextPackingService (Core, verified)
 - **Idiot:** the desk arranger.
 - **Dot-connector:** chooses and orders core hits, parents, siblings, graph neighbours and compressed content under the ceiling; rank alone can't solve budget, diversity, sequence and support.
-- **Expert:** after retrieval and expansion, before prompt compilation.
+- **Expert:** after retrieval and expansion, before prompt compilation. **Corrected 2026-10-20:** its one caller is graph packing for investigate, compare and findings questions, which passes its own budget. Other answers are packed by `RAGEngine.assembleContext` or, for a lookup, by sentence selection (`RAGService.swift:14558-14590`, `:14935-14975`).
 
 ### Contextual compression (Conditional, verified)
 - **Idiot:** cross out the useless sentences.
 - **Dot-connector:** density matters in a 4,096-token window; mainly Deep Think.
-- **Expert:** Foundation Models extraction of query-relevant sentences with exact wording preserved; `usesContextualCompression` by mode.
+- **Expert:** Foundation Models extraction of query-relevant sentences with exact wording preserved; `usesContextualCompression` by mode. **Corrected 2026-10-20:** in the working tree no user-selectable mode reaches it, so read it as Dormant (`RAGService.swift:14320-14326`, `:14406`).
 
 ### Core evidence chunk (Core, verified)
 - **Idiot:** the must-keep cards.
@@ -1779,7 +1804,7 @@ Twenty-seven concepts. Deciding what the model actually reads: a hard token budg
 ### Lost-in-the-Middle mitigation (Core, verified)
 - **Idiot:** best cards first and last.
 - **Dot-connector:** models underuse the middle of long prompts; a synthetic fixture tests this.
-- **Expert:** applied after selection, before prompt assembly; note the reorder interleaves the ranked set, so downstream code must not assume rank order.
+- **Expert:** applied after selection, before prompt assembly; note the reorder interleaves the ranked set, so downstream code must not assume rank order. **Corrected 2026-10-20:** a lookup skips the reorder, and for other intents it runs over every candidate before the budget cut, so rank 2 lands last and is cut when only about 3 passages fit (`RAGEngine.swift:495-504`, `:773-790`).
 
 ### Neighbor allocation (Core, verified)
 - **Idiot:** space for the cards next door.
@@ -1855,6 +1880,8 @@ Sixty-two concepts. Choosing which model answers, building the session, and gene
 
 **Expert's expert.** Corrections to the bank. The tool registry registers six tools and defines twelve, so "approximately six" was right; this module said ten until 2026-09-29. `CloudTransmissionRecord` and the consent prompt are real, compiled code with a preview; "Dormant" described shipped reach, not compilation, and shipped reach arrived with 5.2 on 2026-09-10. The on-device model's placement across CPU, GPU and Neural Engine is Apple's decision and unobservable from the app, so any sentence that says where the language model runs is speculation. And the deterministic target is where a surprising share of lookup answers come from: when structured table lookup or pattern extraction succeeds with confidence, the language model is never called, which is both the fastest path and the one with zero hallucination risk.
 
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** five statements in the ladder above need the code's terms. The cloud rung has two more conditions: the prompt and evidence as assembled, before anything is minimized, must fit the window PCC reports, and "the question is genuinely hard" means exactly one thing, a Deep Think or Maximum answer drawn from more than one document. Standard never goes on difficulty alone. A new install is on Hybrid with permission "Ask when needed", so this rule is live from the first question. The cloud does get a bigger window: the app sizes PCC at 32,768 tokens (the figure Apple documents, and the app's fallback), against the device's own, 4,096 on the owner's iPhone and 8,192 on his Mac. No plan reaches the deterministic target today, because the only code that builds the planner's evidence passes `requiresExactExtraction: false`, and one that did would not skip the model: `RAGService` runs `.deterministic` exactly like `.onDevice`, and the route policy maps it to on-device, so Standard would still generate. What replaces the model's answer is the extracted-value override after generation, and from 5.7 only when the model's answer does not already state the value. The paths that answer without the model are Deep Think and Maximum's precision shortcut, which returns a locked value before the orchestrator runs, and Standard's reliability fallback after a failed or empty generation, which returns an extracted value or, when its own on-device retry fails too, excerpts alone. The typed `@Generable` answer is used only when the estimated request fits 3,600 tokens, and otherwise the answer streams as plain text. The temperatures 0.4, 0.4 and 0.3 are read only on Standard's path. Tools: six are registered, Standard withdraws them once evidence is assembled, and no Deep Think or Maximum call is given them. Standard's direct chat in a library with no documents is the one call that keeps them. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/RAG/Orchestration/ModelExecutionPlanner.swift:24-130, OpenIntelligence/Services/Infrastructure/Configuration/SettingsStore.swift:50 and :454-461, OpenIntelligence/Services/AIPlatform/AppleFoundationModels/FoundationModelTokenBudget.swift:25-40, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:15877, :18447-18448, :18509-18521, :16501-16528, :10561-10737, :17317-17612 (the reliability fallback), :18766, :11639, :14769-14774, :17106-17111 (the direct chat), OpenIntelligence/Services/AIPlatform/AppleFoundationModels/FoundationModelRoutePolicy.swift:35-37, OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:5313]`
+
 ## Every concept
 
 ### @Generable (Core, verified) and @Guide (Core, verified) and Constrained decoding (Core, verified) and Structured generation (Core, verified)
@@ -1872,7 +1899,7 @@ Sixty-two concepts. Choosing which model answers, building the session, and gene
 - **Dot-connector:** fallback, availability and route policy make them differ; a picker label is not proof.
 - **Expert:** `LLMModelType` for selection; resolution state observes settings and `RAGService` and updates the UI.
 
-### AdapterManager (Support, verified)
+### AdapterManager (Support, verified; removed in 5.7 on 2026-10-20: nothing referenced it)
 - **Idiot:** the adapter that picks a model backend.
 - **Dot-connector:** decouples the engine from one implementation; carries legacy transitions.
 - **Expert:** resolves an `LLMService` before execution.
@@ -1905,7 +1932,7 @@ Sixty-two concepts. Choosing which model answers, building the session, and gene
 ### Deterministic execution target (Core, verified)
 - **Idiot:** a rule copies the answer out; no writer needed.
 - **Dot-connector:** when structure already yields the answer, generation adds risk and latency.
-- **Expert:** selected after high-confidence extraction; skips the model call.
+- **Expert:** selected after high-confidence extraction; skips the model call. **Corrected 2026-10-20:** no plan is deterministic today, because the only code that builds the planner's evidence passes `requiresExactExtraction: false`, and one would not skip the model: `RAGService` handles `.deterministic` with `.onDevice`, so Standard would generate on the device, and the extracted value can then replace the answer after generation. The answers with no model call are Deep Think and Maximum's precision shortcut and Standard's reliability fallback, an extracted value or excerpts alone (`RAGService.swift:15877`, `:18447-18448`, `:16501-16528`, `:10561-10737`, `:17317-17612`).
 
 ### DirectRAGAnswer (Conditional, verified) and RAGAnswer (Core, verified) and Reasoning-first field order (Conditional, verified)
 - **Idiot:** the form the writer fills in, with a "show your reasoning" box first.
@@ -1935,7 +1962,7 @@ Sixty-two concepts. Choosing which model answers, building the session, and gene
 ### Foundation Model tool (Conditional, verified), FoundationModelToolRegistry (Conditional, verified), Registered retrieval tools (Conditional, verified, six), Tool call (Conditional, verified), Tool-call counter (Support, verified)
 - **Idiot:** things the writer is allowed to ask the librarian to do, and a counter so it can't ask forever.
 - **Dot-connector:** typed, allowlisted operations keep the model inside local data; schema costs tokens; a query-scoped counter bounds loops.
-- **Expert:** twelve `Tool` structs in the registry file, six registered by `createTools`; attached only when the plan allows; `ToolCallCounter`.
+- **Expert:** twelve `Tool` structs in the registry file, six registered by `createTools`; attached only when the plan allows; `ToolCallCounter`. **Corrected 2026-10-20:** Standard turns them off once evidence is assembled, and every Deep Think and Maximum session and synthesis passes `disableTools: true`, so no answer path in Deep Think or Maximum gets a tool (`RAGService.swift:14769-14774`, `AgenticOrchestrator.swift:5313`, `:5944`, `:6906`).
 
 ### FoundationModelSessionFactory (Core, verified) and Session use case (Core, verified) and Session transcript (Core, verified) and Transcript persistence (Support, verified)
 - **Idiot:** the one place sessions are built, labelled by job, with memory that can be saved.
@@ -1945,7 +1972,7 @@ Sixty-two concepts. Choosing which model answers, building the session, and gene
 ### LLMService (Core, verified) and Local OpenAI-compatible server backend (Conditional, verified)
 - **Idiot:** the department that talks to the model; and a developer switch to talk to a local server instead.
 - **Dot-connector:** retrieval shouldn't know session details; UI shouldn't own model state; the local server adapter gets the same packed prompt.
-- **Expert:** `LLMService` (2,079 lines); `LocalOpenAIServerLLMService`.
+- **Expert:** `LLMService` (2,079 lines); `LocalOpenAIServerLLMService`. **Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** the local server backend is wrapped in `#if false`, so it is not in the build. Read it as Dormant, not Conditional. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/LLM/LocalOpenAIServerLLMService.swift:14 and :326]`
 
 ### Matched terms (Support, verified)
 - **Idiot:** the words the writer says it found.
@@ -2006,6 +2033,12 @@ Forty concepts. Thinking in loops: when one pass is not enough, plan, search, re
 
 **Expert's expert.** Recorded hazards in the source, all now fixed but worth knowing because they are the shape of what goes wrong here: citations resolved against the wrong array for the life of the chain; a shorter re-ordered list turning citations past its end into dangling references; a fabricated 0.70 match score hardcoded on the audit snapshot rather than measured, confirmed as exactly 0.7 on all 82 rows of one Deep Think run; the lost-in-middle reorder that interleaves the ranked set so the array reaching the chain is not in rank order. The bank's "Self-RAG" is a design label, not a distinct service; the behaviour is the critique and refine phases plus the gates. And "standard reasoning chain" means a bounded multi-step path inside some Standard answers that does not invoke the full orchestrator; it is easy to mistake for the agentic loop in logs.
 
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** the ladder above describes a loop that does not run that way, in plain words first.
+
+**In plain words, corrected.** The librarian pulls one pile of cards, once, at the start. She does not go back to the shelves between rounds. Each round she reads the next few cards from that same pile, writes a short note, and starts the next round with a clean desk and her notes. She stops when the pile runs out, or when she is sure, has covered every part of the question and is learning nothing new, all at once. Only after she has written a draft, and only if it leaves parts of the question open, does she go back to the shelves, for a few short trips with a 3-minute timer. For a question that asks for one exact value, she may copy the value straight from the source and never start the rounds at all.
+
+**What the code does.** The loop starts because the person chose Deep Think or Maximum or pressed Go Deeper. Planner escalation is off while Apple's model writes the answers. An on-device planning call, a guided generation with a heuristic plan as its fallback, decides whether documents are needed. A lookup can be answered by the extractor before any session, with no model call of its own and no gates. Retrieval runs once, before the sessions: up to 5 search phrasings each go through module 08's pipeline, fused into 20 passages, graded, widened by cross-reference resolution and graded again, and only an excellent or good grade enters a chain (moderate gets one synthesis, and low first tries speculative candidates, the best of which can be the answer). Deep Think's chain cuts every session's window from that one pool before session 1, 4 passages on a 4,096-token window and up to 7 on 8,000 or more, sized from the window the device reports where the OS can count tokens, with extracted sentences as the fallback. It runs at most 8 sessions on every device, and fewer when the pool runs out of distinct windows (5 for 20 passages). It stops then, or before a session from the fifth when confidence, sub-question coverage and novelty exhaustion all clear at once, or when the model writes ANSWER COMPLETE or NOT FOUND IN DOCUMENTS from the second session, or when a session still fails after its retries. The 180 seconds bound only the research rounds after the chain, and nothing in the loop reads the thermal state. Sessions carry PRIOR FINDINGS (up to 1,200 characters), STILL UNANSWERED (up to 3 open sub-questions) and a SESSION OBJECTIVE, and the FactBank's text reaches a prompt only in Maximum. Tools are off in every Deep Think and Maximum session and synthesis. Under the default Hybrid route the sessions are pinned to the device and the syntheses can be planned to Private Cloud Compute, and with Private Cloud Compute picked in the model picker the sessions can go too. Deep Think does not use the four profiles: it takes the device's configuration (A17 Pro 5 steps and 0.85, A18 8 and 0.90, A19 10 and 0.92, the ultra tier 12 to 32 by memory and 0.95, where the ultra tier is a Mac from the M2 or the M1 Ultra, an iPad Pro from the M2 or an iPhone from the A20), and Maximum takes unlimited. Maximum's own loop reads 3 unread passages a session and never searches again, because its re-retrieval branch cannot be reached. The helper calls run at temperature 0.7, and the sessions at the adaptive profile's temperature or 0.5. Self-RAG is real code (`runVerificationLoop`): a lexical relevance score and a citation score (a citation counts when its passage holds at least 30 percent of the words of 4 or more letters in the 50 characters before it), with no model call, and at most 2 retries through research, since the third retry verdict ends it. It does not run when research has replaced the synthesis. The nine gates do not run on these answers in the shipped 5.6, and from 5.7 they set the label only, Verified when all nine pass. The standard reasoning chain runs only with the developer setting `forceReasoningChain` on, and it then runs Deep Think's chain on the `fast` configuration. `Docs/CANONICAL_OPENINTELLIGENCE_SOURCE_OF_TRUTH.md`, section 19, has every number with its file and line. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:297-305 and :3527-3545 (the planning call), :521-536 (cross-references), :544-1143, :1043-1069 (speculative candidates), :1916-2260, :2892, :3786-4012, :4163-4232 (citations), :779 and :798 (research returns before the check), :5003-5318, :5313-5512 (retries and a failed session), :5521-5531, :6706-6807, :8205-8245, :9063-9117, :9123-9248, OpenIntelligence/Services/Query/Analysis/QueryExecutionPlannerService.swift:67-99, OpenIntelligence/Services/RAG/Tuning/AgenticPolicyService.swift:294-332, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:10561-10737, :10863-10871, :11238-11262, :15949-16002, OpenIntelligence/Services/RAG/Orchestration/QueryRuntimeCoordinator.swift:202-229, OpenIntelligence/Services/Infrastructure/Monitoring/DeviceCapabilityService.swift:1096-1488 (the tier tables)]`
+
 ## Every concept
 
 ### Agentic configuration (Conditional, verified)
@@ -2031,7 +2064,7 @@ Forty concepts. Thinking in loops: when one pass is not enough, plan, search, re
 ### ChainLink (Conditional, verified)
 - **Idiot:** a small note passed from one round to the next.
 - **Dot-connector:** reasoning, condensed insight, next focus, cumulative confidence; a bounded state instead of a transcript.
-- **Expert:** structured output in `RAGStructuredResponse`; produced by one session, consumed by the next.
+- **Expert:** structured output in `RAGStructuredResponse`; produced by one session, consumed by the next. **Corrected 2026-10-20:** the type is defined and referenced nowhere, so read it as Dormant. What crosses sessions is the prose of earlier insights (`Core/Models/RAGStructuredResponse.swift:278`).
 
 ### Convergence (Conditional, verified) and Evidence-driven stopping (Core, verified)
 - **Idiot:** stop when nothing new is turning up.
@@ -2051,12 +2084,12 @@ Forty concepts. Thinking in loops: when one pass is not enough, plan, search, re
 ### Critique step (Conditional, verified) and Refining phase (Conditional, verified) and Self-RAG (Conditional, design label)
 - **Idiot:** read your own draft, find the weak spots, fix them.
 - **Dot-connector:** targeted repair beats restarting; this is what the bank calls Self-RAG.
-- **Expert:** after synthesis, before refinement or abstention; can precede another verification pass.
+- **Expert:** after synthesis, before refinement or abstention; can precede another verification pass. **Corrected 2026-10-20:** the critique, a word check with no model call, runs only on the path for a question that needs no documents (`AgenticOrchestrator.swift:3463` and `:3548-3590`). Self-RAG is a real check, `runVerificationLoop` with `verifySelfRAG`, lexical and with no model call (`:3786-4000`).
 
 ### Default, Fast, Thorough, Unlimited agentic profiles (Conditional, verified)
 - **Idiot:** four gears.
 - **Dot-connector:** fast 2 steps, default 5, thorough 8, unlimited 50; confidence targets 0.70, 0.85, 0.95, 0.98; escalation floors 0.25, 0.35, 0.45, 0.50.
-- **Expert:** `AgenticConfig` in `AgenticOrchestrator`; unlimited carries the "thermal will stop us first" comment.
+- **Expert:** `AgenticConfig` in `AgenticOrchestrator`; unlimited carries the "thermal will stop us first" comment. **Corrected 2026-10-20:** only unlimited drives a mode (Maximum). Deep Think takes `DeviceCapabilityService.optimizedAgenticConfig()` instead, default and thorough drive no mode, and fast runs only on a device without Apple Intelligence and in Standard's developer-forced chain (`RAGService.swift:10863-10871`, `DeviceCapabilityService.swift:1046-1047`, `AgenticOrchestrator.swift:9068`).
 
 ### Evidence gap (Conditional, verified)
 - **Idiot:** the specific thing still missing.
@@ -2071,21 +2104,21 @@ Forty concepts. Thinking in loops: when one pass is not enough, plan, search, re
 ### Expanding phase (Conditional, verified)
 - **Idiot:** pull in the neighbours.
 - **Dot-connector:** the first hit is usually an anchor, not the whole answer.
-- **Expert:** parents, siblings, cross-references, entities, graph neighbours, broader candidates.
+- **Expert:** parents, siblings, cross-references, entities, graph neighbours, broader candidates. **Corrected 2026-10-20:** the entity index is never filled. The agentic "graph expansion", for a moderate or low pool only, asks the model to name up to 3 entities and searches each (`AgenticOrchestrator.swift:487-502`, `:2524-2595`).
 
 ### Fact (Conditional, verified), Fact deduplication (Conditional, verified), Fact provenance (Conditional, verified), FactBank (Conditional, verified)
 - **Idiot:** the notebook, one fact per line, each with where it came from, no repeats.
 - **Dot-connector:** atomic facts can be deduplicated, checked for contradictions and mapped to sources; repeats raise confidence instead of consuming state; the bank is what makes fresh sessions possible.
-- **Expert:** initialised after planning, updated after analysis, consumed by final synthesis; provenance reused for citations.
+- **Expert:** initialised after planning, updated after analysis, consumed by final synthesis; provenance reused for citations. **Corrected 2026-10-20:** in Deep Think the bank is never put into a prompt. It holds at most 1,500 characters and decides coverage, novelty and stopping, and the final synthesis reads the findings instead. Only Maximum reads the bank into its running answers and final synthesis (`AgenticOrchestrator.swift:6081`, `:7292`, `:7352`, `:5879-5951`).
 
 ### Hard session cap (Core, verified)
 - **Idiot:** an absolute maximum number of rounds.
 - **Dot-connector:** protects battery, heat, latency, quota and cancellation even if convergence never comes.
-- **Expert:** checked before each session; 50 for unlimited, scaled to the pool.
+- **Expert:** checked before each session; 50 for unlimited, scaled to the pool. **Corrected 2026-10-20:** for Deep Think the cap is min(8, sessions + 4), which is 8 on every device, and the distinct windows usually end it first (`AgenticPolicyService.swift:304`, `AgenticOrchestrator.swift:5150`).
 
 ### LLM call count (Support, verified) and Reasoning-chain token total (Support, verified)
 - **Idiot:** how many times the model was asked, and how many tokens that cost in total.
-- **Dot-connector:** one 4,096 window per session says nothing about the whole answer's cost.
+- **Dot-connector:** one 4,096 window per session says nothing about the whole answer's cost. **Corrected 2026-10-20:** the window is the one the device reports, 4,096 on the owner's iPhone and 8,192 on his Mac.
 - **Expert:** accumulated in `RAGService`, stored in audit metadata.
 
 ### Planning phase (Conditional, verified)
@@ -2096,7 +2129,7 @@ Forty concepts. Thinking in loops: when one pass is not enough, plan, search, re
 ### ReasonedInsight (Conditional, verified) and ReasonedSynthesis (Conditional, verified)
 - **Idiot:** the note from a reading round, and the final write-up.
 - **Dot-connector:** insight: analysis, one key point, discovered terms, confidence. Synthesis: key points, confidence, sources, reconciled rather than concatenated.
-- **Expert:** structured types in `RAGStructuredResponse`.
+- **Expert:** structured types in `RAGStructuredResponse`. **Corrected 2026-10-20:** both are defined and referenced nowhere, so read them as Dormant. The syntheses write plain text.
 
 ### Reasoning session (Conditional, verified)
 - **Idiot:** one fresh conversation with the model, for one job.
@@ -2106,7 +2139,7 @@ Forty concepts. Thinking in loops: when one pass is not enough, plan, search, re
 ### Recursive RAG (Conditional, verified)
 - **Idiot:** several small searches and reads instead of one giant one.
 - **Dot-connector:** many 4,096-token sessions can collectively read more than one can, if only condensed state moves forward.
-- **Expert:** begins after planning, ends with synthesis over accumulated state; `executeRecursiveResearch` with its two call sites.
+- **Expert:** begins after planning, ends with synthesis over accumulated state; `executeRecursiveResearch` with its two call sites. **Corrected 2026-10-20:** the research rounds run only after Deep Think's chain, on an excellent pool whose coverage fell short or whose answer reads like a miss, and in the Self-RAG retries. Maximum never runs them (`AgenticOrchestrator.swift:685-791`, `:3855`).
 
 ### Reformulating phase (Conditional, verified)
 - **Idiot:** ask it differently.
@@ -2116,22 +2149,22 @@ Forty concepts. Thinking in loops: when one pass is not enough, plan, search, re
 ### Searching phase (Conditional, verified)
 - **Idiot:** go look.
 - **Dot-connector:** hybrid retrieval for the current sub-question; grounded before claims.
-- **Expert:** module 08's pipeline invoked per sub-question.
+- **Expert:** module 08's pipeline invoked per sub-question. **Corrected 2026-10-20:** it is invoked once per search phrasing before the sessions, up to 5, and again only in research rounds. Sessions do not search.
 
 ### Standard reasoning chain (Conditional, verified)
 - **Idiot:** a little bit of structured thinking inside a normal answer.
 - **Dot-connector:** bounded, no open-ended retrieval loop; easy to mistake for the agentic path in logs.
-- **Expert:** in `RAGService` after context selection, before verification.
+- **Expert:** in `RAGService` after context selection, before verification. **Corrected 2026-10-20:** it runs only when the developer setting `forceReasoningChain` is on, off by default, and it then runs Deep Think's chain on the `fast` configuration (`RAGService.swift:15949-16002`, `AgenticOrchestrator.swift:9063-9117`).
 
 ### Synthesizing phase (Conditional, verified)
 - **Idiot:** write the answer.
 - **Dot-connector:** only after coverage or stopping policy says there's enough.
-- **Expert:** consumes the FactBank; goes through the post-retrieval plan.
+- **Expert:** consumes the FactBank; goes through the post-retrieval plan. **Corrected 2026-10-20:** Deep Think's synthesis reads the sessions' findings (at most 3,000 characters) and, on the device, no passages, and Maximum's reads the FactBank and recent insights. Both go through the post-retrieval plan, and a PCC plan adds an envelope minimized from the passages, at most 12,000 characters (`AgenticOrchestrator.swift:5939-5947`, `:7432`, `:9283-9303`).
 
 ### Verifying phase (Conditional, verified)
 - **Idiot:** check it.
 - **Dot-connector:** more model calls don't make an answer trustworthy; the gates still run.
-- **Expert:** `VerificationGateService` after synthesis or refinement; can trigger repair or abstention.
+- **Expert:** `VerificationGateService` after synthesis or refinement; can trigger repair or abstention. **Corrected 2026-10-20:** on Deep Think and Maximum answers the gates do not run in the shipped 5.6. From 5.7 they run once after the loop and set the label only, Verified when all nine pass with Gate A's floor raised by the mode: no repair, no abstention (`RAGService.swift:11238-11262`, `:18205-18253`, `ConfidencePolicyService.swift:26-46`).
 # Module 12. Verification, grounding, confidence, and abstention
 
 Forty concepts. The nine checks: deterministic gates that decide whether the generated answer is allowed to stand, and what the app says when it isn't.
@@ -2151,6 +2184,8 @@ Forty concepts. The nine checks: deterministic gates that decide whether the gen
 **Expert.** `VerificationGateService`, an actor. Config: `tauNormal` 0.40 (lowered from 0.55 because keyword-heavy queries carry low semantic scores even when BM25 found the right content), `tauTouchy` 0.55, margin `mu` 0.03, semantic grounding 0.50; touchy categories medical, legal, financial, safety, dosage, drug, medication; strict profile 0.65, 0.75, 0.10, 0.60 with regulatory and compliance added. Gate A: top rerank score ≥ tau and top-one minus top-two ≥ mu. Gate B: each claim cites at least one evidence ID; verdicts supported, partial, unsupported. Gate C: numbers must appear in the candidate set, using the full set rather than the packed context because the model may cite a trimmed chunk; numeric-unit checks compare units and qualifiers. Gate D: contradiction sweep including negation indicators. Gate E: response embedding versus best source, plus topical alignment and relative grounding. Gate F: quote spans exist at the attributed location. Gate G: empty, malformed, repetitive, truncated. Gate H: facets versus claims and missing fields. Gate I: `DomainIsolationService`, with a scientific-domain claim check. `ConfidencePolicyService` resolves thresholds and calibration parameters (slope, intercept, penalties, conservative set) per intent, touchy status and mode; `ConfidenceCalibrationService` applies them; mode bars 0.50, 0.60, 0.80. `SourceOnlyAnswerService` builds extractive fallbacks and verifies absence assertions.
 
 **Expert's expert.** The bar for Maximum was 0.98 until every Maximum answer failed verification; it is 0.80. The `tauNormal` history (0.55 to 0.40) is the same lesson from the other side: a bar tuned to one query shape starves another. Gate E is the one gate that costs an inference, and its 0.50 floor is a cosine on the same 384-dimension space the retrieval uses, so a library embedded with a different provider changes what "grounded" means. And the calibration caveat is not decoration: no held-out outcome frequencies have been collected, so an on-screen 80% is a policy output, and saying otherwise in an interview would be the kind of claim this app was built to refuse.
+
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** the ladder above gives the gates more power than the code does. **In plain words, corrected.** The checker reads the finished answer once and puts a label on it. She does not change the words you read and never sends the answer back to be rewritten. The claims she could not match to a passage drop off the fact-check list under the answer. In Standard she holds the answer back only when the strict setting is off or her overall score is low, and otherwise you see the answer marked Unverified. In the shipped 5.6 she never looks at Deep Think or Maximum answers, and from 5.7 she labels them too. **What the code does.** The nine gates run once, after generation, Gate I with the others. A failed gate changes no word of the answer shown and starts no retry, but the claims Gate B could not support leave the structured answer's claim list (under FACT CHECK) and are listed as gaps. Standard abstains only when reliability mode is off (on by default) or the gates' overall confidence is under the mode's bar, which is halved for a lookup with a floor of 0.25, and otherwise shows the answer marked Unverified. The critical gates (A, C, E) set an abstain flag that decides nothing and only adds its reason to the answer's list of gaps. Gate H passes by default in Standard, because Standard gives it no answer intent. Gate I compares the question's domain with the evidence's, not claim-evidence pairs. For a lookup whose gates did not pass, the source-only check (two on-device sessions) can replace the answer. Deep Think and Maximum answers get no gates in the shipped 5.6, and from 5.7 the gates set their label only, Verified when all nine pass, with Gate A's floor raised to 0.45 in Deep Think and 0.50 in Maximum. The 0.60 and 0.80 bars are read only on Standard's abstain path, so the Maximum bar's history above is about a gate step those answers do not reach. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/RAG/Safety/VerificationGateService.swift:63-73, :250-260, :979-990, :1036-1050, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:16623-16709, :16845-16853, :16871-16894, :20072-20089, :11668, :11238-11262, :18205-18253, OpenIntelligence/Core/Models/StructuredAnswer.swift:955-1048, OpenIntelligence/Services/RAG/Tuning/ConfidencePolicyService.swift:26-54, OpenIntelligence/Services/Infrastructure/Configuration/SettingsStore.swift:534-535, the v5.6.0 tag (2bee971)]`
 
 ## Every concept
 
@@ -2197,7 +2232,7 @@ Forty concepts. The nine checks: deterministic gates that decide whether the gen
 ### Evidence-first mode (Core, verified) and Source-only verification (Core, verified) and SourceOnlyAnswerService (Core, verified)
 - **Idiot:** the sources are the boss; the writer only rearranges them.
 - **Dot-connector:** reverses generate-then-find-citations; the answer must be reconstructible from source sentences; when generation fails, an extractive answer beats a guess.
-- **Expert:** resolved before generation by `GroundedAnswerPolicy`; `SourceOnlyAnswerService` builds or validates from source sentences and may replace a failed generative answer before abstention.
+- **Expert:** resolved before generation by `GroundedAnswerPolicy`; `SourceOnlyAnswerService` builds or validates from source sentences and may replace a failed generative answer before abstention. `GroundedAnswerPolicy` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Fidelity (Core, verified), Source-Locked (Core, verified), Partially Supported (Core, verified), Not Enough Evidence (Core, verified)
 - **Idiot:** the badge: fully backed, partly backed, not enough.
@@ -2279,7 +2314,7 @@ Thirty-five concepts. What comes back and how you can inspect it: typed answers,
 
 **Dot-connector.** The route badge reads from the execution receipt, not the model picker, because a PCC plan can fall back to on-device and the badge must show the fallback. The hardware HUD's Neural Engine pulse is synthetic: there is no public API for Neural Engine occupancy, so the display shows activity around compute-heavy stages, not a measurement. And the pipeline trace log rotates, which is why a long capture needs `tail -F` into an archive before you start.
 
-**Expert.** `StructuredAnswer`: refusal state, answer type (lookup, table lookup, procedure, compare, summarise, investigate, compute, findings, refused), text, atomic claims with verdicts, evidence records (ID, page, quote ≤ ~240 chars, document, section path), missing information, debug data; built from deterministic extraction or structured generation; sanitised before display. `EvidenceThreadStore` persists threads. `GroundedAnswerView`, `SourceChipsView`, `RetrievalSourcesTray`, `UnifiedMetricsBar`, `TimingBreakdownView`, `ContextUsageIndicator`, `ThinkingStreamView`, `ResponseDetailsView`, `EnhancedCodeBlock`, `MarkdownRenderer`. `RAGAuditSnapshot` with feature flags (rewrite, expansion, HyDE, iterative, routing, summaries, parent, corrective, compression, graph packing, cascade, multi-vector, unlimited reasoning), score distribution, candidate counts, context budget, route, recursive metrics, `acceptanceOverride`. `RetrievalTraceCollector` records vector, lexical, fusion, boosted, candidate, rerank and final stages for evaluation. `PipelineSignposts`; `TelemetryCenter`; `HardwareTelemetryState`; `PipelineTraceExporter` and `scripts/pull_trace.sh`; the trace file is `pipeline_trace.log` in the app container's Documents folder. `ResponseTransformService` and `WritingToolsService` for post-answer rewriting without re-entering retrieval.
+**Expert.** `StructuredAnswer`: refusal state, answer type (lookup, table lookup, procedure, compare, summarise, investigate, compute, findings, refused), text, atomic claims with verdicts, evidence records (ID, page, quote ≤ ~240 chars, document, section path), missing information, debug data; built from deterministic extraction or structured generation; sanitised before display. `EvidenceThreadStore` persists threads. `GroundedAnswerView`, `SourceChipsView`, `RetrievalSourcesTray`, `UnifiedMetricsBar`, `TimingBreakdownView`, `ContextUsageIndicator`, `ThinkingStreamView`, `ResponseDetailsView`, `EnhancedCodeBlock`, `MarkdownRenderer`. `RetrievalSourcesTray`, `TimingBreakdownView` and `ContextUsageIndicator` were removed in 5.7 on 2026-10-20: nothing referenced them. `RAGAuditSnapshot` with feature flags (rewrite, expansion, HyDE, iterative, routing, summaries, parent, corrective, compression, graph packing, cascade, multi-vector, unlimited reasoning), score distribution, candidate counts, context budget, route, recursive metrics, `acceptanceOverride`. `RetrievalTraceCollector` records vector, lexical, fusion, boosted, candidate, rerank and final stages for evaluation. `PipelineSignposts`; `TelemetryCenter`; `HardwareTelemetryState`; `PipelineTraceExporter` and `scripts/pull_trace.sh`; the trace file is `pipeline_trace.log` in the app container's Documents folder. `ResponseTransformService` and `WritingToolsService` for post-answer rewriting without re-entering retrieval.
 
 **Expert's expert.** The audit snapshot once carried a fabricated `top_similarity` of exactly 0.7 on every row of a Deep Think run because it was hardcoded rather than measured; observability that lies is worse than none, and it is why the feature flags and score distributions are checked against the retrieval trace in evaluation. The evidence quote cap is also a privacy choice: 240 characters is enough to inspect and small enough not to leak a document into a stored thread.
 
@@ -2293,7 +2328,7 @@ Thirty-five concepts. What comes back and how you can inspect it: typed answers,
 ### Evidence ID (Core, verified), Evidence record (Core, verified), Evidence quote cap (Core, verified), Inline citation (Core, verified), Source chip (Core, verified)
 - **Idiot:** the sticky notes and the tappable sources under the answer.
 - **Dot-connector:** a stable ID under the human-readable number; a record with page, quote, document, section; quotes capped near 240 characters; citations sit next to the claim; chips open the actual passage.
-- **Expert:** `StructuredAnswer` evidence model; `SourceChipsView`, `RetrievalSourcesTray`.
+- **Expert:** `StructuredAnswer` evidence model; `SourceChipsView`, `RetrievalSourcesTray`. `RetrievalSourcesTray` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### Evidence-thread persistence (Core, verified)
 - **Idiot:** the conversation is saved.
@@ -2348,7 +2383,7 @@ Thirty-five concepts. What comes back and how you can inspect it: typed answers,
 ### TelemetryCenter (Support, verified), Thinking stream (Support, verified), Timing breakdown (Support, verified), Token-budget metadata (Core, verified), Unified metrics bar (Support, verified)
 - **Idiot:** the dashboards.
 - **Dot-connector:** typed events decoupled from UI; live progress without raw reasoning; retrieval versus generation time; why evidence was compressed or omitted; one place for the operating evidence.
-- **Expert:** `TelemetryCenter`, `ThinkingStreamView`, `TimingBreakdownView`, `ContextUsageIndicator`, `UnifiedMetricsBar` (4,669 lines).
+- **Expert:** `TelemetryCenter`, `ThinkingStreamView`, `TimingBreakdownView`, `ContextUsageIndicator`, `UnifiedMetricsBar` (4,669 lines). `TimingBreakdownView` and `ContextUsageIndicator` were removed in 5.7 on 2026-10-20: nothing referenced them.
 # Module 14. Evaluation, benchmarks, and quality measurement
 
 Thirty-one concepts. Measuring whether any of this works, and the two lessons that made most earlier figures unusable.
@@ -2441,15 +2476,17 @@ Forty-four concepts. The power manager and the janitor: how hard the device may 
 
 **Dot-connector.** The two guards that came from real data loss. The materialisation guard: iCloud reports a vector store exists but the bytes aren't downloaded; without the guard, that read as an empty library and triggered a destructive overwrite. Deletion-wins plus tombstones: a device that still has the last full copy would otherwise resurrect what you deleted. And the open defect lives here: a 1.68-second idle timer in `WorkspaceSyncService` that fires because a container's orphaned state never resolves. It used to reload every vector store per tick, 2,848 loads in 164 idle seconds; the router's on-disk signature check made it cheap; the timer is still there.
 
-**Expert.** `DeviceCapabilityService`: `utsname` for the device model, `sysctlbyname("machdep.cpu.brand_string")` on Mac, physical memory, a Metal device query for GPU limits; TOPS lookup per chip (35 A17 Pro, 35/38 A18/A18 Pro, 38 every M4, 45 every M5; a new Mac was once tiered as M3-era because M5 was unknown, fixed late August). Ladder: agentic step concurrency 3 to 32, step cooldown 100 ms to 0, vector batch 128 to 16,384, embedding batch 8 to 512, Vision concurrency 2 to 64, PDF render concurrency 1 to 64 capped by a per-page memory estimate, embedding concurrency 2 to 128 (64 is the iPad ceiling; a Mac reaches 128). GPU profile to compute units: query-side models Efficiency and Balanced `.cpuAndNeuralEngine`, Performance and Maximum `.all`; ingestion embedder Efficiency `.cpuAndNeuralEngine`, the rest `.all`. `AdaptivePipelineOptimizer`: thermal critical forces minimal; memory pressure critical forces efficient; serious thermal no longer throttles; battery alone no longer degrades; on Mac only thermal and memory matter; query timeout and step cooldown per level. `BackgroundTaskService` and `OpenIntelligenceApp`: continued ingestion, continued query (system-scheduled), index maintenance no earlier than 4 h and `requiresExternalPower`, Spotlight reindex no earlier than 2 h, app refresh no earlier than 30 min; iOS only. `IngestionLiveActivityService` updates within 0.5 s. `WorkspaceSyncService` (3,866 lines): debounce 2 s, bootstrap conflict detection, merge plan, tombstones, deletion-wins, materialisation guard, write-in-progress guard, vector sync signature cache. `QuotaPolicy` for document and library limits and the free-tier Maximum daily allowance; `EntitlementStore` and `MonetizationPolicy` from StoreKit; `MaximumModeQuotaStore`. `SettingsStore` snapshotted at query start. `LoggingConfiguration` for levels, categories, buffering and redaction. `GPUComputeService` kernels: batch cosine similarity (plus SIMD and threadgroup variants), batch normalise, MMR diversity; buffer pool; residency set. `BNNSGraphService` for normalisation, matrix cosine, softmax, RRF arithmetic and pairwise similarity on Accelerate, present in the source but called by nothing in the app. `[evidence_level: code_verified, confidence: exact, evidence_source: DeviceCapabilityService.swift:749-781; corrected 2026-09-29 from "embedding concurrency 2 to 64"]` `[evidence_level: code_verified, confidence: exact, evidence_source: git grep finds BNNSGraphService in no file but BNNSGraphService.swift, whose functions sit at :54, 108, 191, 249, 275; the live vector maths calls vDSP directly at BNNSVectorDatabase.swift:365, 376, 536 and RAGEngine.swift:251; corrected 2026-09-29 from an entry that presented it as in use]`
+**Expert.** `DeviceCapabilityService`: `utsname` for the device model, `sysctlbyname("machdep.cpu.brand_string")` on Mac, physical memory, a Metal device query for GPU limits; TOPS lookup per chip (35 A17 Pro, 35/38 A18/A18 Pro, 38 every M4, 45 every M5; a new Mac was once tiered as M3-era because M5 was unknown, fixed late August). Ladder: agentic step concurrency 3 to 32, step cooldown 100 ms to 0, vector batch 128 to 16,384, embedding batch 8 to 512, Vision concurrency 2 to 64, PDF render concurrency 1 to 64 capped by a per-page memory estimate, embedding concurrency 2 to 128 (64 is the iPad ceiling; a Mac reaches 128). GPU profile to compute units: query-side models Efficiency and Balanced `.cpuAndNeuralEngine`, Performance and Maximum `.all`; ingestion embedder Efficiency `.cpuAndNeuralEngine`, the rest `.all`. `AdaptivePipelineOptimizer`: thermal critical forces minimal; memory pressure critical forces efficient; serious thermal no longer throttles; battery alone no longer degrades; on Mac only thermal and memory matter; query timeout and step cooldown per level. `BackgroundTaskService` and `OpenIntelligenceApp`: continued ingestion, continued query (system-scheduled), index maintenance no earlier than 4 h and `requiresExternalPower`, Spotlight reindex no earlier than 2 h, app refresh no earlier than 30 min; iOS only. `IngestionLiveActivityService` updates within 0.5 s. `WorkspaceSyncService` (3,866 lines): debounce 2 s, bootstrap conflict detection, merge plan, tombstones, deletion-wins, materialisation guard, write-in-progress guard, vector sync signature cache. `QuotaPolicy` for document and library limits and the free-tier Maximum daily allowance; `EntitlementStore` and `MonetizationPolicy` from StoreKit; `MaximumModeQuotaStore`. `SettingsStore` snapshotted at query start. `LoggingConfiguration` for levels, categories, buffering and redaction. `GPUComputeService` kernels: batch cosine similarity (plus SIMD and threadgroup variants), batch normalise, MMR diversity; buffer pool; residency set. `BNNSGraphService` for normalisation, matrix cosine, softmax, RRF arithmetic and pairwise similarity on Accelerate, present in the source but called by nothing in the app, and removed in 5.7 on 2026-10-20. `[evidence_level: code_verified, confidence: exact, evidence_source: DeviceCapabilityService.swift:749-781; corrected 2026-09-29 from "embedding concurrency 2 to 64"]` `[evidence_level: code_verified, confidence: exact, evidence_source: git grep finds BNNSGraphService in no file but BNNSGraphService.swift, whose functions sit at :54, 108, 191, 249, 275; the live vector maths calls vDSP directly at BNNSVectorDatabase.swift:365, 376, 536 and RAGEngine.swift:251; corrected 2026-09-29 from an entry that presented it as in use]`
 
 **Expert's expert.** The bank's GPU-profile entry is right: the profile gates the vector-search GPU path, and module 06 has the three conditions. So is the bank's "Performance profile moves sufficiently large searches to GPU": a search over 1,000 or more vectors goes to the GPU only under Performance or Maximum, with a Metal device present. Until 2026-09-29 this paragraph said the opposite of both and called it a correction, although the switch has been in `BNNSVectorDatabase.search` since `fcb61d2` (2026-07-15). "Metal Performance Shaders" appears as a concept; the kernels in `GPUComputeService` are custom Metal functions, so treat MPS as infrastructure vocabulary rather than a distinct code path. Unified memory is why the mmap-to-Metal handoff is near-zero-copy and also why Vision, Core ML and the vector store compete inside one process budget, which is what the throttle, the buffer pool and the memory-warning listener are for. `[evidence_level: code_verified, confidence: exact, evidence_source: BNNSVectorDatabase.swift:501-507; DeviceCapabilityService.swift:923-934, 950]`
+
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** parts of the envelope above change nothing at run time, one applies only to Standard, and "M-series" is not what the ultra-advanced tier means. The agentic step concurrency (`maxConcurrentAgenticSteps`, 3 to 32) is only printed in a diagnostic summary, and the agentic step cooldown (`agenticStepCooldownMs`, 100 ms to 0) has no caller. In `AdaptivePipelineOptimizer`, the minimal level's "no agentic steps" is a `maxAgenticSteps` of 0 that nothing reads, and its `maxQueryTimeoutSeconds` has no reader either, so a critical thermal state does not stop Deep Think or Maximum, and no query timeout is applied. Its `stepCooldownMs` is read: before each Standard generation `applyCooldown` waits 200 ms on an A17 Pro, 100 on an A18, 50 on an A19 and 0 on the ultra tier, 150 ms more under critical memory pressure and 300 ms at critical heat, and nothing applies it to Deep Think or Maximum. What the device does set for the loop is `optimizedAgenticConfig()`: 5, 8, 10 or 12 to 32 steps, 20,000 to 128,000 tokens and a 0.85 to 0.95 confidence target by tier, and the steps only pick the chain's starting configuration. The tier comes from the chip by model identifier: ultra-advanced is a Mac with an M1 Ultra or an M2 or later, an iPad Pro with an M2 or later and an iPhone with an A20 or later, while M1, M1 Pro and M1 Max Macs, the M1 iPads and the M2 iPad Air are enhanced, and the M3 iPad Air and an unknown device family are advanced. The only waits inside the loops are a 1.5 second back-off after a failed session and, from 5.7, 1 second before a session while iOS 27 asks apps to use less. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/Infrastructure/Monitoring/DeviceCapabilityService.swift:605-639, :1714-1715, :1044-1091, :1096-1488 (the tier tables), OpenIntelligence/Services/Infrastructure/Optimization/AdaptivePipelineOptimizer.swift:104-108, :115-261 and :408-413, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:15541, OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:212-226, :5430, :6952, OpenIntelligence/Services/Infrastructure/Monitoring/SystemResourceAdvice.swift:28-32, a search of every Swift file under OpenIntelligence/ for each field]`
 
 ## Every concept
 
 ### AdaptivePipelineOptimizer (Core, verified) and Full, Balanced, Efficient, Minimal optimization levels (Core/Conditional, verified)
 - **Idiot:** the dimmer switch, with four positions.
-- **Dot-connector:** full is everything permitted; balanced disables some repeated work; efficient drops HyDE, compression and iteration and shrinks batches; minimal keeps only essential retrieval and generation with no agentic steps. Critical heat picks minimal, critical memory picks efficient.
+- **Dot-connector:** full is everything permitted; balanced disables some repeated work; efficient drops HyDE, compression and iteration and shrinks batches; minimal keeps only essential retrieval and generation with no agentic steps. Critical heat picks minimal, critical memory picks efficient. **Corrected 2026-10-20:** minimal's "no agentic steps" is a value nothing reads, so Deep Think and Maximum still run under critical heat (`AdaptivePipelineOptimizer.swift:254`).
 - **Expert:** resolved per query after complexity and device state; adjusts features, candidate limits, context, rerank batch, agentic steps, cooldowns, timeout, thresholds and MMR.
 
 ### Balanced profile (Core, verified), Efficiency profile (Core, verified), Performance profile (Core, verified), Maximum GPU profile (Core, verified), GPU execution profile (Core, verified)
@@ -2462,10 +2499,10 @@ Forty-four concepts. The power manager and the janitor: how hard the device may 
 - **Dot-connector:** continued tasks carry user-started work through backgrounding; maintenance waits for power and hours.
 - **Expert:** five identifiers registered in `OpenIntelligenceApp` on iOS; index maintenance 4 h and external power; Spotlight 2 h; refresh 30 min.
 
-### BNNSGraphService (Dormant, verified: in the source, called by nothing; listed as Core until 2026-09-29) and vDSP (Core, verified) and Unified memory (Core, verified)
+### BNNSGraphService (Dormant, verified: in the source, called by nothing; listed as Core until 2026-09-29; removed in 5.7 on 2026-10-20) and vDSP (Core, verified) and Unified memory (Core, verified)
 - **Idiot:** the fast-maths library on the CPU, and the reason the GPU can read the same memory.
 - **Dot-connector:** normalisation, matrix cosine, softmax, RRF arithmetic and pairwise similarity on Accelerate, in a service nothing calls, while the live vector maths calls vDSP directly; unified memory enables near-zero-copy handoffs and means everything competes for one budget.
-- **Expert:** `BNNSGraphService`, unused; `vDSP_dotpr`, `vDSP_mmul`; `MTLResourceOptions.storageModeShared`.
+- **Expert:** `BNNSGraphService`, unused and removed in 5.7 on 2026-10-20; `vDSP_dotpr`, `vDSP_mmul`; `MTLResourceOptions.storageModeShared`.
 
 ### Core ML compute units (Core, verified) and Neural Engine (Core as a request, not a placement)
 - **Idiot:** the list of chips the model is allowed to use; Apple picks.
@@ -2510,7 +2547,7 @@ Forty-four concepts. The power manager and the janitor: how hard the device may 
 ### Memory pressure (Core, verified) and Thermal state (Core, verified) and Query timeout (Core, verified) and Step cooldown (Conditional, verified)
 - **Idiot:** too hot, too full, too long, take a breath.
 - **Dot-connector:** nominal, warning, critical memory; nominal, fair, serious, critical thermal; a hard latency boundary; a pause between heavy steps.
-- **Expert:** `AdaptivePipelineOptimizer`; cooldown 100 ms on baseline down to 0 on ultra-advanced; GPU cache cleared on memory warnings. The bank anchors a query timeout to the optimiser; no `queryTimeout` identifier matched a grep, so treat the exact allowance as unverified; the 180 s recursive-research budget in module 11 is the verified wall clock.
+- **Expert:** `AdaptivePipelineOptimizer`; cooldown 100 ms on baseline down to 0 on ultra-advanced; GPU cache cleared on memory warnings. The bank anchors a query timeout to the optimiser; no `queryTimeout` identifier matched a grep, so treat the exact allowance as unverified; the 180 s recursive-research budget in module 11 is the verified wall clock. **Corrected 2026-10-20:** the timeout exists as a value (`maxQueryTimeoutSeconds`) and nothing reads it, so read Query timeout as Dormant. The cooldown is applied, so Step cooldown stays Conditional: before each Standard generation `applyCooldown` waits `stepCooldownMs`, 200 ms on baseline (A17 Pro), 100 on enhanced, 50 on advanced and 0 on ultra-advanced, 150 ms more under critical memory pressure and 300 ms at critical heat. The 100 ms to 0 above is `agenticStepCooldownMs`, which has no caller (`AdaptivePipelineOptimizer.swift:107-108`, `:115-261`, `:408-413`, `RAGService.swift:15541`, `DeviceCapabilityService.swift:631-639`).
 
 ### SettingsStore (Core, verified)
 - **Idiot:** your settings, snapshotted.
@@ -2532,9 +2569,11 @@ Twenty-five concepts, plus the ones this pass added. The blueprint shelf: things
 
 **Dot-connector.** Two shorthands in particular collapse real structure. "Single 29-step pipeline" hides that execution branches by file type, intent, mode, evidence, device state and route; teach a shared spine with conditional sub-pipelines. "Single recursive thought loop" hides that planning, iterative retrieval, recursive multi-session RAG, critique-and-refine and deterministic verification are five different mechanisms; teach them separately, then reconnect them in sequence, which is what modules 07, 08, 11 and 12 do.
 
-**Expert.** Verified this pass: `FoundationModelDynamicProfileRegistry` had no active call sites until `f26dc5b` (2026-09-11) made it opt-in, off by default; `SemanticChunker`'s embedding-based boundary method returns no boundaries because the chunker is never handed an `EmbeddingService`; `ExtractiveQAService`'s span model returns nil; `AppleFMEmbeddingProvider` declares 1,024 dimensions and is a placeholder; `SpeechAnalyzerService` is guarded by `canImport(SpeechAnalyzer)`, a module that does not exist, and calls an API shape the SDK does not declare; `Docs/SHIPPED_CAPABILITIES.json` recorded PCC as absent from shipped builds until 2026-09-10 and has recorded it as shipping since 5.2 (build 451); `AutoTuneService` operates outside the live answer path and does not train models. Historical items are recorded in `CHANGELOG.md`, `RELEASE_NOTES.md`, `HOW_IT_WORKS.md` and `PROGRESSION.md` with dated withdrawals. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGService.swift:8810-8814, 9578-9583, AgenticOrchestrator.swift:8964-8965, ModelConfigurationSheet.swift:35, 85, 176-177; f26dc5b and 0da8528 are in v5.3.0 and v5.4.0; corrected 2026-09-29 from "has no active call sites"]` `[evidence_level: artifact_derived+code_verified, confidence: high, evidence_source: Docs/SHIPPED_CAPABILITIES.json private_cloud_compute (status shipping, flipped 2026-09-10 at build 451); ci_scripts/ci_post_xcodebuild.sh:93, 107-118; FoundationModelSessionFactory.swift:87-88; FoundationModelRoutePolicy.swift:121-132; corrected 2026-09-29 from "records PCC as absent from shipped builds" and, in the rung above, "compiled out of shipped builds"]`
+**Expert.** Verified this pass: `FoundationModelDynamicProfileRegistry` had no active call sites until `f26dc5b` (2026-09-11) made it opt-in, off by default; `SemanticChunker`'s embedding-based boundary method returns no boundaries because the chunker is never handed an `EmbeddingService`; `ExtractiveQAService`'s span model returns nil (the file was removed in 5.7 on 2026-10-20: nothing referenced it); `AppleFMEmbeddingProvider` declares 1,024 dimensions and is a placeholder; `SpeechAnalyzerService` is guarded by `canImport(SpeechAnalyzer)`, a module that does not exist, and calls an API shape the SDK does not declare; `Docs/SHIPPED_CAPABILITIES.json` recorded PCC as absent from shipped builds until 2026-09-10 and has recorded it as shipping since 5.2 (build 451); `AutoTuneService` operates outside the live answer path and does not train models (removed in 5.7 on 2026-10-20: nothing referenced it). Historical items are recorded in `CHANGELOG.md`, `RELEASE_NOTES.md`, `HOW_IT_WORKS.md` and `PROGRESSION.md` with dated withdrawals. `[evidence_level: code_verified, confidence: exact, evidence_source: RAGService.swift:8810-8814, 9578-9583, AgenticOrchestrator.swift:8964-8965, ModelConfigurationSheet.swift:35, 85, 176-177; f26dc5b and 0da8528 are in v5.3.0 and v5.4.0; corrected 2026-09-29 from "has no active call sites"]` `[evidence_level: artifact_derived+code_verified, confidence: high, evidence_source: Docs/SHIPPED_CAPABILITIES.json private_cloud_compute (status shipping, flipped 2026-09-10 at build 451); ci_scripts/ci_post_xcodebuild.sh:93, 107-118; FoundationModelSessionFactory.swift:87-88; FoundationModelRoutePolicy.swift:121-132; corrected 2026-09-29 from "records PCC as absent from shipped builds" and, in the rung above, "compiled out of shipped builds"]`
 
 **Expert's expert.** Additions to the historical list from the trace: the `.cpuAndGPU` Maximum profile that excluded the Neural Engine (fixed 2026-08-26); the `NSImage.lockFocus` macOS render path that produced 4× oversize images (replaced by a bitmap context); the 0.98 Maximum verification bar (now 0.80); the 0.55 `tauNormal` (now 0.40); the transcript-carrying reasoning chain that overflowed at 4,521 tokens (replaced by the FactBank); the reorder stride of half the chunks-per-session (now equal); the hardcoded 0.70 audit similarity. And a correction to the bank itself: "fixed 384-dimensional architecture" is listed as a historical oversimplification, which is right, but in practice every shipping library is 384 unless someone chose an NL provider, so say "384 by default, resolved per library."
+
+**Corrected 2026-10-20 against the working tree (`b868fc0` plus the 5.7 work in progress):** one item leaves the dormant list and several join it. The `SpeechAnalyzer` branch is dormant through 5.6 only. From 5.7 `SpeechAnalyzerService` compiles and runs first, transcribing with `SpeechAnalyzer` and `SpeechTranscriber` and falling back to `SFSpeechRecognizer`. Add to the dormant list, each in the source and on no path: multi-chain reasoning (`executeMultiChainReasoning` and its cluster chains, no caller), `executeHonestSynthesis` (no caller), Maximum's re-retrieval inside its own loop (it needs a saturation streak of 3, which first exists at the start of session 6, where "converged" already stops the loop), HyDE in all three user-selectable modes, contextual compression in all three, planner escalation while Apple's model writes the answers, the `ChainLink`, `ReasonedInsight` and `ReasonedSynthesis` hand-off types, the entity index (nothing fills it), `VecturaVectorDatabase` (VecturaKit is not a dependency, so it never compiles), the per-mode MMR λ in `RAGQualityMode.mmrLambda` (no reader), `verifyAnswerGrounding` (no caller), the local OpenAI-compatible backend (`#if false`), the agentic step cooldown (`agenticStepCooldownMs`, no caller), Gate A's margin check (`checkRetrievalConfidence`, no caller), and `AdaptivePipelineOptimizer`'s `maxAgenticSteps` and `maxQueryTimeoutSeconds` (no reader). The optimizer's `stepCooldownMs` stays: Standard waits it before generating. Add to the misnamed list: "the deterministic target skips the model". No plan is deterministic today, because no code asks for exact extraction, and one would run on the same branch as an on-device one. The answers with no model call are Deep Think and Maximum's precision shortcut and Standard's reliability fallback, an extracted value or excerpts alone. `Docs/CANONICAL_OPENINTELLIGENCE_SOURCE_OF_TRUTH.md`, section 19, cites the file and line for each. `[evidence_level: code_verified, confidence: exact, evidence_source: OpenIntelligence/Services/Document/Analysis/SpeechAnalyzerService.swift:1-15, OpenIntelligence/Services/Agentic/AgenticOrchestrator.swift:7533, :7891, :1658, :6706-6807, :7024 and :7048, OpenIntelligence/Services/RAG/Orchestration/RAGService.swift:12278-12325, :21863-21866, :14320-14326, :14406, :15877, :18447-18448, :10561-10737, :17317-17612, :15541, OpenIntelligence/Services/RAG/Orchestration/QueryRuntimeCoordinator.swift:211, OpenIntelligence/Core/Models/RAGStructuredResponse.swift:238-278, OpenIntelligence/Services/Document/Analysis/EntityIndexService.swift:31 and :137, OpenIntelligence/Services/VectorStore/VectorStoreRouter.swift:167-172, OpenIntelligence/Core/Models/RAGQualityMode.swift:210-217, OpenIntelligence/Services/Query/Enhancement/ContextualCompressionService.swift:452, OpenIntelligence/Services/LLM/LocalOpenAIServerLLMService.swift:14, OpenIntelligence/Services/Infrastructure/Monitoring/DeviceCapabilityService.swift:631-639, OpenIntelligence/Services/RAG/Safety/VerificationGateService.swift:279-288, OpenIntelligence/Services/Infrastructure/Optimization/AdaptivePipelineOptimizer.swift:104-108 and :408-413]`
 
 ## Every concept
 
@@ -2558,10 +2597,10 @@ Twenty-five concepts, plus the ones this pass added. The blueprint shelf: things
 - **Dot-connector:** a policy-calibrated trust signal, never validated against outcomes.
 - **Expert:** `ConfidenceCalibrationService`; `EVALS.md`.
 
-### Automatic online self-training (Historical, verified) and AutoTuneService (Support, verified)
+### Automatic online self-training (Historical, verified) and AutoTuneService (Support, verified; removed in 5.7 on 2026-10-20: nothing referenced it)
 - **Idiot:** the app does not learn from your documents by retraining.
 - **Dot-connector:** it adjusts policy and thresholds from evaluation data under constraints; the embedding and reranker models are never trained on user content.
-- **Expert:** `AutoTuneService` outside the live path; `EmbeddingService` never fine-tunes.
+- **Expert:** `AutoTuneService` outside the live path (removed in 5.7 on 2026-10-20); `EmbeddingService` never fine-tunes.
 
 ### Bundled Core ML generative backend (Historical, verified), Local GGUF backend (Historical, verified), Local MLX generative backend (Historical, verified)
 - **Idiot:** three writers that were fired.
@@ -2570,7 +2609,7 @@ Twenty-five concepts, plus the ones this pass added. The blueprint shelf: things
 
 ### Default HNSW architecture (Historical, verified)
 - **Idiot:** the app does not use the shortcut index.
-- **Dot-connector:** exact scan over mmap is the default; HNSW belongs to the optional Vectura path.
+- **Dot-connector:** exact scan over mmap is the default; HNSW belongs to the optional Vectura path. **Corrected 2026-10-20:** and the Vectura path never compiles, because VecturaKit is not a dependency, so every library uses the exact scan (`VectorStoreRouter.swift:167-172`).
 - **Expert:** `VectorStoreRouter`.
 
 ### Dynamic Foundation Model profiles (Conditional, verified; Dormant until 2026-09-11)
@@ -2606,7 +2645,7 @@ Twenty-five concepts, plus the ones this pass added. The blueprint shelf: things
 ### Neural extractive QA model (Dormant, verified)
 - **Idiot:** the reader on the shelf.
 - **Dot-connector:** protocol and stub exist; heuristic extraction runs instead.
-- **Expert:** `ExtractiveQAService` returns nil.
+- **Expert:** `ExtractiveQAService` returns nil. `ExtractiveQAService` was removed in 5.7 on 2026-10-20: nothing referenced it.
 
 ### PCC simulation (Historical, documented) and Production PCC (Conditional, verified; Dormant until 5.2)
 - **Idiot:** older phones don't pretend to use the cloud, and shipped builds have had the real cloud route since 5.2, for iOS and macOS 27; before 2026-09-10 they didn't.
@@ -2631,4 +2670,4 @@ Twenty-five concepts, plus the ones this pass added. The blueprint shelf: things
 ### Added by this pass: SpeechAnalyzer transcription branch (Dormant, verified)
 - **Idiot:** the newer speech reader that never compiles.
 - **Dot-connector:** guarded by a module that does not exist; calls an API shape the SDK doesn't declare; `SFSpeechRecognizer` runs instead; nothing is broken for the user.
-- **Expert:** `SpeechAnalyzerService.swift:17, 94, 141, 160`; Future Backlog row filed 2026-09-02.
+- **Expert:** `SpeechAnalyzerService.swift:17, 94, 141, 160`; Future Backlog row filed 2026-09-02. **Corrected 2026-10-20:** dormant through 5.6 only. From 5.7 the guard is gone and this path runs first, with `SFSpeechRecognizer` as the fallback (`SpeechAnalyzerService.swift:1-15`, `DocumentProcessor.swift:9287`).

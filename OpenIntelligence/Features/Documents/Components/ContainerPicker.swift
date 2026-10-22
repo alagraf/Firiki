@@ -12,25 +12,20 @@ enum ContainerPillBadgeStyle {
     case local
     case iCloud
 
+    /// White on a darker circle on a selected chip, and the label color on the tint otherwise (5.7): a count in 92%
+    /// white on a lighter circle of the chip's color, and gray on a gray tint, measured under 4.5 to 1.
     func foreground(isSelected: Bool) -> Color {
-        switch self {
-        case .count:
-            return isSelected ? .white.opacity(0.92) : .secondary
-        case .local:
-            return isSelected ? .white.opacity(0.95) : .secondary
-        case .iCloud:
-            return isSelected ? .white.opacity(0.95) : .blue
-        }
+        isSelected ? .white : DSColors.primaryText
     }
 
     func background(isSelected: Bool) -> Color {
         switch self {
         case .count:
-            return isSelected ? .white.opacity(0.2) : Color.secondary.opacity(0.14)
+            return isSelected ? .black.opacity(0.18) : Color.secondary.opacity(0.14)
         case .local:
-            return isSelected ? .white.opacity(0.16) : Color.secondary.opacity(0.12)
+            return isSelected ? .black.opacity(0.18) : Color.secondary.opacity(0.12)
         case .iCloud:
-            return isSelected ? .white.opacity(0.16) : Color.blue.opacity(0.12)
+            return isSelected ? .black.opacity(0.18) : Color.accentColor.opacity(0.12)
         }
     }
 }
@@ -45,20 +40,20 @@ struct ContainerPickerStrip: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             if #available(iOS 26.0, *) {
-                GlassEffectContainer(spacing: 8) {
-                    HStack(spacing: 8) {
+                GlassEffectContainer(spacing: DSSpacing.sm) {
+                    HStack(spacing: DSSpacing.sm) {
                         pillList
                     }
                     .modifier(LibraryReordering(containerService: containerService))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.sm)
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     pillList
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.sm)
             }
         }
     }
@@ -116,7 +111,7 @@ struct ContainerPickerStrip: View {
                     // than as a feeling. Switching libraries is the specific complaint,
                     // and until now nothing on this path was timed at all.
                     NavigationTiming.begin("library")
-                    withAnimation {
+                    withAnimation(DSAnimations.snappySpring) {
                         containerService.setActive(container.id)
                     }
                     SiriDonations.libraryUsed(container)
@@ -149,19 +144,19 @@ struct ContainerPickerStrip: View {
             Button {
                 onCreateLibrary?()
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: DSSpacing.xs) {
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.caption2.weight(.semibold))
                     Text("New Library")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.footnote.weight(.medium))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, DSSpacing.xs)
                 .background(
                     Capsule()
                         .strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4]))
                 )
-                .foregroundColor(.secondary)
+                .foregroundStyle(DSColors.secondaryText)
             }
             .buttonStyle(.plain)
             .fixedSize(horizontal: true, vertical: false)
@@ -194,35 +189,41 @@ struct ContainerPill: View {
         Color(hex: container.colorHex) ?? .accentColor
     }
 
+    /// The badge as VoiceOver reads it: a count as documents, other badges as they are written.
+    private var accessibilityBadge: String {
+        guard let badgeText else { return "" }
+        guard case .count = badgeStyle, let count = Int(badgeText) else { return badgeText }
+        return count == 1 ? "1 document" : "\(count) documents"
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DSSpacing.xs) {
             Image(systemName: container.icon)
-                .font(.system(size: 11, weight: .medium))
+                .font(.caption2.weight(.medium))
             Text(displayName ?? container.name)
-                .font(.system(size: 13, weight: .medium))
+                .font(.footnote.weight(.medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .minimumScaleFactor(0.9)
                 .layoutPriority(1)
             if let badgeText {
                 Text(badgeText)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .font(.system(.caption2, design: .rounded).weight(.bold))
+                    .padding(.horizontal, DSSpacing.xs)
+                    .padding(.vertical, DSSpacing.xxs)
                     .background(badgeStyle.background(isSelected: isSelected))
                     .foregroundStyle(badgeStyle.foreground(isSelected: isSelected))
                     .clipShape(Capsule())
                     .fixedSize(horizontal: true, vertical: false)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.xs)
         .background(
             Capsule()
                 .fill(isSelected ? containerColor : DSColors.surface)
         )
-        .foregroundColor(isSelected ? .white : .primary)
+        .foregroundStyle(isSelected ? .white : .primary)
         .overlay(
             Capsule()
                 .strokeBorder(isSelected ? Color.clear : containerColor.opacity(0.3), lineWidth: 1)
@@ -232,7 +233,14 @@ struct ContainerPill: View {
         .onTapGesture {
             onSelect()
         }
-        .glassEffectHelper(isSelected: isSelected, tintColor: containerColor, interactive: true)
+        // One element for VoiceOver, read as a button: the library's name, its document count and whether
+        // it is the active library. Its icon and its name were two small elements with no button trait,
+        // and the icon read "Move", the folder symbol's own label (5.7, accessibility audit).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(displayName ?? container.name)
+        .accessibilityValue(accessibilityBadge)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { onSelect() }
         // Press-and-hold is `.contextMenu`, not a manual `onLongPressGesture` plus a
         // confirmation dialog, and that is a behaviour fix rather than a style preference.
         //
@@ -251,11 +259,22 @@ struct ContainerPill: View {
         //
         // This block was already the macCatalyst implementation. It is now the only one, so
         // both platforms present the same actions in the same order.
+        //
+        // The menu goes on before the glass (5.7). With `glassEffect` applied outside `.contextMenu`, interactive or
+        // not, a long press opened nothing: measured 2026-10-19 in the iOS 27.0 Simulator with a probe app, where the
+        // same chip without the glass, or with the menu applied first, opened its menu, and still reordered.
         .contextMenu {
             Button {
                 onSelect()
             } label: {
                 Label("Select Library", systemImage: "checkmark.circle")
+            }
+
+            // A link that opens this library in OpenIntelligence, as a document's Copy Link does (5.7).
+            Button {
+                SystemClipboard.copy(AppLink.webURL(for: .library(container.id)).absoluteString)
+            } label: {
+                Label("Copy Link", systemImage: "link")
             }
 
             if let onSetLibraryStorage {
@@ -290,6 +309,14 @@ struct ContainerPill: View {
                 }
             }
         }
+        // One `glassEffect` with the glass picked by value, not `glassEffectHelper`, whose `if`s make the chip a
+        // different view in each state (5.7). A chip is a reorderable row on iOS and macOS 27, and when a view-builder
+        // branch, an `if #available` or an `AnyView` holds all of a row's content, even under other modifiers such as
+        // the `contextMenu` above, SwiftUI starts the drag with no id for it and stops the app in `DragContainerStorage.payload(for:)` ("Unexpected identifier type. Expected UUID, got
+        // UUID": its cast of the dragged id fails because the id is nil). Measured 2026-10-19 in the iOS 27.0
+        // Simulator with a probe app: each of those around the chip crashed the drag, and one glass call, a branch
+        // around the count alone, or one around the name alone reordered the chips.
+        .glassEffect(isSelected ? .regular.tint(containerColor).interactive() : .regular.interactive(), in: Capsule())
     }
 }
 
@@ -301,6 +328,12 @@ struct ContainerPill: View {
 /// Applies a dragged chip's new place to the library list, on iOS and macOS 27, where SwiftUI's
 /// `reorderContainer` reports a drag as the dragged ids and the chip they were dropped before
 /// (5.7). Before 27 the chips do not move.
+///
+/// Two things stop the drag working, both found on iOS 27.0 on 2026-10-19. A view-builder branch, an `if #available`
+/// or an `AnyView` that holds all of a chip's content, even under other modifiers, starts the drag with no id and
+/// stops the app (`ContainerPill`). A drop target around this row makes a drag report the chip's own place, so no
+/// library moves (`DocumentLibraryView.takingDroppedFiles(as:)`). Keep both off the chips and off every screen that
+/// shows the row.
 private struct LibraryReordering: ViewModifier {
     let containerService: ContainerService
 
@@ -313,7 +346,7 @@ private struct LibraryReordering: ViewModifier {
                 } else {
                     target = nil
                 }
-                withAnimation {
+                withAnimation(DSAnimations.snappySpring) {
                     containerService.move(difference.sources, before: target)
                 }
             }

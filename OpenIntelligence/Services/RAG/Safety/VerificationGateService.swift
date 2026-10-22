@@ -327,21 +327,35 @@ actor VerificationGateService {
         query: String,
         structuredClaims: [StructuredRAGClaim]? = nil
     ) async -> GateBEvaluation {
-        let structuredClaims = structuredClaims?.filter {
+        // The answer's own headings are not claims (5.7): the model sometimes lists its title among its claims, and
+        // Fact Check scored "Hotel Address in Lisbon" Partial, so a right answer read "1 of 2 Verified" (demo copy of
+        // e9de06d, 2026-10-15).
+        let headings = Self.headingLines(in: response)
+        // A question the model listed as a claim is not one either, as in `StructuredAnswer` (second review,
+        // 2026-10-18). When every structured claim is a heading, the answer's own sentences are checked below, as in
+        // `b70eea1`, and `StructuredAnswer` lists those sentences then.
+        let claimsToCheck = structuredClaims?.filter {
             !$0.claim.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !StructuredAnswer.isQuestionLikeClaim($0.claim)
+                && !headings.contains(Self.headingKey($0.claim))
         }
 
         let claimInputs: [VerificationClaimInput]
-        let usesStructuredClaims = structuredClaims?.isEmpty == false
+        let usesStructuredClaims = claimsToCheck?.isEmpty == false
 
-        if let structuredClaims, !structuredClaims.isEmpty {
-            claimInputs = structuredClaims.map {
+        if let claimsToCheck, !claimsToCheck.isEmpty {
+            claimInputs = claimsToCheck.map {
                 VerificationClaimInput(claim: $0.claim, citations: $0.citations)
             }
         } else {
-            claimInputs = extractClaims(from: response).map {
-                VerificationClaimInput(claim: $0, citations: [])
-            }
+            // Headings stay out here too (5.7): with no structured claims, a heading sentence was checked and counted
+            // while the answer's claim list left it out (review, 2026-10-18). Unless every sentence left is one, as in
+            // `StructuredAnswer.droppingHeadings` (second review, 2026-10-18). This only sees sentences that
+            // `containsFactualContent` keeps, so "**Notice to Enter**" on its own still has no claim to check, as in 5.6.
+            let sentences = extractClaims(from: response)
+            let nonHeadings = sentences.filter { !headings.contains(Self.headingKey($0)) }
+            claimInputs = (nonHeadings.isEmpty ? sentences : nonHeadings)
+                .map { VerificationClaimInput(claim: $0, citations: []) }
         }
 
         guard !claimInputs.isEmpty else {
@@ -358,8 +372,17 @@ actor VerificationGateService {
 
         let corpus = buildCorpus(from: chunks)
         let numericEvidence = Self.numericEvidence(from: chunks)
-        let claimResults = claimInputs.map {
-            evaluateClaim($0, in: chunks, corpus: corpus, numericEvidence: numericEvidence, query: query)
+        // Amounts of money and dates the passages contradict, read with Apple's detector (5.7, `DetectedValueCheck`).
+        let detectedEvidence = await DetectedValueCheck.evidence(from: chunks.map { $0.chunk.contextText })
+        var claimResults: [RAGVerificationResult.ClaimResult] = []
+        for claimInput in claimInputs {
+            let contradiction = await DetectedValueCheck.contradictions(
+                in: cleanClaimText(claimInput.claim), evidence: detectedEvidence
+            ).first
+            claimResults.append(
+                evaluateClaim(
+                    claimInput, in: chunks, corpus: corpus, numericEvidence: numericEvidence,
+                    detectedContradiction: contradiction, query: query))
         }
 
         let supportedCount = claimResults.filter { $0.verdict == .supported }.count
@@ -430,20 +453,30 @@ actor VerificationGateService {
             }
         }
 
-        let verification = Float(verifiedCount) / Float(responseNumbers.count)
-        let passed = verification >= 0.70
+        // An amount the passages state only in another currency, or a day of a month they give other days of,
+        // fails the gate however many numbers matched (5.7, `DetectedValueCheck`): the values above match
+        // "€1,200" against "$1,200", and "March 15" against any 15 in the passages.
+        let detected = await DetectedValueCheck.contradictions(
+            in: response,
+            evidence: await DetectedValueCheck.evidence(from: chunks.map { $0.chunk.contextText }))
 
-        let details: String
+        let verification = Float(verifiedCount) / Float(responseNumbers.count)
+        let passed = verification >= 0.70 && detected.isEmpty
+
+        var details: String
         if unverifiedNumbers.isEmpty {
             details = "All \(responseNumbers.count) numbers verified in source"
         } else {
             details = "\(verifiedCount)/\(responseNumbers.count) verified. Unverified: \(unverifiedNumbers.prefix(3).joined(separator: ", "))"
         }
+        if let first = detected.first {
+            details += ". The passages state \(first.stated), not \(first.written)"
+        }
 
         return RAGVerificationResult.GateResult(
             gate: .numericSanity,
             passed: passed,
-            confidence: verification,
+            confidence: detected.isEmpty ? verification : min(verification, 0.5),
             details: details
         )
     }
@@ -472,7 +505,7 @@ actor VerificationGateService {
     }
 
     private static func numericEvidence(from chunks: [RetrievedChunk]) -> [NumericValueExtractor.Evidence] {
-        NumericValueExtractor.evidence(from: chunks.map { $0.chunk.parentContent ?? $0.chunk.content })
+        NumericValueExtractor.evidence(from: chunks.map { $0.chunk.contextText })
     }
 
     /// Gate D: Contradiction Sweep
@@ -655,6 +688,12 @@ actor VerificationGateService {
                 details = "TOPICAL_MISMATCH (ratio=\(formatFloat3(ratio)), respMax=\(formatFloat3(responseMaxSim)), qryMax=\(formatFloat3(queryMaxSim))). " +
                     (topicalAlignment.details ?? "Retrieved evidence does not cover the query's distinguishing terms.")
                 Log.warning("[VerificationGates] Gate E: Topical alignment FAIL — \(topicalAlignment.details ?? "same-topic mismatch")", category: .pipeline)
+            } else if responseMaxSim < absoluteFloor {
+                // The floor failed, not the ratio: this read "UNGROUNDED (ratio=2.115 < 0.80" for an answer whose ratio
+                // passed and whose best similarity was 0.245 (demo copy of 3a9fcb8, 2026-10-20).
+                details = "UNGROUNDED (respMax=\(formatFloat3(responseMaxSim)) < floor \(formatFloat2(absoluteFloor)), ratio=\(formatFloat3(ratio)), qryMax=\(formatFloat3(queryMaxSim))). The answer is far from every source chunk."
+                Log.warning("[VerificationGates] Gate E: Absolute grounding FAIL: " +
+                    "the answer is far from every source (respMax=\(formatFloat3(responseMaxSim)), floor=\(formatFloat2(absoluteFloor)), ratio=\(formatFloat3(ratio)))", category: .pipeline)
             } else {
                 details = "UNGROUNDED (ratio=\(formatFloat3(ratio)) < \(formatFloat2(relativeThreshold)), respMax=\(formatFloat3(responseMaxSim)), qryMax=\(formatFloat3(queryMaxSim))). Response meaning drifted from source chunks."
                 Log.warning("[VerificationGates] Gate E: Relative grounding FAIL — " +
@@ -721,6 +760,17 @@ actor VerificationGateService {
     ///   - response: The LLM-generated response text
     ///   - chunks: Retrieved source chunks with abbreviation metadata
     /// - Returns: Gate result with confidence reflecting abbreviation faithfulness
+    /// The words at the end of an expansion whose first letters spell the abbreviation, or the whole expansion when
+    /// they do not: "Incidence Curves Showing Mild Cognitive Impairment" for MCI is "Mild Cognitive Impairment".
+    nonisolated static func acronymTail(of expansion: String, abbreviation: String) -> String {
+        let letters = Array(abbreviation.lowercased().filter(\.isLetter))
+        let words = expansion.split(whereSeparator: { $0.isWhitespace || $0 == "-" }).map(String.init)
+        guard !letters.isEmpty, words.count >= letters.count else { return expansion }
+        let tail = Array(words.suffix(letters.count))
+        let initials = tail.compactMap { $0.lowercased().first(where: \.isLetter) }
+        return initials == letters ? tail.joined(separator: " ") : expansion
+    }
+
     private func runGateF(response: String, chunks: [RetrievedChunk]) -> RAGVerificationResult.GateResult {
 
         // Step 1: Collect all abbreviation definitions from source chunks
@@ -781,10 +831,16 @@ actor VerificationGateService {
 
             checkedCount += 1
 
-            // Compare: do the response's expansion words match the source's expansion words?
-            let responseWords = Set(responseExpansion.split(separator: " ").map { String($0).lowercased() }
+            // Compare: do the response's expansion words match the source's expansion words? Each side is cut to the
+            // words whose initials spell the abbreviation (`acronymTail`, 5.7): a figure caption "Incidence Curves
+            // Showing Mild Cognitive Impairment (MCI)" and an answer's "with incident mild cognitive impairment (MCI)"
+            // both expand MCI as "mild cognitive impairment", and the words before it failed a correct answer on the
+            // owner's iPhone (Deep Think, 2026-10-21).
+            let responseWords = Set(Self.acronymTail(of: responseExpansion, abbreviation: abbr)
+                .split(separator: " ").map { String($0).lowercased() }
                 .filter { $0.count > 2 })
-            let sourceWords = Set(sourceExpansion.lowercased().split(separator: " ").map { String($0) }
+            let sourceWords = Set(Self.acronymTail(of: sourceExpansion, abbreviation: abbr).lowercased()
+                .split(separator: " ").map { String($0) }
                 .filter { $0.count > 2 })
 
             // Calculate Jaccard similarity between expansion word sets
@@ -1122,7 +1178,7 @@ actor VerificationGateService {
     }
 
     private func evidenceText(for chunk: RetrievedChunk) -> String {
-        var parts: [String] = [chunk.chunk.parentContent ?? chunk.chunk.content]
+        var parts: [String] = [chunk.chunk.contextText]
         if let sectionTitle = chunk.chunk.metadata.sectionTitle {
             parts.append(sectionTitle)
         }
@@ -1271,6 +1327,194 @@ actor VerificationGateService {
         return claims
     }
 
+    /// A citation marker as answers write it: "[S1]", or "[S1, S2]" for several sources (5.7).
+    nonisolated static let citationMarkerPattern = #"\[S\d+(?:\s*[,;]\s*S?\d+)*\]"#
+
+    /// A range of citations, with the word before it that led to it, read as its first citation alone (5.7): "are
+    /// present in [S1] through [S15]." is "are present [S1].". Fact Check showed the claim as "are present in
+    /// through." (demo copy of 3a9fcb8, 2026-10-20). Every place that keys a claim or a heading reads a range this way
+    /// (`cleanClaimText` here and in `StructuredAnswer`, `headingKey`), because a claim keyed one way on one side and
+    /// another way on the other loses its verdict (review, 2026-10-20). The word must stand alone, after a space or
+    /// an opening parenthesis: "move-in [S1] through [S3]" keeps "move-in".
+    nonisolated static func collapsingCitationRanges(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: #"(?:(?:\s+|(?<=\())(?i:in|from|across|throughout|within))?\s*("# + citationMarkerPattern
+                + #")\s*(?:through|thru|to|[-\u2013\u2014])\s*"# + citationMarkerPattern,
+            with: " $1", options: .regularExpression)
+    }
+
+    /// The answer's heading lines, as `headingKey` keys (5.7): a line of eight words or fewer ending in a colon, and a
+    /// Markdown heading ("## Hotel Address in Lisbon") or a bold line on its own (`isBoldTitle`) whose words read as a
+    /// title and not as a statement (`readsAsTitle`). A Markdown heading or a lead-in is a heading with or without a
+    /// citation marker ("## Notice to Enter [S1]"); a bold line with one is a claim the answer cites (review,
+    /// 2026-10-18). "## Subletting is allowed with written consent" states something, so it is a claim: as a heading it
+    /// was left out of the check, and the source-only check left it out of the answer it rebuilds (second review,
+    /// 2026-10-18).
+    ///
+    /// A bold title with a figure in it is a heading only when the answer's other lines give each of its figures too:
+    /// "**24 hours' notice**" over "Except in an emergency [S1]." is the answer's only statement of the figure, so it is
+    /// checked. A number that names a part ("Step 1", "Section 13", "Unit 4B") is not a figure. Numbers are read as
+    /// `NumericValueExtractor` reads them, so a citation label or a list number at the start of a line is not one, a
+    /// number written as a word ("Two") is not read, and two figures are the same when their values are, whatever their
+    /// units. A Markdown heading or a lead-in is a heading whatever its numbers, as in `b70eea1`: the figure rule made
+    /// "## Step 1" over unrelated steps a claim, and one claim that is not Supported switches off Gate E's pass on
+    /// claims. Gate C still compares every number in the answer, headings included, with the passages (two reviews,
+    /// 2026-10-18).
+    nonisolated static func headingLines(in response: String) -> Set<String> {
+        var keys: Set<String> = []
+        var boldTitles: [String] = []
+        var otherLines: [String] = []
+        for raw in response.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            let uncited = collapsingCitationRanges(line)
+                .replacingOccurrences(of: citationMarkerPattern, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+            if uncited.hasPrefix("#") {
+                if readsAsTitle(String(uncited.drop { $0 == "#" }), maxWords: nil) {
+                    keys.insert(headingKey(line))
+                } else {
+                    otherLines.append(line)
+                }
+            } else if uncited.hasSuffix(":"), uncited.split(separator: " ").count <= 8 {
+                // A lead-in introduces what follows ("You must bring:"), so it is a heading whatever its words, as in
+                // `b70eea1`: read for a statement, most lead-ins were claims (third review, 2026-10-18).
+                keys.insert(headingKey(line))
+            } else if isBoldTitle(line) {
+                boldTitles.append(line)
+            } else {
+                otherLines.append(line)
+            }
+        }
+        if !boldTitles.isEmpty {
+            // The figures the rest of the answer gives, read only when there is a bold title to compare.
+            let givenFigures = otherLines.reduce(into: Set<String>()) {
+                $0.formUnion(numberKeys(in: $1, countingParts: true))
+            }
+            for line in boldTitles where numberKeys(in: line, countingParts: false).isSubset(of: givenFigures) {
+                keys.insert(headingKey(line))
+            }
+        }
+        keys.remove("")
+        return keys
+    }
+
+    /// The numbers a line gives, as keys to compare across lines (5.7): a value, so "1,850" and "1850" are one, or a
+    /// name with a number in it, such as "Qwen-2.5-3B". Without `countingParts`, a number right after a word that names
+    /// a part ("Step 1", "Section 13", "Unit 4B") is left out (`headingLines`).
+    nonisolated private static func numberKeys(in line: String, countingParts: Bool) -> Set<String> {
+        Set(
+            NumericValueExtractor.mentions(inAnswer: line).compactMap { mention -> String? in
+                // Figures in digits, as before 5.7: an amount in words is a claim's to check, not a heading's key.
+                if mention.isSpelled { return nil }
+                if !countingParts, let word = mention.precedingWord, partWords.contains(word) { return nil }
+                if let identifier = mention.identifier { return "name:" + identifier.lowercased() }
+                return "value:\(mention.value)"
+            })
+    }
+
+    /// Words that name a part before its number, so the number is a label and not a figure (`numberKeys`). Not "day" or
+    /// "week": "by day 30" is a deadline (second review, 2026-10-18).
+    nonisolated private static let partWords: Set<String> = [
+        "step", "steps", "part", "parts", "section", "sections", "chapter", "chapters", "article", "articles", "clause",
+        "clauses", "unit", "units", "apartment", "suite", "room", "rooms", "building", "floor", "level", "item", "items",
+        "page", "pages", "option", "options", "phase", "phases", "stage", "stages", "table", "tables", "figure",
+        "figures", "appendix", "exhibit", "exhibits", "schedule", "number",
+    ]
+
+    /// Whether a line is only bold text that reads as a title (5.7): no citation marker inside it, and its words read
+    /// as a title (`readsAsTitle`, eight words or fewer). "**Notice to Enter**", "**Unit 4B Pet Policy**" and
+    /// "**Required Documents**" are titles; one with a figure in it is a heading only where `headingLines` finds the
+    /// figure elsewhere in the answer. "**Yes, cats are allowed with a $400 deposit.**", "**Subletting is allowed**
+    /// [S2]", "**No, pets are not allowed**" and "**Pets allowed with written consent**" are claims the answer makes in
+    /// bold, and taking them for headings left them out of the check and out of Fact Check (two reviews, 2026-10-18).
+    nonisolated static func isBoldTitle(_ line: String) -> Bool {
+        guard line.hasPrefix("**"), line.hasSuffix("**"), line.count > 4 else { return false }
+        let inner = line.dropFirst(2).dropLast(2).trimmingCharacters(in: .whitespaces)
+        guard inner.range(of: citationMarkerPattern, options: .regularExpression) == nil else { return false }
+        return readsAsTitle(inner, maxWords: 8)
+    }
+
+    /// Whether a heading's words read as a title rather than a statement (5.7): no full stop, question mark or
+    /// exclamation mark at the end (a full-width one included) and at most `maxWords` words. Then a title that starts
+    /// with a question word ("What Is Included", "What's Included") or is in Title Case ("Things to Do Nearby", "Fees
+    /// You May Owe") is a title, as the model writes its titles, unless an answer follows a colon ("What is included:
+    /// water and trash", "Pet Policy: No Dogs Allowed"). Otherwise it is a title when it has none of the words a
+    /// statement turns on (a form of "be", "have" or "do", a modal verb, "not", "no", "yes", "never") and none of the
+    /// words such as "allowed" or "paid" after its first word, where they state something ("Pets allowed with written
+    /// consent"), as they do not before a noun ("Required documents"). Curly apostrophes are read as straight ones
+    /// (three reviews, 2026-10-18).
+    nonisolated private static func readsAsTitle(_ text: String, maxWords: Int?) -> Bool {
+        let text = text.trimmingCharacters(in: .whitespaces)
+        guard let last = text.last, !".!?\u{3002}\u{FF01}\u{FF1F}".contains(last) else { return false }
+        let words = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+            .split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+        guard let first = words.first else { return false }
+        if let maxWords, words.count > maxWords { return false }
+        let answerFollowsColon = text.range(of: #":\s*\S"#, options: .regularExpression) != nil
+        if !answerFollowsColon, questionWords.contains(first) || isTitleCase(text) { return true }
+        return !makesStatement(text)
+    }
+
+    /// Whether text has a word a statement turns on, or a word such as "allowed" or "paid" after its first word (5.7),
+    /// whatever its case (`readsAsTitle`). The source-only check keeps a claim that does even when it matches one of the
+    /// draft's headings: a heading in Title Case or a lead-in can state something, and leaving it out of the answer the
+    /// check rebuilds removed what it said (fourth review, 2026-10-18).
+    nonisolated static func makesStatement(_ text: String) -> Bool {
+        let words = text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+            .split(whereSeparator: { !$0.isLetter && $0 != "'" }).map(String.init)
+        return words.contains { statementWords.contains($0) }
+            || words.dropFirst().contains { statementPredicates.contains($0) }
+    }
+
+    /// Whether every word starts with a capital except the short ones a title leaves in lower case ("Notice to Enter",
+    /// "Things to Do Nearby"); a word that starts with a digit ("1st", "24-Hour") is not looked at (`readsAsTitle`,
+    /// third review, 2026-10-18).
+    nonisolated private static func isTitleCase(_ text: String) -> Bool {
+        var sawCapital = false
+        for word in text.split(whereSeparator: \.isWhitespace) {
+            guard let initial = word.first(where: { $0.isLetter || $0.isNumber }), initial.isLetter else { continue }
+            if initial.isUppercase {
+                sawCapital = true
+            } else if !titleSmallWords.contains(String(word.filter(\.isLetter)).lowercased()) {
+                return false
+            }
+        }
+        return sawCapital
+    }
+
+    /// The short words a title in Title Case leaves in lower case (`isTitleCase`).
+    nonisolated private static let titleSmallWords: Set<String> = [
+        "a", "an", "the", "and", "but", "or", "nor", "for", "so", "yet", "as", "at", "by", "in", "of", "off", "on",
+        "per", "to", "up", "via", "vs", "with", "from", "into", "onto", "over", "than", "out",
+    ]
+
+    /// The words a statement turns on, which a title leaves out (`readsAsTitle`).
+    nonisolated private static let statementWords: Set<String> = [
+        "is", "are", "was", "were", "be", "been", "being", "am", "has", "have", "had", "does", "do", "did", "must",
+        "can", "cannot", "could", "will", "would", "shall", "should", "may", "might", "not", "no", "yes", "never",
+        "isn't", "aren't", "wasn't", "weren't", "hasn't", "haven't", "hadn't", "doesn't", "don't", "didn't", "can't",
+        "couldn't", "won't", "wouldn't", "shouldn't", "mustn't",
+    ]
+
+    /// Words that state something when they follow a noun ("Pets allowed", "Late fees waived") and name a kind of
+    /// thing when they lead ("Required Documents") (`readsAsTitle`, two reviews, 2026-10-18).
+    nonisolated private static let statementPredicates: Set<String> = [
+        "allowed", "permitted", "prohibited", "forbidden", "banned", "required", "included", "excluded", "due",
+        "refundable", "available", "paid", "waived", "accepted", "provided", "covered", "charged", "welcome",
+    ]
+
+    /// The words a question-form title starts with (`readsAsTitle`).
+    nonisolated private static let questionWords: Set<String> = [
+        "what", "how", "who", "when", "where", "why", "which", "whose", "what's", "how's", "who's", "when's", "where's",
+    ]
+
+    /// A line or a claim reduced to its words, lowercased and without citation markers, for matching a claim against
+    /// the answer's headings: the claim "Notice to Enter [S1]" matches the heading "## Notice to Enter" (5.7).
+    nonisolated static func headingKey(_ text: String) -> String {
+        collapsingCitationRanges(text).replacingOccurrences(of: citationMarkerPattern, with: "", options: .regularExpression)
+            .lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: " ")
+    }
+
     /// Check if sentence contains factual content worth verifying
     private func containsFactualContent(_ sentence: String) -> Bool {
         // Contains numbers
@@ -1289,7 +1533,7 @@ actor VerificationGateService {
 
     private func buildCorpus(from chunks: [RetrievedChunk]) -> String {
         chunks.map { chunk -> String in
-            let content = chunk.chunk.parentContent ?? chunk.chunk.content
+            let content = chunk.chunk.contextText
             return content.lowercased()
         }.joined(separator: " ")
     }
@@ -1299,6 +1543,7 @@ actor VerificationGateService {
         in chunks: [RetrievedChunk],
         corpus: String,
         numericEvidence: [NumericValueExtractor.Evidence],
+        detectedContradiction: DetectedValueCheck.Contradiction? = nil,
         query: String
     ) -> RAGVerificationResult.ClaimResult {
         let claimText = cleanClaimText(claimInput.claim)
@@ -1355,16 +1600,29 @@ actor VerificationGateService {
         // A sentence is not Supported while a figure it states is missing from the passages as a
         // value. The term overlap above counts "2.5" as found when the passages only hold it inside
         // a name, which is how "2.5 billion parameters" was Supported by a table row for
-        // "Qwen-2.5-3B".
+        // "Qwen-2.5-3B". An ordinal counts here from 5.7 (`NumericValueExtractor.isOrdinal`), though
+        // not in the numeric gate: "the 16th day" was Supported by a passage that says "the 6th day". So does an amount
+        // in words (`isSpelled`): "four hundred dollars" was Supported by a lease asking $300.00.
         if verdict == .supported,
             let missing = NumericValueExtractor.firstUnsupportedMention(
                 in: claimText,
                 evidence: numericEvidence,
-                exempt: { !NumericValueExtractor.isCountedByGate($0) || Self.isYear($0) })
+                exempt: {
+                    !(NumericValueExtractor.isCountedByGate($0) || NumericValueExtractor.isOrdinal($0) || $0.isSpelled)
+                        || Self.isYear($0)
+                })
         {
             verdict = .partial
             confidence = min(confidence, 0.55)
             details = "The figure \(missing.written) is not stated in the retrieved passages"
+        }
+
+        // Nor while the passages state its amount only in another currency, or give another day of its month and
+        // never this one (5.7, `DetectedValueCheck`). The value check above matches "€1,200" against "$1,200".
+        if verdict == .supported, let contradiction = detectedContradiction {
+            verdict = .partial
+            confidence = min(confidence, 0.55)
+            details = "The passages state \(contradiction.stated), not \(contradiction.written)"
         }
 
         // Nor while the passage it rests on says the opposite: one of the two is negative and the
@@ -1376,12 +1634,24 @@ actor VerificationGateService {
         if verdict == .supported,
             let passage = supportingChunks.first,
             let sentence = ClaimCheck.matchingSentence(
-                for: claimText, in: passage.chunk.parentContent ?? passage.chunk.content),
+                for: claimText, in: passage.chunk.contextText),
             ClaimCheck.negationDiffers(claimText, sentence)
         {
             verdict = .partial
             confidence = min(confidence, 0.5)
             details = "The passage it rests on says the opposite"
+        }
+
+        // Nor while its words are in the passages but no one sentence of them says it (5.7,
+        // `ClaimCheck.wordsAreScattered`): "The landlord may enter with notice." against a lease that
+        // names the landlord in one sentence and notice in another.
+        if verdict == .supported,
+            ClaimCheck.wordsAreScattered(
+                claimText, across: supportingChunks.map(\.chunk.contextText), question: query)
+        {
+            verdict = .partial
+            confidence = min(confidence, 0.5)
+            details = "The passages hold its words, but no one sentence of them says it"
         }
 
         return RAGVerificationResult.ClaimResult(
@@ -1394,8 +1664,39 @@ actor VerificationGateService {
         )
     }
 
+    /// The words of a sentence with three or more letters or digits, less a few English function words. The coverage
+    /// check falls back to these when `NLTagger` finds no noun or number in the sentence; it works in every script
+    /// that separates words with spaces or punctuation, including Greek, which the tagger has no word classes for.
+    nonisolated static func contentWordTerms(in text: String) -> [String] {
+        let fillers: Set<String> = [
+            "the", "and", "for", "are", "was", "were", "but", "not", "with", "that", "this", "these", "those",
+            "from", "has", "have", "had", "its", "their", "there", "than", "then", "into", "can", "may", "will",
+            "all", "any", "one", "per", "you", "your", "they", "them", "which", "who", "what", "when", "where",
+            "should", "would", "could", "must", "also", "been", "being", "our", "his", "her", "she", "him",
+        ]
+        var seen = Set<String>()
+        return text
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 3 && !fillers.contains($0) && seen.insert($0).inserted }
+    }
+
+    /// Whether a text is written in a script without spaces between words (Chinese, Japanese, Thai, Lao, Khmer,
+    /// Myanmar), where splitting on spaces gives whole clauses rather than words.
+    nonisolated static func usesUnspacedScript(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF,  // kana, Han
+                0x0E00...0x0EFF, 0x1000...0x109F, 0x1780...0x17FF:  // Thai, Lao, Myanmar, Khmer
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
     /// Check if claim text appears in corpus (fuzzy matching)
-    private func isClaimCovered(claim: String, inCorpus corpus: String, query: String) -> Bool {
+    func isClaimCovered(claim: String, inCorpus corpus: String, query: String) -> Bool {
         // Extract key terms from claim (nouns, numbers, codes)
         let tagger = NLTagger(tagSchemes: [.lexicalClass])
         tagger.string = claim
@@ -1414,7 +1715,14 @@ actor VerificationGateService {
         // Also extract numbers
         keyTerms.append(contentsOf: extractNumbers(from: claim))
 
-        guard !keyTerms.isEmpty else { return true }  // No key terms = vacuously covered
+        // A sentence the tagger finds no nouns in (a language it does not tag, or a tagger that tags nothing, as the
+        // iOS 27 Simulator's did for "The security deposit is two months of rent.") is checked on its content words
+        // instead of passing as covered with nothing compared (5.7).
+        // Not for a script written without spaces: its "words" would be whole clauses, found only in a verbatim copy.
+        if keyTerms.isEmpty && !Self.usesUnspacedScript(claim) {
+            keyTerms = Self.contentWordTerms(in: claim)
+        }
+        guard !keyTerms.isEmpty else { return true }  // No words at all to compare
 
         // Extract query terms as a set
         let queryTerms = Set(extractQueryAnchorTerms(from: query))
@@ -1462,7 +1770,7 @@ actor VerificationGateService {
         let claimTokens = keywordTokens(from: claim)
 
         let scored = retrievedChunks.map { chunk -> (RetrievedChunk, Float) in
-            let content = chunk.chunk.parentContent ?? chunk.chunk.content
+            let content = chunk.chunk.contextText
             let contentTokens = keywordTokens(from: content)
             let overlapCount = claimTokens.intersection(contentTokens).count
             let overlapScore = claimTokens.isEmpty ? 0 : Float(overlapCount) / Float(max(claimTokens.count, 1))
@@ -1502,7 +1810,7 @@ actor VerificationGateService {
     private func claimSupportConfidence(for claim: String, evidence: [RetrievedChunk]) -> Float {
         guard !evidence.isEmpty else { return 0.0 }
         let topEvidence = evidence[0]
-        let content = topEvidence.chunk.parentContent ?? topEvidence.chunk.content
+        let content = topEvidence.chunk.contextText
         let claimTokens = keywordTokens(from: claim)
         let contentTokens = keywordTokens(from: content)
         let overlap = claimTokens.isEmpty ? 0 : Float(claimTokens.intersection(contentTokens).count) / Float(max(claimTokens.count, 1))
@@ -1519,8 +1827,8 @@ actor VerificationGateService {
     }
 
     private func cleanClaimText(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: #"\[S\d+\]"#, with: "", options: .regularExpression)
+        Self.collapsingCitationRanges(text)
+            .replacingOccurrences(of: #"\s*"# + Self.citationMarkerPattern, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

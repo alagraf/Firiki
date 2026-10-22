@@ -547,13 +547,14 @@ struct StructuredPageContent: Sendable {
         text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
-    /// The text carried by an element, for coverage comparison only.
+    /// The text an element carries: a paragraph's or title's words, a table's rows as text, a list's items, a figure's
+    /// description (`textForEmbedding`). The coverage check above compares against it, and an image read as a document
+    /// stores it (`DocumentProcessor`, a photo or screenshot). Through 5.6 a table, list or figure came back as Swift's
+    /// description of the element, so a photographed receipt with a table stored
+    /// "table(OpenIntelligence.TableData(pageNumber: 1, rows: ..." in its text, where search and the model read it
+    /// (household sample set in the iOS 27.0 Simulator, 2026-10-20).
     nonisolated static func plainText(of element: StructuredElement) -> String {
-        switch element {
-        case let .paragraph(text, _): return text
-        case let .title(text, _): return text
-        default: return String(describing: element)
-        }
+        element.textForEmbedding
     }
 }
 
@@ -891,7 +892,9 @@ actor StructuredDocumentParser {
             // Render to CGImage for the VLM
             if let cgImage = Self.sharedGPUContext.createCGImage(croppedImage, from: rect) {
                 do {
-                    // Send to OS 27 Multi-Modal Captioning Service
+                    // Send to OS 27 Multi-Modal Captioning Service. VisualCaptioningService, which this
+                    // block calls, was removed in 5.7 on 2026-10-20 because nothing referenced it, so
+                    // enabling the block needs a captioning service first.
                     let semanticCaption = try await VisualCaptioningService.shared.generateCaption(for: cgImage)
                     
                     elements.append(.figure(description: "[Visual Graph/Chart] " + semanticCaption, pageNumber: pageNumber))
@@ -1377,6 +1380,31 @@ actor StructuredDocumentParser {
         formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
         return formatter
     }()
+
+    /// Apple's detector on plain text (5.7, roadmap row "Entities come from table cells only").
+    ///
+    /// Vision's detection ran only on table cells (`extractDetectedData` has one caller,
+    /// `parseTable`), and a page read from its text layer never reaches Vision, so the addresses,
+    /// phone numbers, dates and amounts the 5.3 notes describe were found nowhere else. From iOS
+    /// and macOS 26 any text can go through the same detector (`StringProtocol.dataDetectorMatches`,
+    /// read from the iOS 27 SDK on 2026-10-14), with the same matches the cells give, and the regex
+    /// sweep fills a type the detector found none of, as for a cell. Only the first
+    /// `characterLimit` characters are read. Measured on the Mac (M3 Pro) that day: 0.7 to 1.1
+    /// million characters a second, 672,860 in 0.61 s.
+    @concurrent
+    nonisolated static func detectedEntities(inText text: String, characterLimit: Int) async -> [DetectedEntity] {
+        let read = text.count > characterLimit ? String(text.prefix(characterLimit)) : text
+        guard !read.isEmpty else { return [] }
+        var entities: [DetectedEntity] = []
+        for await match in read.dataDetectorMatches() {
+            if let entity = entity(from: match, in: read) {
+                entities.append(entity)
+            }
+        }
+        let covered = Set(entities.map(\.type))
+        entities.append(contentsOf: patternEntities(in: read, excluding: covered))
+        return entities
+    }
 
     /// The original regex sweep, kept as a fallback and run per type only when Apple's detector
     /// returned nothing of that type. `extractDetectedData` records why it is not simply deleted.

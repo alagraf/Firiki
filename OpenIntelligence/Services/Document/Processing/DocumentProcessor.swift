@@ -29,7 +29,17 @@ class DocumentProcessor {
     /// Words figure split at spaces only, so two words either side of a line break counted as one and
     /// a document's count read low (row "Word counts look wrong and ingested text may be truncated").
     nonisolated static func wordCount(of text: String) -> Int {
-        text.split(whereSeparator: \.isWhitespace).count
+        // The same count without a substring for every word (5.7).
+        IngestionStageLedger.wordCount(of: text)
+    }
+
+    /// `IngestionStageLedger.counts(of:)` off the main actor (5.7). Counted on it, the four
+    /// recordings of an import held the main thread for about 1.7 s on 8 MB of text on an M3 Pro.
+    @concurrent
+    nonisolated private static func ledgerCounts(_ texts: [String]) async
+        -> (characters: Int, words: Int, uniformLengths: Bool)
+    {
+        IngestionStageLedger.counts(of: texts)
     }
 
     struct ProcessedChunk: Sendable {
@@ -250,6 +260,19 @@ class DocumentProcessor {
         return 5.0
     }
 
+    /// Whether a page is read from its own text layer because most of that layer's letters are in a script Vision's
+    /// text recognition has no model for, such as Greek or Hebrew. Vision would read other letters there, and the
+    /// layout and structure passes take their text from Vision (a Greek page imported as Cyrillic and Latin junk,
+    /// measured 2026-10-19). Not for a page the classifier marks as a scan with a text layer over part of it
+    /// (`isMixedModeScanned`): its text layer may be a header or a stamp, and the scanned body needs Vision (review,
+    /// 2026-10-19). Not when the document's text layer was judged a cipher.
+    nonisolated static func readsTextLayerVisionCannotRead(
+        _ pageText: String?, complexity: PageComplexityAnalysis?, documentTextLayerGarbled: Bool
+    ) -> Bool {
+        guard !documentTextLayerGarbled, !(complexity?.isMixedModeScanned ?? false), let pageText else { return false }
+        return !OCRConfiguration.visionCanReadMostOf(pageText)
+    }
+
     private func shouldForceVisionForAdaptiveRecovery(
         analysis: PageComplexityAnalysis?,
         strategy: PageProcessingStrategy,
@@ -428,6 +451,21 @@ class DocumentProcessor {
     /// Vision-detected entities from last document processing (reset on each call)
     /// Contains emails, phone numbers, URLs, dates, etc. extracted via DataDetection
     private(set) var lastDetectedEntities: [(type: String, value: String)] = []
+
+    /// How much of a document's text Apple's detector reads for entities (5.7): about a second on
+    /// the Mac, off the main actor.
+    static let textEntityCharacterLimit = 1_000_000
+
+    /// Adds entities found in the text to the ones found in table cells, leaving out repeats.
+    func mergeDetectedEntities(_ found: [DetectedEntity]) {
+        guard !found.isEmpty else { return }
+        var seen = Set(lastDetectedEntities.map { "\($0.type)|\($0.value)" })
+        for entity in found {
+            let key = "\(entity.type.rawValue)|\(entity.value)"
+            guard seen.insert(key).inserted else { continue }
+            lastDetectedEntities.append((type: entity.type.rawValue, value: entity.value))
+        }
+    }
 
     /// Tokenizer for accurate token counting (matches embedding model tokenization)
     /// CRITICAL: NLTokenizer word count ≠ Tokenizer tokens for technical content
@@ -738,7 +776,7 @@ class DocumentProcessor {
                     semanticDensity: 0.5,
                     hasNumericData: chunk.text.rangeOfCharacter(from: .decimalDigits) != nil,
                     hasListStructure: chunk.text.contains("\n•") || chunk.text.contains("\n-"),
-                    wordCount: chunk.text.split(separator: " ").count,
+                    wordCount: Self.wordCount(of: chunk.text),
                     characterCount: chunk.text.count,
                     structureType: "streamed_xml",
                     sectionPath: chunk.section.map { [$0] }
@@ -798,8 +836,12 @@ class DocumentProcessor {
         // Loading a 500MB+ file into a String would consume 1.5-2 GB
         // with normalization copies — guaranteed OOM on 8 GB devices.
         // ═══════════════════════════════════════════════════════════════
+        //
+        // A PDF read in page ranges (`pageRange`, from `RAGService.importLargePDFStreamed`, which takes every PDF over
+        // 10 MB) never holds the whole file as text, so the guard does not apply to it (5.7). It measured the whole
+        // file on every page batch, so no PDF over 500 MB could be imported at all.
         let maxNonStreamableSizeMB: Double = 500
-        if fileSizeMB > maxNonStreamableSizeMB && documentType != .xml {
+        if pageRange == nil, fileSizeMB > maxNonStreamableSizeMB && documentType != .xml {
             Log.error("[DocumentProcessor] File too large: \(String(format: "%.0f", fileSizeMB)) MB (limit: \(String(format: "%.0f", maxNonStreamableSizeMB)) MB)", category: .ingestion)
             throw DocumentProcessingError.fileTooLarge(sizeMB: fileSizeMB, limitMB: maxNonStreamableSizeMB)
         }
@@ -993,10 +1035,8 @@ class DocumentProcessor {
         // FINISHED chunks and so can only say that text was lost; this records each transition, so a
         // loss names the stage that caused it. See IngestionStageLedger.swift.
         var stageLedger = IngestionStageLedger(documentName: filename)
-        stageLedger.recordExtraction(
-            characters: chunkableText.count,
-            words: chunkableText.split(whereSeparator: \.isWhitespace).count
-        )
+        let extractionCounts = await Self.ledgerCounts([chunkableText])
+        stageLedger.recordExtraction(characters: extractionCounts.characters, words: extractionCounts.words)
 
         await Task.yield()
         let documentCategory = classifyDocumentCategory(
@@ -1172,7 +1212,8 @@ class DocumentProcessor {
             emitProgress(stage: "chunking", detail: "✅ Created \(processedChunks.count) semantic chunks", page: nil, totalPages: nil)
         }
 
-        stageLedger.record(.chunked, chunkTexts: processedChunks.map(\.text))
+        let chunkedCounts = await Self.ledgerCounts(processedChunks.map(\.text))
+        stageLedger.record(.chunked, chunkCount: processedChunks.count, counts: chunkedCounts)
 
         // A JSON record's title and path are written by `makeJSONRecordChunks` ("Record 12",
         // "Records 12 to 19"), so there is nothing in them to clean, and cleaning a label is not
@@ -1180,7 +1221,8 @@ class DocumentProcessor {
         if jsonRecordPassages == nil {
             processedChunks = await sanitizeProcessedChunkMetadata(processedChunks)
         }
-        stageLedger.record(.sanitized, chunkTexts: processedChunks.map(\.text))
+        let sanitizedCounts = await Self.ledgerCounts(processedChunks.map(\.text))
+        stageLedger.record(.sanitized, chunkCount: processedChunks.count, counts: sanitizedCounts)
 
         let chunkingTime = Date().timeIntervalSince(chunkingStartTime)
 
@@ -1190,14 +1232,17 @@ class DocumentProcessor {
         await Task.yield()
         try Task.checkCancellation()
         processedChunks = await enforceTokenLimitOnChunks(processedChunks)
-        stageLedger.record(.tokenLimited, chunkTexts: processedChunks.map(\.text))
+        let tokenLimitedCounts = await Self.ledgerCounts(processedChunks.map(\.text))
+        stageLedger.record(.tokenLimited, chunkCount: processedChunks.count, counts: tokenLimitedCounts)
         stageLedger.emit()
 
         // CONTENT COVERAGE VERIFICATION: Ensure we captured all the source content
         // This catches bugs where content is silently dropped during chunking
-        verifyContentCoverage(
+        // Off the main actor (5.7): it splits the whole extracted text and every passage into words,
+        // which held the main thread for as long as a large file took.
+        await Self.verifyContentCoverage(
             original: extractedText,
-            chunks: processedChunks,
+            chunkTexts: processedChunks.map(\.text),
             documentId: documentId
         )
 
@@ -1223,6 +1268,14 @@ class DocumentProcessor {
             .map { Double($0.metadata.semanticDensity ?? 0) }
             .reduce(0.0, +) / Double(max(1, processedChunks.count))
             Log.debug("      - Avg semantic density: \(String(format: "%.3f", avgSemanticDensity))", category: .ingestion)
+
+        // Apple's detector on the document's text as well (5.7, roadmap row "Entities come from
+        // table cells only"): it read table cells and nothing else, and a page read from its text
+        // layer never reached it. Its matches join the cells' ones, without repeats, and go where
+        // theirs go (the library's vocabulary, through `lastDetectedEntities`).
+        mergeDetectedEntities(
+            await StructuredDocumentParser.detectedEntities(
+                inText: chunkableText, characterLimit: Self.textEntityCharacterLimit))
 
         // Print chunk statistics
         if !processedChunks.isEmpty {
@@ -4154,10 +4207,20 @@ class DocumentProcessor {
 
             var bestSampleText = ""
             var bestSamplePage: PDFPage?
+            var unreadableSampleSeen = false
 
             for idx in sampleIndices {
                 guard let page = pdfDocument.page(at: idx) else { continue }
                 let text = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                // OCR can check a text layer only in a script it reads. Vision has no model for Greek, Hebrew and
+                // many other scripts, so on such a page it returns other letters, the two share no word, and through
+                // 5.6 a correct text layer was judged a cipher: every page went to OCR and the garbage filter emptied
+                // what OCR gave (measured 2026-10-19, a Greek page imported with no text). Such a page is not a
+                // sample; a page of the same document in a script Vision reads still is (review, 2026-10-19).
+                guard OCRConfiguration.visionCanReadMostOf(text) else {
+                    if text.count >= 50 { unreadableSampleSeen = true }
+                    continue
+                }
                 if text.count > bestSampleText.count {
                     bestSampleText = text
                     bestSamplePage = page
@@ -4167,7 +4230,11 @@ class DocumentProcessor {
             // No text layer at all → not garbled, just needs OCR
             guard bestSampleText.count >= 50, let samplePage = bestSamplePage else {
                 documentTextLayerGarbled = false
-                Log.debug("[DocumentProcessor] [iOS26] Text layer validation: no/minimal text layer, skipping", category: .ingestion)
+                if unreadableSampleSeen {
+                    Log.info("[DocumentProcessor] [iOS26] Text layer kept without an OCR check: the sampled pages' letters are mostly in a script Vision's text recognition does not read", category: .ingestion)
+                } else {
+                    Log.debug("[DocumentProcessor] [iOS26] Text layer validation: no/minimal text layer, skipping", category: .ingestion)
+                }
                 break textLayerValidation
             }
 
@@ -4319,8 +4386,14 @@ class DocumentProcessor {
         // Simple single-column pages skip Vision entirely → massive speedup
         // ═══════════════════════════════════════════════════════════════════════
         let complexityStartTime = Date()
+        // A page with a checkpoint is loaded from it below and never rendered, so it is not analysed either (5.7):
+        // a resumed 913-page import on the owner's iPhone re-scanned every page first (24 s) before loading 568 saved
+        // ones.
         let pagesToAnalyze: [(PDFPage, Int)] = (startPageIdx...endPageIdx).compactMap { index in
-            guard let page = pdfDocument.page(at: index) else { return nil }
+            let saved = checkpointDir.appendingPathComponent("page_\(index).json")
+            guard !FileManager.default.fileExists(atPath: saved.path),
+                let page = pdfDocument.page(at: index)
+            else { return nil }
             return (page, index + 1)
         }
         let complexityAnalyses = await PageComplexityAnalyzer.shared.analyzeBatch(pages: pagesToAnalyze)
@@ -4338,11 +4411,13 @@ class DocumentProcessor {
         let skipVisionCount = complexityAnalyses.filter { analysis in
             let strategy = analysis.processingStrategy
             let baseSkip = strategy == .directText || strategy == .spatialText
-            return baseSkip && !shouldForceVisionForAdaptiveRecovery(
+            return (baseSkip && !shouldForceVisionForAdaptiveRecovery(
                 analysis: analysis,
                 strategy: strategy,
                 documentTextLayerGarbled: documentTextLayerGarbled
-            )
+            )) || Self.readsTextLayerVisionCannotRead(
+                pdfDocument.page(at: analysis.pageNumber - 1)?.string, complexity: analysis,
+                documentTextLayerGarbled: documentTextLayerGarbled)
         }.count
         let visionRequired = pageCount - skipVisionCount
         Log.info("[DocumentProcessor] 🚀 ADAPTIVE: \(skipVisionCount) pages skip Vision OCR, \(visionRequired) need layout detection", category: .ingestion)
@@ -4452,9 +4527,15 @@ class DocumentProcessor {
                         strategy: strategy,
                         documentTextLayerGarbled: documentTextLayerGarbled
                     )
-                    // PHASE -1 override: garbled text layer → ALL pages need Vision OCR
-                    let needsVision = documentTextLayerGarbled || fidelityForcesVision || strategy == .basicOCR || strategy == .enhancedOCR || strategy == .fullOCR
                     let plainText = page.string
+                    let textLayerUnreadableByVision = Self.readsTextLayerVisionCannotRead(
+                        plainText, complexity: complexity, documentTextLayerGarbled: documentTextLayerGarbled)
+                    if textLayerUnreadableByVision {
+                        Log.info("[DocumentProcessor] Page \(pageNumber): read from its text layer, whose script Vision's text recognition does not read", category: .ingestion)
+                    }
+                    // PHASE -1 override: garbled text layer → ALL pages need Vision OCR
+                    let needsVision = !textLayerUnreadableByVision
+                        && (documentTextLayerGarbled || fidelityForcesVision || strategy == .basicOCR || strategy == .enhancedOCR || strategy == .fullOCR)
                     let hasText = (plainText?.trimmingCharacters(in: .whitespacesAndNewlines).count ?? 0) > 0
                     let requiresTableOCR = (complexity?.tablePresence ?? 0) > 0.2 || (complexity?.numericDensity ?? 0) > 0.3
                     let preferHighResolutionStructure = shouldPreferHighResolutionStructure(
@@ -4467,13 +4548,18 @@ class DocumentProcessor {
                         pageNumber: pageNumber,
                         strategy: documentTextLayerGarbled
                             ? "garbled-force-ocr"
-                            : (fidelityForcesVision && strategy == .spatialText ? "\(strategy.description)+fidelity" : strategy.description),
+                            : textLayerUnreadableByVision
+                                ? "text-layer, script Vision does not read"
+                                : (fidelityForcesVision && strategy == .spatialText ? "\(strategy.description)+fidelity" : strategy.description),
                         hasText: hasText,
-                        textQualityOK: !documentTextLayerGarbled && (complexity?.textQuality ?? 0) > 0.65,
-                        requiresTableOCR: requiresTableOCR,
+                        textQualityOK: textLayerUnreadableByVision
+                            || (!documentTextLayerGarbled && (complexity?.textQuality ?? 0) > 0.65),
+                        requiresTableOCR: requiresTableOCR && !textLayerUnreadableByVision,
                         mode: documentTextLayerGarbled
                             ? "structured-garbled-ocr"
-                            : (fidelityForcesVision ? "structured-hybrid-fidelity" : "structured-hybrid")
+                            : textLayerUnreadableByVision
+                                ? "structured-text-layer"
+                                : (fidelityForcesVision ? "structured-hybrid-fidelity" : "structured-hybrid")
                     )
 
                     // ADAPTIVE: Only render image if this page needs Vision layout detection
@@ -4510,7 +4596,10 @@ class DocumentProcessor {
                         // inference rather than read off a trace. `text` here is raw `page.string`,
                         // which interleaves columns by construction, so the fallback is a materially
                         // worse result and not an equivalent one.
-                        let spatial = extractTextWithSpatialOrdering(from: page)
+                        // A right-to-left page read from its text layer keeps PDFKit's order: the spatial reading
+                        // orders a line's words left to right (`spatialLineBreak`).
+                        let keepsPDFKitOrder = textLayerUnreadableByVision && OCRConfiguration.isMostlyRightToLeft(text)
+                        let spatial = keepsPDFKitOrder ? nil : extractTextWithSpatialOrdering(from: page)
                         layoutText = spatial ?? text
                         Log.debug(
                             "[DocumentProcessor] Page \(pageNumber): strategy=\(strategy.description), "
@@ -6933,11 +7022,12 @@ class DocumentProcessor {
 
     /// Verify that chunking captured all content from the original document
     /// This is a diagnostic check - logs warnings if significant content is missing
-    private func verifyContentCoverage(
+    @concurrent
+    nonisolated private static func verifyContentCoverage(
         original: String,
-        chunks: [ProcessedChunk],
+        chunkTexts: [String],
         documentId: UUID
-    ) {
+    ) async {
         // Count words in original (normalize whitespace)
         let originalWords = Set(
             original.lowercased()
@@ -6948,8 +7038,8 @@ class DocumentProcessor {
 
         // Count unique words in all chunks combined
         var chunkWords = Set<String>()
-        for chunk in chunks {
-            let words = chunk.text.lowercased()
+        for text in chunkTexts {
+            let words = text.lowercased()
                 .components(separatedBy: .whitespacesAndNewlines)
                 .map { $0.trimmingCharacters(in: .punctuationCharacters) }
                 .filter { $0.count >= 3 }
@@ -6964,7 +7054,7 @@ class DocumentProcessor {
         // Volume, as opposed to vocabulary. Whitespace is excluded from both sides so reflow and
         // re-indentation cannot move the number.
         let originalChars = original.filter { !$0.isWhitespace }.count
-        let chunkChars = chunks.reduce(0) { $0 + $1.text.filter { !$0.isWhitespace }.count }
+        let chunkChars = chunkTexts.reduce(0) { $0 + $1.filter { !$0.isWhitespace }.count }
         // Account for overlap - chunks may duplicate some content
         let charRatio = originalChars > 0 ? Double(chunkChars) / Double(originalChars) * 100 : 100
 
@@ -7721,6 +7811,11 @@ class DocumentProcessor {
         let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 
         return try await withCheckedThrowingContinuation { continuation in
+            // Stays on `VNRecognizeTextRequest` (5.7). Scanned pages are read by `RecognizeDocumentsRequest`
+            // (`StructuredDocumentParser`); this is one of the older request's remaining uses, which move to Vision's Swift
+            // `RecognizeTextRequest` together, checked against the OCR fixtures in IngestionFormatCoverageTests, not one
+            // at a time (roadmap row "Vision: DataDetection results are computed and thrown away, and VisionKit is never
+            // imported").
             let request = VNRecognizeTextRequest { request, error in
                 if let error = error {
                     continuation.resume(throwing: error)
@@ -7925,6 +8020,11 @@ class DocumentProcessor {
         let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 
         return try await withCheckedThrowingContinuation { continuation in
+            // Stays on `VNRecognizeTextRequest` (5.7). Scanned pages are read by `RecognizeDocumentsRequest`
+            // (`StructuredDocumentParser`); this is one of the older request's remaining uses, which move to Vision's Swift
+            // `RecognizeTextRequest` together, checked against the OCR fixtures in IngestionFormatCoverageTests, not one
+            // at a time (roadmap row "Vision: DataDetection results are computed and thrown away, and VisionKit is never
+            // imported").
             let request = VNRecognizeTextRequest { request, error in
                 if let error = error {
                     Log.error("[DocumentProcessor] OCR failed: \(error.localizedDescription)", category: .ingestion)
@@ -8021,6 +8121,11 @@ class DocumentProcessor {
         let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 
         return try await withCheckedThrowingContinuation { continuation in
+            // Stays on `VNRecognizeTextRequest` (5.7). Scanned pages are read by `RecognizeDocumentsRequest`
+            // (`StructuredDocumentParser`); this is one of the older request's remaining uses, which move to Vision's Swift
+            // `RecognizeTextRequest` together, checked against the OCR fixtures in IngestionFormatCoverageTests, not one
+            // at a time (roadmap row "Vision: DataDetection results are computed and thrown away, and VisionKit is never
+            // imported").
             let request = VNRecognizeTextRequest { request, error in
                 if let error = error {
                     continuation.resume(throwing: error)
@@ -10234,15 +10339,40 @@ extension DocumentProcessor {
         return url
     }
 
+    /// The key an import's checkpoints are kept under: the file's name, its size and the bytes at its start and its end
+    /// (5.7). Through 5.6 it was the file's path and modification date, which change when the queued copy is staged
+    /// again, so on the owner's iPhone (2026-10-21) an app update in the middle of a 913-page PDF changed the key and
+    /// the 248 pages already read were read again from page 1. The bytes are read through `FileHandle`, at most 2 MB.
+    /// A file that cannot be read falls back to the old key, so it still gets a directory of its own.
     func computeDocumentFingerprint(at url: URL) -> String {
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attrs?[.size] as? Int64) ?? 0
-        let date = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        let path = url.path
-        let key = "\(path)_\(size)_\(date)"
-        let data = Data(key.utf8)
-        let hash = SHA256.hash(data: data)
-        return hash.compactMap { String(format: "%02x", $0) }.joined()
+        var hasher = SHA256()
+        hasher.update(data: Data("\(url.lastPathComponent)_\(size)".utf8))
+        if let sample = Self.fingerprintSample(of: url, size: size) {
+            hasher.update(data: sample)
+        } else {
+            let date = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            hasher.update(data: Data("\(url.path)_\(date)".utf8))
+        }
+        return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The first and last megabyte of a file (the whole file when it is under 2 MB), or nil when it cannot be read.
+    nonisolated static func fingerprintSample(of url: URL, size: Int64) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let window: Int64 = 1_048_576
+        guard var sample = try? handle.read(upToCount: Int(min(size, window))) else { return nil }
+        if size > window * 2 {
+            guard (try? handle.seek(toOffset: UInt64(size - window))) != nil,
+                let tail = try? handle.read(upToCount: Int(window))
+            else { return nil }
+            sample.append(tail)
+        } else if size > window, let rest = try? handle.readToEnd() {
+            sample.append(rest)
+        }
+        return sample
     }
 
     /// Clean up any checkpoint files for the given document URL

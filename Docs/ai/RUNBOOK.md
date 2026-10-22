@@ -210,6 +210,30 @@ bash scripts/build_simulator_smoke.sh`. *Recorded:* `BUILD SUCCEEDED` on `b4618e
 **"The test runner hung before establishing connection" (2026-10-14).** Twice in a row on one build the test host
 started and no test ran, after 398 s each time; the third run of the same build ran all 1,003 tests. Run it again
 before reading a code change into it, and look at the app's own trace (below) for where the launch stopped.
+*Cause, measured 2026-10-15:* the two crash reports from that day's hung runs
+(`~/Library/Logs/DiagnosticReports/OpenIntelligence-2026-10-15-075946.ips` and `-081157.ips`, process path in the test
+simulator) are a `0x8BADF00D` process-launch watchdog kill: the test host used its 30 s of wall-clock time inside
+`dyld_sim` loading libraries, with 1.9 s and 2.5 s of its own CPU, while the Mac's total CPU over those 30 s was 330 s,
+another session's build saturating every core. So it is the machine, not the app's launch code. On 2026-10-15 a second
+attempt, after shutting the simulator down, booting it and waiting for `xcrun simctl bootstatus <UDID> -b`, ran the
+whole suite each of the three times the first attempt failed this way.
+
+**Import tests refused with "Document quota reached" (2026-10-20).** The hosted tests run in the test simulator's copy of the app, on its free plan of five documents, and documents an earlier run left there count. That evening a library the opt-in `AnswerQualityEvaluationTests` had made held five, so the four tests that had imported a note by the time the run was stopped (the Add to Library test in `ImportTargetLibraryTests` and three in `ShortcutsActionTests`) each waited out their minute and failed. Before reading an import test's failure into a code change, run `grep -c 'Document quota reached' <log>`. `xcrun simctl uninstall <test UDID> Gunndamental.OpenIntelligence` removes the app's copy and everything in it, and the next run installs it again; the rerun that evening ran 1,324 tests with 7 skipped and 0 failures (the seventh skip is the silent-audio test, which skips on a freshly installed app). *Recorded.*
+
+**Answers graded by a model judge (opt-in, added 2026-10-21).** `AnswerQualityEvaluationTests` imports the benchmark's
+fixtures into a library of its own, answers each case with Apple's on-device model through the Ask My Documents runner
+and grades it with `ModelJudgeEvaluator`. It is skipped unless `OI_MODEL_EVALS=1` reaches the runner:
+
+```bash
+TEST_RUNNER_OI_MODEL_EVALS=1 GUARD_DISK_MB=1500 OI_SCRATCH=/private/tmp bash ~/.agents/oi-robot/scripts/build57.sh test-without-building <log> -only-testing:OpenIntelligenceTests/AnswerQualityEvaluationTests
+```
+
+About 7 minutes in the iOS 27.0 Simulator, where Apple's model generates; `TEST_RUNNER_OI_EVAL_TOPK=<1..12>` sets the
+passages per question (default 3, the action's own). The run prints `correct: <mean> over 20 cases`, and the report is
+an `.xcevalresult` attached to the test inside the run's `.xcresult`
+(`xcrun xcresulttool export attachments --path <xcresult> --output-path <dir>` writes it out; it is JSON). Measured
+2026-10-21: 0.3, mostly the dataset's misses (`CHANGELOG.md` 5.7). It removes its library at the end and any an earlier
+run left at the start. `[evidence_level: test_verified (three runs), confidence: high]`
 
 ### The actions through the system: the UI-testing target *(added 2026-10-14)*
 
@@ -229,7 +253,9 @@ xcodebuild test-without-building -scheme OpenIntelligenceUITests -destination "p
 (`OpenIntelligence/App/UITestSupport.swift`), and adds and removes notes whose names start with
 "UITest quillberry" in the simulator's copy of the app, the same copy the unit suite is hosted in.
 Two traps. A library made in the Simulator holds all-zero vectors, so a test that waits on "Find
-Passages" or "Check a Claim" waits forever: their similarity floor drops everything. Wait on the
+Passages" or "Check a Claim" waits forever: their similarity floor drops everything. (Recorded before
+`67977e4`, later that night, which gives a Simulator library real vectors from the CPU embedder; whether
+the two find the note in the Simulator since then has not been tried, 2026-10-19.) Wait on the
 document lookup instead (`definitions.entities["OIDocumentEntity"].entities(matching:)`), as
 `ShortcutsSystemTests` does. And what went wrong inside the app shows only in the app's own trace,
 `Documents/pipeline_trace.log` in its simulator data folder
@@ -672,13 +698,20 @@ DEBUG builds only, so use the smoke build's `.app`:
 - `--screenshot` turns the mode on
 - `--screenshot-tab chat | documents | visualizations | database | settings`
 - `--screenshot-import-samples` imports the three sample documents
-- `--screenshot-store answer|refusal|sources|consent` stages the listing scenes (added 2026-09-22):
+- `--screenshot-store answer|refusal|sources|consent|page` stages the listing scenes (added 2026-09-22; `page`, which
+  opens the first claim's passage on its page of a lease PDF drawn for the scene, added 2026-10-17 for 5.7's header):
   a lease question answered with three page-cited claims, a question the documents cannot answer
   with its Information Gaps panel, the sources sheet, and the Private Cloud Compute consent sheet.
   Import the samples first so the library chips read 3 documents, and wait about 18 seconds after
   launch before capturing, or the chips still read 0. Hide the HUD with
-  `xcrun simctl spawn <udid> defaults write Gunndamental.OpenIntelligence showSiliconHUD -bool false`,
-  and pin a clean status bar with `xcrun simctl status_bar <udid> override --time 9:41 ...`.
+  `xcrun simctl spawn <udid> defaults write Gunndamental.OpenIntelligence showSiliconHUD -bool false`
+  (from 5.7 a fresh install starts with it off, so this matters only on an install that has turned it on),
+  and pin a clean status bar with `xcrun simctl status_bar <udid> override --time 9:41 ...`. From 5.7 a fresh
+  install also starts with the plain chat (Technical Details off: no stats bar, progress in words, Fact Check
+  without confidence scores); add the launch argument `-showTechnicalDetails YES` for a scene that should show the
+  console. The X-Ray's setting no longer decides it (added 2026-10-17). In `--screenshot-store` scenes the routing
+  pill shows the ready state an iPhone with Apple Intelligence shows; the Simulator reports the model unavailable, and
+  the pill read "Unavailable" in red (`ModelStatusIndicator.shownStatus`, DEBUG only, added 2026-10-17).
   Then `python3 scripts/compose_store_screenshots.py <raw> <out>` captions them, and
   `zsh -ic 'ruby scripts/asc_upload_screenshots.rb <version> <out> --apply'` replaces the sets,
   uploading every new image before deleting any old one.
@@ -763,7 +796,9 @@ onboarding), 7 iPad, 6 Mac. `[evidence_level: measured, confidence: exact, evide
 
 Version is derived, not set by hand. `ci_scripts/ci_post_clone.sh` stamps `MARKETING_VERSION` for
 both iOS and macOS from the first `## <number>` heading in `CHANGELOG.md` during the Xcode Cloud
-build. Editing that heading changes what ships.
+build. Editing that heading changes what ships. The project file's own `MARKETING_VERSION` is what a build from
+Xcode on the Mac shows; it said 5.3 until 2026-10-20, when the owner, having built from Xcode and seen 5.3, had it
+set to 5.7 in all 14 places. Set it to the version in development when a new one opens.
 
 **The Xcode Cloud workflow, as recorded 2026-09-22.** One workflow, `Default`, pinned to Xcode 27
 (`27A266a`) on macOS `Latest Release`. It has two actions, `Archive - iOS` and `Archive - macOS`, and
@@ -1020,7 +1055,8 @@ the "USB only" note elsewhere applies to tests, which need the developer disk im
 rsync -a --delete --exclude 'BenchmarkRuns/' --exclude '.build' --exclude '/build/' \
   ~/Documents/GitHub/OpenIntelligence/ /private/tmp/oi-src/
 # 2. Build for any iOS device, with the version the first numbered CHANGELOG heading names
-#    (the project file says 5.3 and Xcode Cloud stamps the real one; the override edits no file)
+#    (the project file names the version in development, 5.7 from 2026-10-20, and Xcode Cloud stamps the real one;
+#    the override edits no file)
 cd /private/tmp/oi-src && xcodebuild build -project OpenIntelligence.xcodeproj -scheme OpenIntelligence \
   -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/oi-build \
   -jobs 2 -allowProvisioningUpdates MARKETING_VERSION=<X.Y>
@@ -1256,6 +1292,64 @@ scripts used (`asc_upload_shots.rb`, `asc_delete_old_set.rb`, on top of the JWT 
 
 `[evidence_level: measured, confidence: exact, evidence_source: eight FAILED assets with IMAGE_BAD_FILE_EXTENSION, then eight COMPLETE after PNG conversion, iOS 5.1 localization 3b8a2fff, 2026-09-02]`
 
+## Uploading the product page header and search result image (added 2026-10-17)
+
+From iOS 27 the App Store shows a product page header and a search result image, set per version localization through
+the App Asset Library (App Store Connect API reference, "Uploading and managing image assets" and "Placing assets on
+your App Store surfaces", read 2026-10-17). `scripts/asc_upload_listing_art.rb` does it for a version's iOS en-US
+localization:
+
+```bash
+zsh -ic 'ruby scripts/asc_upload_listing_art.rb 5.7 <header.png> <search.png>'
+```
+
+A dry run reads the localization's placements and says what it would upload; `--apply` reserves each image
+(`POST /v1/appAssetLibraryImages`, category `CREATIVE_ASSETS`), sends the bytes to the upload operations, commits with
+`uploaded: true`, waits for `PREPARE_FOR_SUBMISSION`, checks that App Store Connect matched the intended specification,
+and places it (`POST /v1/appAssetLibraryPlacements`, group `DEFAULT_PROFILE`, one of each type per localization). A
+type already placed is left alone; to replace one, delete its placement and run again. The version must be editable.
+
+- **Sizes** (the reference data, `GET /v1/appAssetLibraryRefData`, read 2026-10-17): the header is exactly 3840x1646
+  PNG (21:9); the search image is 3:2, 1920 to 3840 wide, PNG or JPEG; neither may have an alpha channel. A 5244x2950
+  PNG (16:9) fits either.
+- **The images** come from the listing scenes (`--screenshot-store`, "Regenerating App Store screenshots" above) and
+  the compositor in the local, gitignored `Growth/store-assets-<version>/compose_wide.py`; show the owner a contact
+  sheet before uploading.
+- **5.7**, 2026-10-17, at the owner's word after the contact sheet ("A"): header image
+  `cfc00019-2b8e-8947-8028-fea29781e211` (3840x1646) and search image `c6c00019-2b8e-8947-8024-acf51b254f64`
+  (3840x2560), placed on the iOS en-US localization `31bac9d6-082a-4519-9217-1b261b92a1b6`, both placements ACTIVE.
+`[evidence_level: measured (the upload's output and the localization's placements read back), confidence: high]`
+
+## Nominating a release to Apple's editors (added 2026-10-17)
+
+A featuring nomination tells Apple's editorial team what a release brings and when (App Store Connect, the app's
+Featuring Nominations page). `scripts/asc_nominate_release.rb` sends one from `fastlane/nominations/<version>.json`
+(name, description, notes for the editors, device families, locales, the publish window, supplemental links):
+
+```bash
+zsh -ic 'ruby scripts/asc_nominate_release.rb 5.7'
+```
+
+A dry run lists the app's nominations in Drafts and Submitted and prints what it would send. `--apply` saves it as a
+draft; `--apply --submit` sends it. A nomination of the same name already there is updated in place, so the window can
+move when the release date does; a submitted one keeps its type and related apps (App Store Connect Help). An App Store
+Connect write happens only at the owner's word.
+
+- **Lengths.** App Store Connect refuses a description over 1,000 characters and notes over 500 ("The maximum
+  allowable limit is '1000'", then "'500'", on 2026-10-17, for 1,542 and 585). The script checks both before it
+  sends anything.
+- **Lead time.** App Store Connect Help asks for at least 3 weeks ("Nominate your app for featuring"), and
+  developer.apple.com/app-store/getting-featured asks for at least two weeks and suggests up to three months. The
+  script prints the days from now to the start. The API takes a start date and an optional end date
+  (`POST /v1/nominations`, `publishStartDate`, `publishEndDate`), which is the "custom range" the form offers.
+- **Read the whole output.** Ruby holds back what it prints to stdout and not what it prints to stderr, so a refusal
+  appears above the listing; a `tail` of the output hides it.
+- **5.7** was submitted on 2026-10-17 (`659dc182-131c-454e-a191-e9f93b96e64b`): App Enhancements, iPhone, iPad and
+  Mac, en-US, published 2026-11-09 to 2026-11-30, from `fastlane/nominations/5.7.json`. The 5.2 draft from
+  September ("Every Answer Says Where It Ran") was never sent and is still in Drafts.
+`[evidence_level: measured (the refusals and the submission, 2026-10-17); code_verified for the script against the API
+reference read that day; confidence: high]`
+
 ## iOS and macOS need different App Store release notes, and the lane cannot do it yet
 
 *Added 2026-08-31.*
@@ -1461,6 +1555,105 @@ it. 5.2 is the first build on Xcode 27 / Swift 6.4, and its only job is to turn 
 **Hotfixing 5.1 while 5.2 is staged:** the first numbered heading decides the version, so a 5.1.1
 would need its heading placed above `## 5.2` for one build and moved back. Prefer folding the fix
 into 5.2 unless it loses data.
+
+## Changing the privacy policy (added 2026-10-15)
+
+The policy at gunzino.me/openintelligence/privacy and the app's (`PrivacyPolicyView`, opened from Settings, About,
+Privacy Policy) are one text, kept in `scripts/privacy_policy.py`. Change the text there, check every changed
+statement against the code (`Docs/BILLING_AND_LIMITS.md`, section 6, lists the checks behind the current text), and
+make each statement true of the version on the App Store as well as the next one, saying which version a line is
+about when they differ (the search-cache line is the example). Then:
+
+```bash
+python3 scripts/privacy_policy.py "$PWD" ~/Documents/GitHub/Gunzino
+```
+
+It writes Gunzino's markdown, Gunzino's hand-written `openintelligence/privacy/index.html` (Gunzino's deploy compares
+the built page with it and stops with `LOST` when a paragraph is missing; that stopped `631e537`), and the app's
+view, starting from the committed view. iCloud duplicates such as `Header 2.astro` in the Gunzino folder break a build
+there, so run Gunzino's deploy check in a copy of its tracked files before pushing (a public change, at the owner's
+word):
+
+```bash
+D=$(mktemp -d); (cd ~/Documents/GitHub/Gunzino && git ls-files > "$D/.files" && rsync -a --files-from="$D/.files" ./ "$D/" && rsync -a node_modules "$D/") && (cd "$D" && npm run build && ./scripts/verify-site.sh source)
+```
+
+After the push, read the Deploy run (`GH_PAGER=cat gh run list --workflow Deploy --limit 1` in the Gunzino folder) and
+the live page. `[evidence_level: test_verified (Gunzino Deploy runs 38775401964 and 38785077646, both success),
+confidence: high]`
+
+## Apple's accessibility audit, with the X-Ray off (added 2026-10-16)
+
+`OpenIntelligenceUITests/AccessibilityAuditTests` runs Apple's audit for the VoiceOver checks (descriptions, tap areas,
+traits, text it cannot find) on the first-run screen, Chat, Documents and Settings. Contrast, Dynamic Type and clipped
+text are measured separately, for two reasons found on 2026-10-15 and 16:
+
+- **The hardware X-Ray hides the screens from the audit.** While its floating window is up, the audit reports mostly
+  that window: Chat, Documents and Settings read 21 to 35 issues with it on and 31 to 54 of their own with it off. Audit
+  with it off. A UI test passes `-showSiliconHUD NO` at launch (SettingsStore reads the setting with `bool(forKey:)`,
+  which takes that argument). SettingsStore saves every setting at launch, so the argument's NO is saved too and the
+  X-Ray stays off in that simulator afterwards; switch it back on in Settings if that simulator is used for anything
+  else. For the app as installed in a simulator, write the preference into its container while the simulator is shut
+  down, because a sandboxed app does not read what `simctl spawn defaults write` writes. The key exists after any
+  launch, so set it, and add it only if it is missing:
+  ```bash
+  C=$(xcrun simctl get_app_container <sim> Gunndamental.OpenIntelligence data); P="$C/Library/Preferences/Gunndamental.OpenIntelligence.plist"; /usr/libexec/PlistBuddy -c "Set :showSiliconHUD false" "$P" || /usr/libexec/PlistBuddy -c "Add :showSiliconHUD bool false" "$P"
+  ```
+  The container moves between test runs, so look it up again before each run, and delete the key afterwards.
+- **Its contrast verdicts do not always follow the pixels.** "Import documents from the Documents tab..." drew at 5.20
+  to 1 and "Import Sample Workspace" at 20 to 1, and both still "failed"; text behind the floating tab bar is judged
+  where it sits. So every contrast item is measured on a screenshot of the same screen before it counts: the
+  0.5th and 99.5th luminance percentiles inside the element's frame (WCAG relative luminance), the method in
+  `BenchmarkRuns/2026-10-16-accessibility-pass-1/pixel_contrast.py` on this Mac.
+- **It misses some of what Larger Text asks.** At the largest size it reported neither Settings' two status pills
+  breaking "PCC" and "Available" in the middle of the word nor the Documents header, taller than the screen there and
+  outside any scroll view, centered up under the status and navigation bars (2026-10-16). Look at every screenshot
+  taken at that size as well.
+- **It reads text in views that `ViewThatFits` swaps as not growing.** With Chat's row built from `ViewThatFits`, a
+  larger size showed a different set of views, and the audit called the row's text "Dynamic Type font sizes are
+  unsupported" at the default size, although the screenshots showed it growing (2026-10-16). A `Layout` that keeps the
+  same views at every size (`WrappingRowLayout`) does not trigger it.
+- **Its frames can be taken mid-scroll.** It scrolls a list during its checks, so an element's frame can lie away from
+  where the screenshot shows it: "PCC Available" at the largest size was reported about 90 points below the pill and
+  "measured" 1.13 to 1 on empty card background; where it is drawn it is 14.5 to 16.8 to 1. Measure a reported item
+  where the screenshot shows it.
+- **It names no element on a view that changes while it reads** (added 2026-10-16, pass 3). On the import panel while
+  the sample documents imported, all 101 issues at the default size in light came with no element: the rows and the
+  console change faster than its checks. Paused, the panel holds still and most issues name their element (31 of 46 in
+  dark at the default size; scratch run t3, 2026-10-16, `BenchmarkRuns/2026-10-16-accessibility-pass-3/audit-t3-*`). Judge a running panel from its screenshots. At the largest sizes they showed what the
+  audit never named: words broken in the middle ("Pause / d", "Com / plete"), buttons cut to "Conti..." and
+  "Disc...", and files out of reach under a panel that did not scroll.
+- **It audits what an overlay covers.** On the first-run screen it reported Chat's pills, which sit fully behind the
+  welcome screen, as failing contrast at 1.01 to 1, the welcome screen's own pixels (runs t3 and t4).
+  `accessibilityAddTraits(.isModal)` on the welcome screen does not change that; what it does for VoiceOver is not
+  checked on a device. Items whose frame on the screenshot shows only the covering view are not
+  the covered view's defects.
+- **Text hidden from VoiceOver while it shows is an element-check failure.** A "•" separator with
+  `accessibilityHidden(true)` was reported as "Potentially inaccessible text" (`.elementDetection`, which
+  `AccessibilityAuditTests` runs) on a filled library's footer (2026-10-16). Draw separators as shapes, or keep the
+  text readable inside one element.
+- **Tiny text gets offset frames.** A Fact Check line's "•" separators and its "FACT CHECK" heading measured 1.10 to
+  1.17 inside the frames the audit gave them, which fell beside the drawn text. A separate text for each "•" was also
+  what the audit counted one issue each for; one text per line gives it one element.
+
+The four settings are `xcrun simctl ui <sim> appearance light|dark` and `xcrun simctl ui <sim> content_size
+large|accessibility-extra-extra-extra-large`, set after the simulator boots. `.caption2` text is always reported as
+"Dynamic Type partially unsupported" (it never goes below 11 points) although it grows past 200%, which is what Apple's
+Larger Text label asks. Text drawn with `scaledFont(size:...)` (`Theme.swift`, a fixed design size scaled by
+`@ScaledMetric` relative to Body) gets the same verdict on the question bubble and the answer text (2026-10-16, run
+t4), and grows with Body: Body is 17 points at the default size and 53 at the largest accessibility size, so 14 points
+become about 44. Apple's criteria for the labels: developer.apple.com, "Sufficient Contrast evaluation criteria"
+and "Larger Text evaluation criteria" (read 2026-10-16): 4.5 to 1 for most text, light and dark, by default; text that
+grows to 200% or the system maximum without overlapping or severe truncation. The runs and their numbers are in
+`BenchmarkRuns/2026-10-15-accessibility-audit-xray-off/`, `BenchmarkRuns/2026-10-16-accessibility-pass-1/`,
+`BenchmarkRuns/2026-10-16-accessibility-pass-2/` and, for the rest of the common tasks (the first-run screen, an
+answer with its sources and a refusal, the import panel, the library, a document's page and the plans screen),
+`BenchmarkRuns/2026-10-16-accessibility-pass-3/`, whose `run_common_tasks.sh` and `AccessibilityLabelMeasurement.swift`
+run them. Rows that wrap by what fits (`WrappingRowLayout` in Chat's header and
+Settings' identity row) also want a run at `extra-extra-extra-large`, the largest size below the accessibility
+sizes, and a look at a screen narrower than the test simulator's 402 points. `[evidence_level: measured (iOS 27.0
+Simulator, 2026-10-15 and 16), confidence: high for the behaviour described, medium for why the audit sees only the
+X-Ray's window, which is not established]`
 
 ## Claude context system
 

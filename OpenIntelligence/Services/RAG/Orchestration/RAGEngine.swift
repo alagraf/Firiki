@@ -285,7 +285,7 @@ actor RAGEngine {
             if Task.isCancelled { break }
 
             builder += "[Document Chunk \(index + 1), Similarity: \(String(format: "%.3f", retrieved.similarityScore))]\n"
-            builder += retrieved.chunk.parentContent ?? retrieved.chunk.content
+            builder += retrieved.chunk.contextText
 
             if index != chunks.count - 1 {
                 builder += "\n\n---\n\n"
@@ -304,10 +304,17 @@ actor RAGEngine {
         query: String,
         topK: Int
     ) async -> [RetrievedChunk] {
-        // Report Neural Engine activity for reranking (cross-encoder runs on ANE)
+        // The cross-encoder is planned onto the Neural Engine (55 of 66 operations under `.all`, M3 Pro,
+        // BenchmarkRuns/2026-10-18-compute-plan). Without the model the fallback is CPU heuristics, which lit the
+        // Neural Engine too until 5.7.
+        let usesCrossEncoder = rerankerModel != nil
         Task { @MainActor in
-            HardwareTelemetryReporter.pulse(.reranking, intensity: 0.85, duration: 0.3)
-            HardwareTelemetryState.shared.incrementANECounter()
+            if usesCrossEncoder {
+                HardwareTelemetryReporter.pulse(.reranking, intensity: 0.85, duration: 0.3)
+                HardwareTelemetryState.shared.incrementANECounter()
+            } else {
+                HardwareTelemetryReporter.pulse(.queryProcessing, intensity: 0.6, duration: 0.3)
+            }
         }
 
         #if DEBUG
@@ -326,6 +333,14 @@ actor RAGEngine {
         // Always at least 100 to maintain existing behavior for normal queries.
         let adaptiveCeiling = min(chunks.count, max(100, min(250, topK * 5)))
         let candidateChunks = Array(chunks.prefix(adaptiveCeiling))
+        // Say when the ceiling leaves candidates out (roadmap F-03, 5.7): a passage past it never
+        // reaches the reranker, whatever its score would have been, and nothing showed it happening.
+        if adaptiveCeiling < chunks.count {
+            Log.warning(
+                "[RAGEngine] Rerank ceiling: \(chunks.count - adaptiveCeiling) of \(chunks.count) candidates past "
+                    + "position \(adaptiveCeiling) were not reranked",
+                category: .retrieval)
+        }
 
         // Wait for the load rather than racing it. `await` releases the actor, so the setup task
         // is free to run; if the model failed to load, `setupReRanker` swallows the error and the
@@ -395,7 +410,7 @@ actor RAGEngine {
 
             // TOC/Boilerplate Detection Penalty
             // Table-of-contents chunks have many section numbers but little actual content
-                let contentForPenalty = r.chunk.parentContent ?? r.chunk.content
+                let contentForPenalty = r.chunk.contextText
                 let tocPenalty = computeTOCPenalty(content: contentForPenalty)
                 let questionBankPenalty = computeQuestionBankPenalty(content: contentForPenalty, query: query)
                 let bibliographyPenalty = Self.computeBibliographyPenalty(content: contentForPenalty)
@@ -404,8 +419,8 @@ actor RAGEngine {
             scored.append((r, score, keywordBoost, proximityBoost, metadataBoost))
         }
 
-        // Sort by rerank score desc
-        scored.sort { $0.score > $1.score }
+        // Sort by rerank score desc, ties in one order from run to run (5.7; see HybridSearchService.byScoreThenId)
+        scored.sort { $0.score != $1.score ? $0.score > $1.score : HybridSearchService.stableTieBreakKey($0.chunk) < HybridSearchService.stableTieBreakKey($1.chunk) }
 
         if scored.count > 0 {
             // keep debug parity with existing logs
@@ -478,16 +493,12 @@ actor RAGEngine {
         #endif
         guard !chunks.isEmpty else { return ("", 0, []) }
 
-        // "Lost in the Middle" mitigation (Liu et al., 2023):
-        // LLMs attend strongly to the beginning and end of context, but poorly to the middle.
-        // Reorder chunks so the most relevant are at positions 1, N, 2, N-1, 3, N-2, etc.
-        // This ensures the best chunks are in high-attention positions.
-        let orderedChunks: [RetrievedChunk]
-        if useLostInMiddleMitigation, chunks.count >= 4 {
-            orderedChunks = applyLostInMiddleReordering(chunks)
-        } else {
-            orderedChunks = chunks
-        }
+        // "Lost in the Middle" mitigation (Liu et al., 2023): models attend to the start and end of a context more
+        // than to the middle, so the passages chosen are placed best first, second best last and the weakest in the
+        // middle. They are chosen in rank order and reordered only after the budget (end of this function).
+        // Reordering every candidate first put rank 2 last, so whenever about half the candidates fit, the
+        // second-best passage was the one the budget cut (the PostDesk session's code trace, 2026-10-20).
+        let orderedChunks = chunks
 
         var builder = String()
         builder.reserveCapacity(min(maxChars, 4096))
@@ -496,14 +507,16 @@ actor RAGEngine {
         // The chunks that actually reached the prompt, in the order their `[Sn]` labels were
         // assigned. This must be returned rather than recomputed by the caller.
         //
-        // Labels are numbered over `orderedChunks`, which is `chunks` after Lost-in-the-Middle
-        // reordering. Every caller was rebuilding the citation list as `prefix(used)` of its OWN
+        // Labels number the passages in the order the context shows them, which after the
+        // Lost-in-the-Middle placement below is not rank order. Every caller was rebuilding the citation list as `prefix(used)` of its OWN
         // pre-reordering array, so for any query with four or more chunks the two disagreed:
         // reordering emits `front + back.reversed()`, so [A,B,C,D] is shown as [A,C,D,B] and a
         // model citing [S2] meant C while the response resolved it to B. Three of four citations
         // pointed at the wrong document, silently, and nothing downstream could detect it because
         // the indices were all in range.
         var usedSources: [RetrievedChunk] = []
+        // Each passage packed and the text it was packed with, for the Lost-in-the-Middle placement after the budget.
+        var packed: [(chunk: RetrievedChunk, text: String)] = []
 
         // ── Abbreviation Glossary Injection ──────────────────────────────────
         // Collect all abbreviation→expansion mappings from retrieved chunks.
@@ -538,6 +551,24 @@ actor RAGEngine {
             }
         }
 
+        let glossaryPrefix = builder
+
+        // One passage's block: its label, where it is from, its text, and a separator unless it is the last.
+        func renderBlock(_ number: Int, _ r: RetrievedChunk, _ text: String, isLast: Bool) -> String {
+            if compact {
+                // Compact mode: minimal headers, no similarity scores, tighter separators
+                // Saves ~30-50 chars per chunk for more content in constrained budgets
+                let source = r.sourceDocument.isEmpty ? "" : URL(fileURLWithPath: r.sourceDocument).lastPathComponent
+                let sourceRef = source.isEmpty ? "" : "(\(source)) "
+                return "[S\(number)] \(sourceRef)\(text)" + (isLast ? "" : "\n---\n")
+            }
+            // Full mode: rich metadata for better citation context
+            let source = r.sourceDocument.isEmpty ? "Unknown" : r.sourceDocument
+            let page = r.pageNumber.map { " p.\($0)" } ?? ""
+            let header = "[S\(number)] \(source)\(page) • sim \(String(format: "%.3f", r.similarityScore))\n"
+            return header + text + (isLast ? "" : "\n\n---\n\n")
+        }
+
         // Calculate target chars per chunk to fit at least 3 chunks
         // This prevents the "1 giant chunk" problem where context is too narrow
         let minChunksTarget = min(3, orderedChunks.count)
@@ -558,7 +589,7 @@ actor RAGEngine {
 
             // Sanitize content to help Apple FM's language detector
             // URLs and special Unicode can confuse it into detecting wrong languages
-            let rawContent = r.chunk.parentContent ?? r.chunk.content
+            let rawContent = r.chunk.contextText
 
             // Include contextual prefix (document title/author) in final context
             // This ensures author-based queries like "What did X find?" work correctly
@@ -615,44 +646,29 @@ actor RAGEngine {
                 truncatedContent = sanitizedContent
             }
 
-            let block: String
-            if compact {
-                // Compact mode: minimal headers, no similarity scores, tighter separators
-                // Saves ~30-50 chars per chunk for more content in constrained budgets
-                let source = r.sourceDocument.isEmpty ? "" : URL(fileURLWithPath: r.sourceDocument).lastPathComponent
-                let sourceRef = source.isEmpty ? "" : "(\(source)) "
-                block = "[S\(i + 1)] \(sourceRef)\(truncatedContent)" + (i != orderedChunks.count - 1 ? "\n---\n" : "")
-            } else {
-                // Full mode: rich metadata for better citation context
-                let source = r.sourceDocument.isEmpty ? "Unknown" : r.sourceDocument
-                let page = r.pageNumber.map { " p.\($0)" } ?? ""
-                let header = "[S\(i + 1)] \(source)\(page) • sim \(String(format: "%.3f", r.similarityScore))\n"
-                block = header + truncatedContent + (i != orderedChunks.count - 1 ? "\n\n---\n\n" : "")
-            }
+            // The label is this passage's place among the passages kept (`used + 1`), the order `usedSources`
+            // returns and the answer's citations resolve against. It was its place among all candidates (`i + 1`),
+            // so a near-duplicate skipped above shifted every later label by one: the next passage was labelled
+            // [S3] while it was the second source, [S3] opened the passage after it, and the last label opened
+            // nothing (found by review, 2026-10-20). "Cite only sources S1 to S\(used)" below already counted
+            // the passages kept.
+            let block = renderBlock(used + 1, r, truncatedContent, isLast: i == orderedChunks.count - 1)
 
             if builder.count + block.count <= maxChars || used == 0 {
                 builder += block
                 used += 1
                 usedSources.append(r)
+                packed.append((chunk: r, text: truncatedContent))
                 usedWordSets.append(contentWords)
             } else if used < minChunksTarget && remainingBudget > 300 {
                 // Force-fit truncated version if we haven't hit minimum chunks yet
                 let forceTruncated = truncateAtSentence(truncatedContent, maxChars: remainingBudget - headerOverhead - 20)
                 if forceTruncated.count >= 150 {
-                    let forceBlock: String
-                    if compact {
-                        let source = r.sourceDocument.isEmpty ? "" : URL(fileURLWithPath: r.sourceDocument).lastPathComponent
-                        let sourceRef = source.isEmpty ? "" : "(\(source)) "
-                        forceBlock = "[S\(i + 1)] \(sourceRef)\(forceTruncated)" + (i != orderedChunks.count - 1 ? "\n---\n" : "")
-                    } else {
-                        let source = r.sourceDocument.isEmpty ? "Unknown" : r.sourceDocument
-                        let page = r.pageNumber.map { " p.\($0)" } ?? ""
-                        let header = "[S\(i + 1)] \(source)\(page) • sim \(String(format: "%.3f", r.similarityScore))\n"
-                        forceBlock = header + forceTruncated + (i != orderedChunks.count - 1 ? "\n\n---\n\n" : "")
-                    }
+                    let forceBlock = renderBlock(used + 1, r, forceTruncated, isLast: i == orderedChunks.count - 1)
                     builder += forceBlock
                     used += 1
                     usedSources.append(r)
+                    packed.append((chunk: r, text: forceTruncated))
                     usedWordSets.append(contentWords)
                 } else {
                     break
@@ -660,6 +676,17 @@ actor RAGEngine {
             } else {
                 break
             }
+        }
+
+        // The Lost-in-the-Middle placement, on the passages chosen. The labels follow the new order, so they still
+        // read [S1], [S2], [S3] down the context, and `usedSources` returns the passages in that order.
+        if useLostInMiddleMitigation, packed.count >= 4 {
+            let placed = applyLostInMiddleReordering(packed)
+            builder = glossaryPrefix
+            for (place, entry) in placed.enumerated() {
+                builder += renderBlock(place + 1, entry.chunk, entry.text, isLast: place == placed.count - 1)
+            }
+            usedSources = placed.map { $0.chunk }
         }
 
         // State the citation range the model was actually given.
@@ -755,15 +782,15 @@ actor RAGEngine {
     ///   - Start: #1 (best), #3, #5
     ///   - End: #2 (second-best), #4, #6
     ///   - Middle: worst chunks (#5, #6)
-    private func applyLostInMiddleReordering(_ chunks: [RetrievedChunk]) -> [RetrievedChunk] {
+    private func applyLostInMiddleReordering<T>(_ chunks: [T]) -> [T] {
         guard chunks.count >= 4 else { return chunks }
 
         // Split into odd-indexed (0, 2, 4...) and even-indexed (1, 3, 5...) positions
         // Odd-indexed go to the front (start of context — high attention)
         // Even-indexed go to the back in reverse (end of context — high attention)
         // Result: worst chunks land in the middle (low attention zone)
-        var frontChunks: [RetrievedChunk] = []
-        var backChunks: [RetrievedChunk] = []
+        var frontChunks: [T] = []
+        var backChunks: [T] = []
 
         for (i, chunk) in chunks.enumerated() {
             if i % 2 == 0 {
@@ -890,7 +917,12 @@ actor RAGEngine {
         }
 
         // Sort and take topK
-        let top = scored.sorted { $0.score > $1.score }.prefix(min(topK, scored.count))
+        let top = scored.sorted {
+            $0.score != $1.score
+                ? $0.score > $1.score
+                : ($0.chunk.documentId.uuidString, $0.chunk.metadata.chunkIndex)
+                    < ($1.chunk.documentId.uuidString, $1.chunk.metadata.chunkIndex)
+        }.prefix(min(topK, scored.count))
         return Array(top.enumerated().map { idx, pair in
             RetrievedChunk(
                 chunk: pair.chunk,
@@ -1035,7 +1067,10 @@ actor RAGEngine {
             }
         }
 
-        let ranked = allCandidates.sorted { (scores[$0.chunk.id] ?? 0) > (scores[$1.chunk.id] ?? 0) }
+        let ranked = allCandidates.sorted {
+            let (lhs, rhs) = (scores[$0.chunk.id] ?? 0, scores[$1.chunk.id] ?? 0)
+            return lhs != rhs ? lhs > rhs : HybridSearchService.stableTieBreakKey($0) < HybridSearchService.stableTieBreakKey($1)
+        }
         return ranked
     }
 
@@ -1550,7 +1585,9 @@ actor RAGEngine {
 
             // Reconstruct scored chunks in score-descending order
             var scoredChunks = scored.map { (chunk: chunks[$0.index], score: $0.score) }
-            scoredChunks.sort { $0.score > $1.score }
+            scoredChunks.sort {
+                $0.score != $1.score ? $0.score > $1.score : HybridSearchService.stableTieBreakKey($0.chunk) < HybridSearchService.stableTieBreakKey($1.chunk)
+            }
 
             // MS-MARCO cross-encoders output unbounded relevance scores (e.g., -10 to +10).
             // These are meant for ranking, not as probabilities.
@@ -1580,7 +1617,7 @@ actor RAGEngine {
                 let rawBottom = scoredChunks.last?.score ?? 0
                 Log.debug("[RAGEngine] AI Re-ranking: raw \(String(format: "%.2f", rawBottom))→\(String(format: "%.2f", rawTop)), normalized \(String(format: "%.2f", bottom.score))→\(String(format: "%.2f", top.score))", category: .retrieval)
                 // Log top chunk preview for debugging retrieval quality
-                let previewSource = top.chunk.chunk.parentContent ?? top.chunk.chunk.content
+                let previewSource = top.chunk.chunk.contextText
                 let preview = String(previewSource.prefix(150)).replacingOccurrences(of: "\n", with: " ")
                 Log.debug("[RAGEngine] Top chunk preview: \(preview)...", category: .retrieval)
             }
@@ -1588,13 +1625,16 @@ actor RAGEngine {
             // Apply TOC/boilerplate penalty after cross-encoder scoring
             // This demotes table-of-contents chunks that match keywords but lack actual content
             let penalizedScored = normalizedScored.map { item -> (chunk: RetrievedChunk, score: Float) in
-                let contentForPenalty = item.chunk.chunk.parentContent ?? item.chunk.chunk.content
+                let contentForPenalty = item.chunk.chunk.contextText
                 let tocPenalty = computeTOCPenalty(content: contentForPenalty)
                 let questionBankPenalty = computeQuestionBankPenalty(content: contentForPenalty, query: query)
                 let bibliographyPenalty = Self.computeBibliographyPenalty(content: contentForPenalty)
                 let adjustedScore = max(0.01, item.score - tocPenalty - questionBankPenalty - bibliographyPenalty)
                 return (item.chunk, adjustedScore)
-            }.sorted { $0.score > $1.score }
+            }.sorted {
+                // Many scores meet at the 0.01 floor, so ties are common at the cut (5.7).
+                $0.score != $1.score ? $0.score > $1.score : HybridSearchService.stableTieBreakKey($0.chunk) < HybridSearchService.stableTieBreakKey($1.chunk)
+            }
 
             return penalizedScored.prefix(cappedTopK).map { scoredItem in
                 // Propagate cross-encoder score to the chunk so downstream sorting preserves re-ranking order

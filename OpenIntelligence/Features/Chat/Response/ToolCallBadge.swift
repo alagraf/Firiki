@@ -25,15 +25,16 @@ struct ToolCallBadge: View {
             HStack(spacing: DSSpacing.xxs) {
                 // Animated icon with subtle pulse for high counts
                 Image(systemName: count >= 3 ? "gearshape.2.fill" : "wrench.and.screwdriver")
-                    .font(.system(size: 9, weight: .semibold))
+                    .scaledFont(size: 9, weight: .semibold)
                     .symbolEffect(.pulse, options: .repeating, isActive: count >= 5)
                 
                 Text("\(count) tool\(count == 1 ? "" : "s")")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .scaledFont(size: 9, weight: .semibold, design: .rounded)
+                    .monospacedDigit()
             }
-            .foregroundColor(badgeColor)
+            .foregroundStyle(badgeColor)
             .padding(.horizontal, DSSpacing.xs)
-            .padding(.vertical, 4)
+            .padding(.vertical, DSSpacing.xs)
             .background(
                 Capsule()
                     .fill(DSColors.chipBackground(for: badgeColor))
@@ -60,15 +61,16 @@ struct MicroToolCallBadge: View {
     
     var body: some View {
         if count > 0 {
-            HStack(spacing: 2) {
+            HStack(spacing: DSSpacing.xxs) {
                 Image(systemName: "wrench.fill")
-                    .font(.system(size: 7, weight: .bold))
+                    .scaledFont(size: 7, weight: .bold)
                 Text("\(count)")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .scaledFont(size: 8, weight: .bold, design: .rounded)
+                    .monospacedDigit()
             }
-            .foregroundColor(.purple.opacity(0.8))
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
+            .foregroundStyle(.purple.opacity(0.8))
+            .padding(.horizontal, DSSpacing.xs)
+            .padding(.vertical, DSSpacing.xxs)
             .background(
                 Capsule()
                     .fill(Color.purple.opacity(0.1))

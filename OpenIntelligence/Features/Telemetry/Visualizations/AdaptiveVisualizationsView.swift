@@ -10,11 +10,122 @@ import SceneKit
 import SwiftUI
 import TipKit
 
+// MARK: - When the Atlas loads
+
+/// When the Atlas's views load again (5.7): the page's profile, the 3D card and the full-screen view. Through 5.6 they
+/// loaded when they appeared and when the open library changed, so passages imported while the Atlas was on screen
+/// stayed out of it until it was opened again. An import sets `RAGService.isProcessing` once for its whole queue
+/// (`runIngestionLoop`), so the views load once when it ends, not for each document. `addDocument` with its default
+/// `manageProcessingState` clears the flag on its own, and `reembedDocuments` re-adds each document that way, so a
+/// re-embed flips it once per document: a view waits `settleDelay` when only the document count moved (`settlesFirst`),
+/// and a burst like that loads once, at its end. A view records the key it loaded only when that load finished, so a
+/// load an import interrupted is done again rather than skipped.
+struct AtlasContentKey: Hashable {
+    let containerId: UUID
+    /// The number of documents in every library, or nil while an import runs.
+    let settledDocumentCount: Int?
+    /// What else the view draws by, such as its projection method.
+    let variant: String
+
+    init(containerId: UUID, documentCount: Int, importing: Bool, variant: String = "") {
+        self.containerId = containerId
+        self.settledDocumentCount = importing ? nil : documentCount
+        self.variant = variant
+    }
+
+    /// True when this key only says that an import has started in what the view last loaded: nothing new is in the
+    /// library yet, so the view keeps what it shows and loads when the import ends.
+    func onlyStartsAnImport(after loaded: AtlasContentKey?) -> Bool {
+        guard let loaded, settledDocumentCount == nil, loaded.settledDocumentCount != nil else { return false }
+        return loaded.containerId == containerId && loaded.variant == variant
+    }
+
+    /// True when only the document count has moved since what the view last loaded, in the same library and view: an
+    /// import or a re-embed step has just ended, or a document was deleted. The view waits `settleDelay` first, and a
+    /// change in that time cancels the wait.
+    func settlesFirst(after loaded: AtlasContentKey?) -> Bool {
+        guard let loaded, settledDocumentCount != nil else { return false }
+        return loaded.containerId == containerId && loaded.variant == variant
+    }
+
+    /// How long a view waits before loading for a key that `settlesFirst`.
+    static let settleDelay: Duration = .milliseconds(800)
+}
+
 // MARK: - Main View
+
+/// How the Atlas draws its 3D map (5.7). The scene is the SceneKit map the Atlas had through 5.6: a label at each end
+/// of each axis and each cluster's name in the map, with the cluster list and the axis names over it. The chart is the
+/// Swift Charts cube with a written key that replaced it in 5.7. On 2026-10-20 the owner asked for the scene back: its
+/// named axes and clusters showed where a library's material sits and what it is about. So the scene is the default
+/// and the chart is the other choice, kept in the app's settings for the card and the full screen alike.
+enum AtlasDrawingStyle: String, CaseIterable {
+    case scene
+    case chart
+
+    var title: String {
+        switch self {
+        case .scene: return "Scene"
+        case .chart: return "Chart"
+        }
+    }
+}
+
+/// The names the Atlas's scene puts in the map (5.7, restored): one at the middle of each group of points, a cluster or
+/// in All Libraries a library, in the group's colour, scaled as the points are (to 4.5 around their centre). Through
+/// 5.6 the card and the full screen each had a copy of this.
+enum AtlasSceneLabels {
+    static func annotations(
+        coords: [SIMD3<Float>],
+        groups: [Int],
+        names: [String],
+        colors: [PlatformColor],
+        detailLevel: (Int) -> Int
+    ) -> [Embedding3DSceneView.AnnotationData] {
+        guard coords.count == groups.count, !coords.isEmpty, !colors.isEmpty else { return [] }
+        var minimum = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+        var maximum = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+        for c in coords {
+            minimum = pointwiseMin(minimum, c)
+            maximum = pointwiseMax(maximum, c)
+        }
+        let center = (minimum + maximum) / 2
+        let span = maximum - minimum
+        let scale: Float = 4.5 / max(max(span.x, span.y), max(span.z, 0.0001))
+
+        var members: [Int: (sum: SIMD3<Float>, count: Int)] = [:]
+        for (index, group) in groups.enumerated() where group >= 0 && group < names.count {
+            let entry = members[group] ?? (SIMD3<Float>(repeating: 0), 0)
+            members[group] = (entry.sum + coords[index], entry.count + 1)
+        }
+        return names.indices.compactMap { group in
+            guard let entry = members[group], entry.count > 0 else { return nil }
+            let centroid = (entry.sum / Float(entry.count) - center) * scale
+            return Embedding3DSceneView.AnnotationData(
+                position: SCNVector3(centroid.x, centroid.y, centroid.z),
+                title: names[group],
+                keywords: ["\(entry.count) pts"],
+                color: colors[group % colors.count],
+                detailLevel: detailLevel(entry.count),
+                clusterSize: entry.count,
+                isDocumentCluster: false
+            )
+        }
+    }
+
+    /// Point size scaled down for large maps, as through 5.6.
+    static func pointScale(for count: Int) -> Double {
+        if count >= 10000 { return 0.6 }
+        if count >= 5000 { return 0.7 }
+        if count >= 2000 { return 0.85 }
+        return 1.0
+    }
+}
 
 struct AdaptiveVisualizationsView: View {
     @EnvironmentObject private var ragService: RAGService
     @EnvironmentObject private var containerService: ContainerService
+    @EnvironmentObject private var settings: SettingsStore
     @StateObject private var engine = LibraryVisualizationEngine.shared
 
     @State private var selectedInsight: VisualizationInsight?
@@ -27,12 +138,16 @@ struct AdaptiveVisualizationsView: View {
 
     // Atlas visualization settings
     @State private var atlasProjection: AtlasProjectionMethod = .pca
-    @State private var atlasPointScale: Double = 1.2
     @State private var atlasAutoRotate = false // Off by default - let user explore
     @State private var atlasDepthCue = false // Off for cleaner look
+    // For the scene only (`AtlasDrawingStyle`): the chart draws its own points and no labels in the map.
+    @State private var atlasPointScale: Double = 1.2
     @State private var atlasShowLabels = true
+    @AppStorage("atlasDrawingStyle") private var atlasStyle: AtlasDrawingStyle = .scene
     @State private var atlasShowAxes = true // On by default - show spatial reference
     @State private var atlasBackground: AtlasBackgroundStyle = .midnight // Dark for contrast
+    /// What the profile was last built for (`AtlasContentKey`).
+    @State private var atlasLoadedKey: AtlasContentKey?
 
     enum AtlasProjectionMethod: String, CaseIterable {
         case pca = "PCA"
@@ -102,7 +217,7 @@ struct AdaptiveVisualizationsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 20) {
+            LazyVStack(spacing: DSSpacing.lg) {
                 // Atlas is the least self-explanatory tab in the app: it had no
                 // `InfoButtonView`, no empty-state copy explaining what a cluster or an
                 // embedding is, and nothing telling a new user why they would open it.
@@ -151,7 +266,7 @@ struct AdaptiveVisualizationsView: View {
                     emptyStateCard
                 }
             }
-            .padding()
+            .padding(DSSpacing.lg)
         }
         .background(DSColors.background)
         .navigationTitle("Knowledge Atlas")
@@ -173,11 +288,11 @@ struct AdaptiveVisualizationsView: View {
         .sheet(isPresented: $showAllInsights) {
             NavigationStack {
                 List(engine.insights) { insight in
-                    HStack(spacing: 12) {
+                    HStack(spacing: DSSpacing.md) {
                         Image(systemName: insight.icon)
                             .foregroundStyle(insight.color)
                             .frame(width: 28)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                             Text(insight.title)
                                 .font(.subheadline.weight(.medium))
                             Text(insight.subtitle)
@@ -200,10 +315,7 @@ struct AdaptiveVisualizationsView: View {
                 // Retires `AtlasTip`. Donated on real exploration rather than on appear,
                 // so the tip survives until it has done its job.
                 Task { await AtlasTip.atlasViewed.donate() }
-                #if os(iOS)
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
-                #endif
+                DSHaptics.medium()
             }
         }
         .onChange(of: expandedView) { _, expanded in
@@ -216,11 +328,21 @@ struct AdaptiveVisualizationsView: View {
         // appearance as well as on container change, so it covers both cases the pair covered.
         //
         // The duplicate could not be cancelled away: `analysisTask?.cancel()` cannot stop the
-        // in-flight copy because neither `buildProfile` nor `analyzeTopics` checks
-        // `Task.isCancelled`, and `LibraryVisualizationEngine` is `@MainActor` throughout, so
-        // full-text tokenisation of every chunk holds the main actor for the duration — twice.
-        .task(id: containerService.activeContainerId) {
+        // in-flight copy because `buildProfile` does not check `Task.isCancelled`. Its work for
+        // each passage runs off the main actor since 5.7 (`LibraryVisualizationEngine.analyzePassages`),
+        // so a duplicate costs time, not the screen.
+        //
+        // Keyed by the open library and the number of documents in every library once no import runs
+        // (`AtlasContentKey`, 5.7), so an import that ends while the Atlas is open shows in it.
+        .task(id: atlasContentKey) {
+            let key = atlasContentKey
+            guard !key.onlyStartsAnImport(after: atlasLoadedKey) else { return }
+            if key.settlesFirst(after: atlasLoadedKey) {
+                try? await Task.sleep(for: AtlasContentKey.settleDelay)
+                guard !Task.isCancelled else { return }
+            }
             await refreshAnalysis()
+            if !Task.isCancelled { atlasLoadedKey = key }
         }
         .refreshable {
             await refreshAnalysis()
@@ -242,16 +364,19 @@ struct AdaptiveVisualizationsView: View {
             // The 3D scene with all settings passed through
             CompactAtlasSceneView(
                 profile: profile,
-                height: atlasMode == .expanded ? 420 : 280,
+                // The chart is taller (5.7): its axis key sits under it, inside this height. The scene names its axes
+                // in the map, at the heights it had through 5.6.
+                height: atlasStyle == .chart ? (atlasMode == .expanded ? 470 : 340) : (atlasMode == .expanded ? 420 : 280),
                 projectionMethod: atlasProjection.projectionKind,
-                pointScale: atlasPointScale,
                 autoRotate: atlasAutoRotate,
                 depthCue: atlasDepthCue,
-                showLabels: atlasShowLabels,
-                backgroundStyle: atlasBackground.sceneStyle
+                backgroundStyle: atlasBackground.sceneStyle,
+                style: atlasStyle,
+                pointScale: atlasPointScale,
+                showLabels: atlasShowLabels
             )
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.sm)
 
             // Topic legend (makes the dots meaningful)
             if !profile.dominantTopics.isEmpty {
@@ -262,7 +387,7 @@ struct AdaptiveVisualizationsView: View {
             atlas3DStatsBar(profile: profile)
         }
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -274,53 +399,56 @@ struct AdaptiveVisualizationsView: View {
                     )
                 )
         )
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: atlasMode)
+        .animation(DSAnimations.snappySpring, value: atlasMode)
     }
 
     private var atlasHeader: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: DSSpacing.sm) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text("Semantic Atlas")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
 
-                Text(atlasProjection.rawValue + " projection • \(atlasAutoRotate ? "Rotating" : "Static")")
+                Text(
+                    settings.showTechnicalDetails
+                        ? atlasProjection.rawValue + " projection • \(atlasAutoRotate ? "Rotating" : "Static")"
+                        : "Passages that mean similar things sit close together")
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.6))
             }
 
             Spacer()
 
             // Settings toggle
             Button {
-                withAnimation(.spring(response: 0.3)) {
+                withAnimation(DSAnimations.snappySpring) {
                     showAtlasSettings.toggle()
                 }
             } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.caption)
-                    .padding(6)
+                    .padding(DSSpacing.xs)
                     .background(
                         Circle().fill(showAtlasSettings ? Color.white.opacity(0.25) : Color.white.opacity(0.1))
                     )
-                    .foregroundColor(.white.opacity(showAtlasSettings ? 1 : 0.7))
+                    .foregroundStyle(.white.opacity(showAtlasSettings ? 1 : 0.7))
             }
 
             // Compact/Expanded toggle
-            HStack(spacing: 2) {
+            HStack(spacing: DSSpacing.xxs) {
                 ForEach([AtlasMode.compact, AtlasMode.expanded], id: \.self) { mode in
                     Button {
-                        withAnimation(.spring(response: 0.3)) {
+                        withAnimation(DSAnimations.snappySpring) {
                             atlasMode = mode
                         }
                     } label: {
                         Image(systemName: mode == .compact ? "rectangle.arrowtriangle.2.inward" : "rectangle.arrowtriangle.2.outward")
                             .font(.caption)
-                            .padding(6)
+                            .padding(DSSpacing.xs)
                             .background(
                                 Circle().fill(atlasMode == mode ? Color.white.opacity(0.2) : Color.clear)
                             )
-                            .foregroundColor(.white.opacity(atlasMode == mode ? 1 : 0.5))
+                            .foregroundStyle(.white.opacity(atlasMode == mode ? 1 : 0.5))
                     }
                 }
             }
@@ -330,72 +458,87 @@ struct AdaptiveVisualizationsView: View {
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.caption)
-                    .padding(8)
+                    .padding(DSSpacing.sm)
                     .background(Circle().fill(Color.white.opacity(0.15)))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
             }
+            // An icon alone had no name for VoiceOver or a UI test (5.7).
+            .accessibilityLabel("Full screen")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 8)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.top, DSSpacing.md)
+        .padding(.bottom, DSSpacing.sm)
     }
 
     // MARK: - Atlas Settings Toolbar
 
     private var atlasSettingsToolbar: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: DSSpacing.md) {
             // Row 1: Projection method
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 Text("Projection")
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.6))
 
                 Spacer()
 
                 ForEach(AtlasProjectionMethod.allCases, id: \.self) { method in
                     Button {
-                        withAnimation(.spring(response: 0.25)) {
+                        withAnimation(DSAnimations.snappySpring) {
                             atlasProjection = method
                         }
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: DSSpacing.xs) {
                             Image(systemName: method.icon)
-                                .font(.system(size: 10))
+                                .scaledFont(size: 10)
                             Text(method.rawValue)
                                 .font(.caption2)
                                 .fontWeight(.medium)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, DSSpacing.sm)
+                        .padding(.vertical, DSSpacing.xs)
                         .background(
                             Capsule().fill(atlasProjection == method ? Color.accentColor : Color.white.opacity(0.1))
                         )
-                        .foregroundColor(atlasProjection == method ? .white : .white.opacity(0.7))
+                        .foregroundStyle(atlasProjection == method ? .white : .white.opacity(0.7))
                     }
                 }
             }
 
-            // Row 2: Point size slider
-            HStack(spacing: 12) {
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 6))
-                    .foregroundColor(.white.opacity(0.5))
+            // Scene or chart (`AtlasDrawingStyle`, 5.7).
+            Picker("Map", selection: $atlasStyle) {
+                ForEach(AtlasDrawingStyle.allCases, id: \.self) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
 
-                Slider(value: $atlasPointScale, in: 0.5 ... 2.0, step: 0.1)
-                    .tint(.accentColor)
+            // Row 2: Point size slider, for the scene. The chart draws its own points (`AtlasChart3D`), and Apple does
+            // not document the unit of a 3D chart's `symbolSize`, so a slider could not promise what it changed there.
+            if atlasStyle == .scene {
+                HStack(spacing: DSSpacing.md) {
+                    Image(systemName: "circle.fill")
+                        .scaledFont(size: 6)
+                        .imageScale(.small)
+                        .foregroundStyle(.white.opacity(0.5))
 
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.5))
+                    Slider(value: $atlasPointScale, in: 0.5 ... 2.0, step: 0.1)
+                        .tint(.accentColor)
+                        .accessibilityLabel("Point size")
 
-                Text(String(format: "%.1fx", atlasPointScale))
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
-                    .frame(width: 32)
+                    Image(systemName: "circle.fill")
+                        .scaledFont(size: 12)
+                        .foregroundStyle(.white.opacity(0.5))
+
+                    Text(String(format: "%.1fx", atlasPointScale))
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 32)
+                }
             }
 
             // Row 3: Toggle options
-            HStack(spacing: 16) {
+            HStack(spacing: DSSpacing.lg) {
                 AtlasToggleChip(
                     icon: "arrow.triangle.2.circlepath",
                     label: "Rotate",
@@ -408,11 +551,13 @@ struct AdaptiveVisualizationsView: View {
                     isOn: $atlasDepthCue
                 )
 
-                AtlasToggleChip(
-                    icon: "tag",
-                    label: "Labels",
-                    isOn: $atlasShowLabels
-                )
+                if atlasStyle == .scene {
+                    AtlasToggleChip(
+                        icon: "tag",
+                        label: "Labels",
+                        isOn: $atlasShowLabels
+                    )
+                }
 
                 Spacer()
 
@@ -426,30 +571,30 @@ struct AdaptiveVisualizationsView: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: DSSpacing.xs) {
                         Image(systemName: atlasBackground.icon)
-                            .font(.system(size: 10))
+                            .scaledFont(size: 10)
                         Text(atlasBackground.rawValue)
                             .font(.caption2)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, DSSpacing.sm)
+                    .padding(.vertical, DSSpacing.xs)
                     .background(Capsule().fill(Color.white.opacity(0.1)))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundStyle(.white.opacity(0.8))
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
         .background(Color.white.opacity(0.05))
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     private func atlasTopicLegend(topics: [TopicCluster]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: DSSpacing.sm) {
                 ForEach(topics.prefix(5)) { topic in
-                    HStack(spacing: 6) {
+                    HStack(spacing: DSSpacing.xs) {
                         Circle()
                             .fill(topic.color)
                             .frame(width: 8, height: 8)
@@ -457,31 +602,31 @@ struct AdaptiveVisualizationsView: View {
                         Text(topic.name)
                             .font(.caption2)
                             .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundStyle(.white.opacity(0.9))
 
                         Text("\(topic.chunkCount)")
                             .font(.caption2)
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundStyle(.white.opacity(0.5))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, DSSpacing.sm)
+                    .padding(.vertical, DSSpacing.xs)
                     .background(
                         Capsule().fill(topic.color.opacity(0.2))
                     )
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, DSSpacing.lg)
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, DSSpacing.sm)
     }
 
     private func atlas3DStatsBar(profile: LibraryProfile) -> some View {
-        HStack(spacing: 16) {
-            AtlasStatPill(icon: "cube.fill", value: "\(profile.chunkCount)", label: "Points", color: .blue)
+        HStack(spacing: DSSpacing.lg) {
+            AtlasStatPill(icon: "cube.fill", value: "\(profile.chunkCount)", label: "Points", color: DSColors.accent)
             AtlasStatPill(icon: "doc.fill", value: "\(profile.documentCount)", label: "Sources", color: .green)
 
             if !profile.dominantTopics.isEmpty {
-                AtlasStatPill(icon: "circle.hexagongrid.fill", value: "\(profile.dominantTopics.count)", label: "Clusters", color: .purple)
+                AtlasStatPill(icon: "circle.hexagongrid.fill", value: "\(profile.dominantTopics.count)", label: "Clusters", color: DSColors.accent)
             }
 
             if profile.topicDiversity > 0.5 {
@@ -490,15 +635,15 @@ struct AdaptiveVisualizationsView: View {
 
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.bottom, DSSpacing.md)
     }
 
     // MARK: - Library Header
 
     private var libraryHeader: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
+            HStack(spacing: DSSpacing.lg) {
                 // Library icon
                 ZStack {
                     Circle()
@@ -513,23 +658,23 @@ struct AdaptiveVisualizationsView: View {
 
                     Image(systemName: activeContainer?.icon ?? "books.vertical")
                         .font(.title2)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text(activeContainer?.name ?? "Library")
                         .font(.title2)
                         .fontWeight(.bold)
 
                     if let profile = engine.currentProfile {
-                        HStack(spacing: 8) {
+                        HStack(spacing: DSSpacing.sm) {
                             Label(profile.sizeCategory.rawValue, systemImage: profile.sizeCategory.icon)
                             Text("•")
                             Label(profile.retrievalActivity.rawValue, systemImage: profile.retrievalActivity.icon)
-                                .foregroundColor(profile.retrievalActivity.color)
+                                .foregroundStyle(profile.retrievalActivity.color)
                         }
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     }
                 }
 
@@ -539,13 +684,13 @@ struct AdaptiveVisualizationsView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else if let lastAnalyzed = engine.lastAnalyzed {
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: DSSpacing.xxs) {
                         Text("Updated")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(lastAnalyzed, style: .relative)
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -555,18 +700,18 @@ struct AdaptiveVisualizationsView: View {
                 quickMetricsStrip(profile: profile)
             }
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
     }
 
     private func quickMetricsStrip(profile: LibraryProfile) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 16) {
+            HStack(spacing: DSSpacing.lg) {
                 QuickMetric(icon: "doc.text", label: "Docs", value: "\(profile.documentCount)")
-                QuickMetric(icon: "square.stack.3d.down.right", label: "Chunks", value: "\(profile.libraryPassageCount)")
+                QuickMetric(icon: "square.stack.3d.down.right", label: "Passages", value: "\(profile.libraryPassageCount)")
                 QuickMetric(icon: "text.word.spacing", label: "Words", value: formatNumber(profile.totalWords))
 
                 if !profile.dominantTopics.isEmpty {
@@ -577,14 +722,14 @@ struct AdaptiveVisualizationsView: View {
                     QuickMetric(icon: "flame.fill", label: "Hot Chunks", value: "\(profile.hotChunks.count)", color: .orange)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, DSSpacing.xs)
         }
     }
 
     // MARK: - Insights Horizontal
 
     private var insightsHorizontalSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             HStack {
                 Text("Insights")
                     .font(.headline)
@@ -592,14 +737,14 @@ struct AdaptiveVisualizationsView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: DSSpacing.md) {
                     ForEach(engine.insights.prefix(5)) { insight in
                         CompactInsightCard(insight: insight) {
                             handleInsightTap(insight)
                         }
                     }
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, DSSpacing.xxs)
             }
         }
     }
@@ -607,7 +752,7 @@ struct AdaptiveVisualizationsView: View {
     // MARK: - Insight Cards (legacy vertical)
 
     private func insightCardsSection(profile _: LibraryProfile) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             HStack {
                 Text("Insights")
                     .font(.headline)
@@ -625,7 +770,7 @@ struct AdaptiveVisualizationsView: View {
             if engine.insights.isEmpty {
                 noInsightsCard
             } else {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: DSSpacing.md) {
                     ForEach(engine.insights.prefix(4)) { insight in
                         InsightCard(insight: insight) {
                             handleInsightTap(insight)
@@ -637,26 +782,26 @@ struct AdaptiveVisualizationsView: View {
     }
 
     private var noInsightsCard: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSSpacing.md) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.title2)
-                .foregroundColor(.green)
+                .foregroundStyle(.green)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text("Library looks great!")
                     .font(.subheadline)
                     .fontWeight(.medium)
 
                 Text("No specific recommendations right now")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(DSColors.surface)
         )
     }
@@ -664,7 +809,7 @@ struct AdaptiveVisualizationsView: View {
     // MARK: - Recommended Views
 
     private var recommendedViewsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             HStack {
                 Text("Explore")
                     .font(.headline)
@@ -672,7 +817,7 @@ struct AdaptiveVisualizationsView: View {
                 Spacer()
 
                 Button(showAllViews ? "Show Less" : "All Views") {
-                    withAnimation(.spring(response: 0.35)) {
+                    withAnimation(DSAnimations.snappySpring) {
                         showAllViews.toggle()
                     }
                 }
@@ -684,10 +829,16 @@ struct AdaptiveVisualizationsView: View {
             LazyVGrid(columns: [
                 GridItem(.flexible()),
                 GridItem(.flexible()),
-            ], spacing: 12) {
+            ], spacing: DSSpacing.md) {
                 ForEach(views) { view in
                     RecommendedViewCard(view: view, isExpanded: expandedView == view.type) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        // "3D Semantic Map" opens the Atlas's full-screen 3D map (5.7). The page never shows
+                        // `.embedding3D` as an expanded view, so through 5.6 a tap only put a check on the tile.
+                        if view.type == .embedding3D {
+                            show3DFullscreen = true
+                            return
+                        }
+                        withAnimation(DSAnimations.snappySpring) {
                             if expandedView == view.type {
                                 expandedView = nil
                             } else {
@@ -704,7 +855,7 @@ struct AdaptiveVisualizationsView: View {
 
     @ViewBuilder
     private func expandedViewSection(type: LibraryVisualizationEngine.RecommendedView.ViewType, profile: LibraryProfile) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             HStack {
                 Text(type.rawValue)
                     .font(.headline)
@@ -712,20 +863,20 @@ struct AdaptiveVisualizationsView: View {
                 Spacer()
 
                 Button {
-                    withAnimation(.spring(response: 0.35)) {
+                    withAnimation(DSAnimations.snappySpring) {
                         expandedView = nil
                     }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
             expandedViewContent(type: type, profile: profile)
         }
-        .padding()
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                 .fill(DSColors.surface)
                 .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: 8)
         )
@@ -746,7 +897,8 @@ struct AdaptiveVisualizationsView: View {
             EmbeddingSpaceView(
                 chunkCount: profile.chunkCount,
                 documentCount: profile.documentCount,
-                embeddingDimension: 512
+                // The library's own vector size; a fixed 512 described a model the default libraries don't use (5.7).
+                embeddingDimension: activeContainer?.embeddingDim ?? 384
             )
         case .clusterView:
             ClusterOverviewView(topics: profile.dominantTopics, profile: profile)
@@ -764,7 +916,7 @@ struct AdaptiveVisualizationsView: View {
     // MARK: - Library Stats
 
     private func libraryStatsSection(profile: LibraryProfile) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             Text("Library Stats")
                 .font(.headline)
 
@@ -772,12 +924,12 @@ struct AdaptiveVisualizationsView: View {
                 GridItem(.flexible()),
                 GridItem(.flexible()),
                 GridItem(.flexible()),
-            ], spacing: 12) {
-                StatTile(icon: "doc.text.fill", label: "Documents", value: "\(profile.documentCount)", color: .blue)
-                StatTile(icon: "square.stack.3d.down.right.fill", label: "Chunks", value: "\(profile.libraryPassageCount)", color: .purple)
+            ], spacing: DSSpacing.md) {
+                StatTile(icon: "doc.text.fill", label: "Documents", value: "\(profile.documentCount)", color: DSColors.accent)
+                StatTile(icon: "square.stack.3d.down.right.fill", label: "Passages", value: "\(profile.libraryPassageCount)", color: DSColors.accent)
                 StatTile(icon: "character.cursor.ibeam", label: "Avg Chunk", value: "\(profile.avgChunkSize)w", color: .green)
                 StatTile(icon: "chart.pie.fill", label: "Diversity", value: String(format: "%.0f%%", profile.topicDiversity * 100), color: .orange)
-                StatTile(icon: "circle.hexagongrid.fill", label: "Topics", value: "\(profile.dominantTopics.count)", color: .pink)
+                StatTile(icon: "circle.hexagongrid.fill", label: "Topics", value: "\(profile.dominantTopics.count)", color: DSColors.accent)
                 StatTile(icon: "eye.slash.fill", label: "Unused", value: "\(profile.coldZones)", color: .secondary)
             }
         }
@@ -786,7 +938,7 @@ struct AdaptiveVisualizationsView: View {
     // MARK: - Helper Views
 
     private var analyzeLoadingCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
             ProgressView()
                 .controlSize(.large)
 
@@ -795,39 +947,47 @@ struct AdaptiveVisualizationsView: View {
 
             Text("Detecting topics, patterns, and insights")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        .padding(.vertical, DSSpacing.xxl)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                 .fill(DSColors.surface)
         )
     }
 
     private var emptyStateCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
             Image(systemName: "books.vertical.circle")
-                .font(.system(size: 60))
-                .foregroundColor(.secondary.opacity(0.5))
+                .scaledFont(size: 60)
+                .imageScale(.large)
+                .foregroundStyle(.secondary)
 
             Text("Add documents to visualize")
                 .font(.headline)
 
             Text("Import files to see your knowledge atlas come alive")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        .padding(.vertical, DSSpacing.xxl)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                 .fill(DSColors.surface)
         )
     }
 
     // MARK: - Actions
+
+    /// The open library, and the number of documents in every library once no import runs (`AtlasContentKey`).
+    private var atlasContentKey: AtlasContentKey {
+        AtlasContentKey(
+            containerId: containerService.activeContainerId, documentCount: ragService.documents.count,
+            importing: ragService.isProcessing)
+    }
 
     private func refreshAnalysis() async {
         let containerId = containerService.activeContainerId
@@ -859,7 +1019,9 @@ struct AdaptiveVisualizationsView: View {
         case .showRetrievalChart:
             expandedView = .retrievalFlow
         case .showEmbedding3D:
-            expandedView = .embedding3D
+            // The Atlas's own 3D map (5.7). The page never shows `.embedding3D` as an expanded view, so this only
+            // marked the tile.
+            show3DFullscreen = true
         case .showHeatmap:
             expandedView = .heatmap
         case .showDocumentGraph:
@@ -890,22 +1052,22 @@ struct QuickMetric: View {
     var color: Color = .accentColor
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DSSpacing.xs) {
             Image(systemName: icon)
                 .font(.caption)
-                .foregroundColor(color)
+                .foregroundStyle(color)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text(value)
                     .font(.caption)
                     .fontWeight(.semibold)
                 Text(label)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
         .background(
             Capsule()
                 .fill(color.opacity(0.1))
@@ -919,52 +1081,52 @@ struct InsightCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 14) {
+            HStack(spacing: DSSpacing.md) {
                 ZStack {
                     Circle()
                         .fill(insight.color.opacity(0.15))
-                        .frame(width: 44, height: 44)
+                        .frame(width: DSSpacing.tapTarget, height: DSSpacing.tapTarget)
 
                     Image(systemName: insight.icon)
-                        .font(.system(size: 18))
-                        .foregroundColor(insight.color)
+                        .scaledFont(size: 18)
+                        .foregroundStyle(insight.color)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text(insight.title)
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
 
                     Text(insight.subtitle)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
 
                 Spacer()
 
                 if !insight.metrics.isEmpty {
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: DSSpacing.xxs) {
                         if let first = insight.metrics.first {
                             Text(first.value)
                                 .font(.caption)
                                 .fontWeight(.semibold)
-                                .foregroundColor(insight.color)
+                                .foregroundStyle(DSColors.readable(insight.color))
                             Text(first.label)
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
 
                 Image(systemName: "chevron.right")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
-            .padding()
+            .padding(DSSpacing.lg)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.surface)
             )
         }
@@ -992,41 +1154,41 @@ struct RecommendedViewCard: View {
 
     private var viewColor: Color {
         switch view.type {
-        case .topicCloud: return .purple
-        case .embedding3D: return .blue
-        case .documentGraph: return .teal
+        case .topicCloud: return DSColors.accent
+        case .embedding3D: return DSColors.accent
+        case .documentGraph: return DSColors.accent
         case .retrievalFlow: return .orange
-        case .clusterView: return .pink
+        case .clusterView: return DSColors.accent
         case .timelineView: return .green
         case .heatmap: return .red
-        case .contentBreakdown: return .indigo
+        case .contentBreakdown: return .secondary
         }
     }
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 HStack {
                     Image(systemName: viewIcon)
                         .font(.title3)
-                        .foregroundColor(viewColor)
+                        .foregroundStyle(viewColor)
 
                     Spacer()
 
                     if isExpanded {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                     }
                 }
 
                 Text(view.title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
 
                 Text(view.reason)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
 
                 // Relevance bar
@@ -1043,12 +1205,12 @@ struct RecommendedViewCard: View {
                 }
                 .frame(height: 4)
             }
-            .padding()
+            .padding(DSSpacing.lg)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(isExpanded ? viewColor.opacity(0.1) : DSColors.surface)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                             .stroke(isExpanded ? viewColor.opacity(0.5) : Color.clear, lineWidth: 2)
                     )
             )
@@ -1064,10 +1226,10 @@ struct StatTile: View {
     let color: Color
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: DSSpacing.sm) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundColor(color)
+                .foregroundStyle(color)
 
             Text(value)
                 .font(.headline)
@@ -1075,12 +1237,12 @@ struct StatTile: View {
 
             Text(label)
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding()
+        .padding(DSSpacing.lg)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(DSColors.surface)
         )
     }
@@ -1092,14 +1254,14 @@ struct TopicCloudView: View {
     let topics: [TopicCluster]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
             ForEach(topics) { topic in
-                HStack(spacing: 12) {
+                HStack(spacing: DSSpacing.md) {
                     Circle()
                         .fill(topic.color)
                         .frame(width: 12, height: 12)
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
                         HStack {
                             Text(topic.name)
                                 .font(.subheadline)
@@ -1109,19 +1271,19 @@ struct TopicCloudView: View {
 
                             Text("\(topic.chunkCount) chunks")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         // Keyword tags
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: DSSpacing.xs) {
                                 ForEach(topic.keywords, id: \.self) { keyword in
                                     Text(keyword)
                                         .font(.caption2)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
+                                        .padding(.horizontal, DSSpacing.sm)
+                                        .padding(.vertical, DSSpacing.xs)
                                         .background(topic.color.opacity(0.15))
-                                        .foregroundColor(topic.color)
+                                        .foregroundStyle(DSColors.readable(topic.color))
                                         .clipShape(Capsule())
                                 }
                             }
@@ -1142,9 +1304,9 @@ struct TopicCloudView: View {
                         .frame(height: 6)
                     }
                 }
-                .padding()
+                .padding(DSSpacing.lg)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                         .fill(DSColors.background)
                 )
             }
@@ -1161,7 +1323,7 @@ struct ContentBreakdownView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
             // Pie chart representation
             Chart {
                 ForEach(sortedCategories, id: \.0) { category, percentage in
@@ -1176,7 +1338,7 @@ struct ContentBreakdownView: View {
                             Text(String(format: "%.0f%%", percentage * 100))
                                 .font(.caption2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                         }
                     }
                 }
@@ -1184,16 +1346,16 @@ struct ContentBreakdownView: View {
             .frame(height: 200)
 
             // Legend
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DSSpacing.sm) {
                 ForEach(sortedCategories.filter { $0.1 > 0.05 }, id: \.0) { category, percentage in
-                    HStack(spacing: 8) {
+                    HStack(spacing: DSSpacing.sm) {
                         Circle()
                             .fill(category.color)
                             .frame(width: 10, height: 10)
 
                         Image(systemName: category.icon)
                             .font(.caption)
-                            .foregroundColor(category.color)
+                            .foregroundStyle(category.color)
 
                         Text(category.rawValue)
                             .font(.caption)
@@ -1202,7 +1364,7 @@ struct ContentBreakdownView: View {
 
                         Text(String(format: "%.0f%%", percentage * 100))
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -1215,7 +1377,7 @@ struct ClusterOverviewView: View {
     let profile: LibraryProfile
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
             // Cluster bar chart
             Chart {
                 ForEach(topics) { topic in
@@ -1227,20 +1389,20 @@ struct ClusterOverviewView: View {
                     .annotation(position: .trailing) {
                         Text("\(topic.chunkCount)")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
             .frame(height: CGFloat(topics.count * 44))
 
             // Cluster quality indicator
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: DSSpacing.lg) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text("Cluster Quality")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: DSSpacing.xs) {
                         ForEach(0 ..< 5) { i in
                             Circle()
                                 .fill(i < Int(profile.clusterQuality * 5) ? Color.green : Color.secondary.opacity(0.3))
@@ -1249,25 +1411,25 @@ struct ClusterOverviewView: View {
 
                         Text(profile.clusterQuality > 0.7 ? "Excellent" : profile.clusterQuality > 0.4 ? "Good" : "Fair")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: DSSpacing.xs) {
                     Text("Diversity Score")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Text(String(format: "%.0f%%", profile.topicDiversity * 100))
                         .font(.headline)
-                        .foregroundColor(.purple)
+                        .foregroundStyle(DSColors.accent)
                 }
             }
-            .padding()
+            .padding(DSSpacing.lg)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.background)
             )
         }
@@ -1280,10 +1442,10 @@ struct RetrievalFlowView: View {
     let totalChunks: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
             // Hot chunks list
             ForEach(hotChunks) { chunk in
-                HStack(spacing: 12) {
+                HStack(spacing: DSSpacing.md) {
                     ZStack {
                         Circle()
                             .fill(Color.orange.opacity(0.2))
@@ -1292,74 +1454,74 @@ struct RetrievalFlowView: View {
                         Text("\(chunk.retrievalCount)")
                             .font(.caption)
                             .fontWeight(.bold)
-                            .foregroundColor(.orange)
+                            .foregroundStyle(DSColors.readable(.orange))
                     }
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
                         Text(chunk.documentName)
                             .font(.subheadline)
                             .fontWeight(.medium)
 
                         Text(chunk.snippet)
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
 
                     Spacer()
 
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: DSSpacing.xxs) {
                         Text(String(format: "%.2f", chunk.avgSimilarity))
                             .font(.caption)
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                         Text("avg sim")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding()
+                .padding(DSSpacing.lg)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                         .fill(DSColors.background)
                 )
             }
 
             // Coverage summary
-            HStack(spacing: 24) {
-                VStack(spacing: 4) {
+            HStack(spacing: DSSpacing.xl) {
+                VStack(spacing: DSSpacing.xs) {
                     Text("\(hotChunks.reduce(0) { $0 + $1.retrievalCount })")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.orange)
+                        .foregroundStyle(DSColors.readable(.orange))
                     Text("Total Hits")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
-                VStack(spacing: 4) {
+                VStack(spacing: DSSpacing.xs) {
                     Text("\(totalChunks - coldZones)")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.green)
+                        .foregroundStyle(DSColors.readable(.green))
                     Text("Active")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
 
-                VStack(spacing: 4) {
+                VStack(spacing: DSSpacing.xs) {
                     Text("\(coldZones)")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("Untouched")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding()
+            .padding(DSSpacing.lg)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.background)
             )
         }
@@ -1370,26 +1532,27 @@ struct DocumentRelationshipView: View {
     let documentCount: Int
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 60))
-                .foregroundColor(.teal.opacity(0.6))
+                .scaledFont(size: 60)
+                .imageScale(.large)
+                .foregroundStyle(.secondary)
 
             Text("Document Connections")
                 .font(.headline)
 
             Text("Visualizing relationships between \(documentCount) documents")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
             Text("Full graph view coming soon")
                 .font(.caption2)
-                .foregroundColor(.secondary)
-                .padding(.top, 8)
+                .foregroundStyle(.secondary)
+                .padding(.top, DSSpacing.sm)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
+        .padding(.vertical, DSSpacing.xxl)
     }
 }
 
@@ -1397,23 +1560,23 @@ struct SimilarityHeatmapPreview: View {
     let chunkCount: Int
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
             // Simulated heatmap grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 10), spacing: 2) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.xxs), count: 10), spacing: DSSpacing.xxs) {
                 ForEach(0 ..< 100, id: \.self) { _ in
                     Rectangle()
                         .fill(heatmapColor(for: Double.random(in: 0 ... 1)))
                         .aspectRatio(1, contentMode: .fit)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
 
             Text("Similarity matrix across \(chunkCount) chunks")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             // Legend
-            HStack(spacing: 4) {
+            HStack(spacing: DSSpacing.xs) {
                 ForEach(0 ..< 10, id: \.self) { i in
                     Rectangle()
                         .fill(heatmapColor(for: Double(i) / 10.0))
@@ -1424,11 +1587,11 @@ struct SimilarityHeatmapPreview: View {
             HStack {
                 Text("Low")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text("High Similarity")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1449,13 +1612,13 @@ struct LibraryTimelineView: View {
     let libraryAge: TimeInterval
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
             // Age summary
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text("Library Age")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Text(formatAge(libraryAge))
                         .font(.headline)
@@ -1463,62 +1626,62 @@ struct LibraryTimelineView: View {
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: DSSpacing.xs) {
                     Text("Recent Additions")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
 
                     Text("\(additions.count)")
                         .font(.headline)
-                        .foregroundColor(.green)
+                        .foregroundStyle(DSColors.readable(.green))
                 }
             }
-            .padding()
+            .padding(DSSpacing.lg)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.background)
             )
 
             // Recent additions list
             if !additions.isEmpty {
                 ForEach(additions) { addition in
-                    HStack(spacing: 12) {
+                    HStack(spacing: DSSpacing.md) {
                         Image(systemName: "doc.badge.plus")
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                             Text(addition.documentName)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
 
                             Text(addition.addedAt, style: .relative)
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         Spacer()
 
-                        VStack(alignment: .trailing, spacing: 2) {
+                        VStack(alignment: .trailing, spacing: DSSpacing.xxs) {
                             Text(String(format: "%.0f%%", addition.integrationScore * 100))
                                 .font(.caption)
-                                .foregroundColor(addition.integrationScore > 0.6 ? .green : .orange)
+                                .foregroundStyle(DSColors.readable(addition.integrationScore > 0.6 ? .green : .orange))
                             Text("fit")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding()
+                    .padding(DSSpacing.lg)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                             .fill(DSColors.background)
                     )
                 }
             } else {
                 Text("No recent additions in the last 7 days")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
-                    .padding()
+                    .padding(DSSpacing.lg)
             }
         }
     }
@@ -1546,21 +1709,21 @@ struct AtlasStatPill: View {
     let color: Color
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DSSpacing.xs) {
             Image(systemName: icon)
-                .font(.system(size: 9))
-                .foregroundColor(color)
+                .scaledFont(size: 9)
+                .foregroundStyle(color)
 
             Text(value)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .scaledFont(size: 10, weight: .bold, design: .rounded)
+                .foregroundStyle(.white)
 
             Text(label)
-                .font(.system(size: 8))
-                .foregroundColor(.white.opacity(0.6))
+                .scaledFont(size: 8)
+                .foregroundStyle(.white.opacity(0.6))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xs)
         .background(
             Capsule()
                 .fill(color.opacity(0.3))
@@ -1576,22 +1739,22 @@ struct AtlasToggleChip: View {
 
     var body: some View {
         Button {
-            withAnimation(.spring(response: 0.25)) {
+            withAnimation(DSAnimations.snappySpring) {
                 isOn.toggle()
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: DSSpacing.xs) {
                 Image(systemName: icon)
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                 Text(label)
                     .font(.caption2)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.xs)
             .background(
                 Capsule().fill(isOn ? Color.accentColor.opacity(0.8) : Color.white.opacity(0.1))
             )
-            .foregroundColor(isOn ? .white : .white.opacity(0.6))
+            .foregroundStyle(isOn ? .white : .white.opacity(0.6))
         }
     }
 }
@@ -1602,44 +1765,44 @@ struct CompactInsightCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                HStack(spacing: DSSpacing.sm) {
                     Image(systemName: insight.icon)
-                        .font(.system(size: 16))
-                        .foregroundColor(insight.color)
+                        .scaledFont(size: 16)
+                        .foregroundStyle(insight.color)
 
                     Text(insight.title)
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                 }
 
                 Text(insight.subtitle)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
                 if let metric = insight.metrics.first {
-                    HStack(spacing: 4) {
+                    HStack(spacing: DSSpacing.xs) {
                         Text(metric.value)
                             .font(.caption2)
                             .fontWeight(.semibold)
-                            .foregroundColor(insight.color)
+                            .foregroundStyle(DSColors.readable(insight.color))
                         Text(metric.label)
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
             .frame(width: 160)
-            .padding(12)
+            .padding(DSSpacing.md)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                     .fill(DSColors.surface)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                             .stroke(insight.color.opacity(0.3), lineWidth: 1)
                     )
             )
@@ -1657,49 +1820,59 @@ struct Fullscreen3DAtlasView: View {
 
     // Settings state
     @State private var projectionMethod: ProjectionMethodKind = .pca
-    @State private var pointScale: Double = 1.0
-    @State private var autoRotate = true
+    /// Scene or chart (`AtlasDrawingStyle`, 5.7), shared with the card.
+    @AppStorage("atlasDrawingStyle") private var style: AtlasDrawingStyle = .scene
+    // The scene turns from the start on Aurora, as through 5.6. The chart starts still on Midnight (5.7): a turning
+    // chart redraws 30 times a second, nobody has timed a 3D chart of 6,000 passages on a phone, and on Aurora's blue
+    // its blue cluster was hard to make out (robot shots, 2026-10-19). `applyStyleDefaults` sets these.
+    @State private var autoRotate = false
     @State private var depthCue = true
+    @State private var backgroundStyle: EmbeddingSceneBackgroundStyle = .midnight
+    @State private var appliedStyleDefaults = false
+    @State private var showSettings = false
+    // Where the scene is and what is drawn over it, in global coordinates, for its axis labels (`sceneLabelInsets`).
+    @State private var sceneFrame: CGRect = .zero
+    @State private var chromeTop: CGFloat = 0
+    @State private var chromeBottom: CGFloat = 0
+    // The scene's own settings, as through 5.6.
+    @State private var pointScale: Double = 1.0
     @State private var showLabels = true
     @State private var showLines = true
-    @State private var backgroundStyle: EmbeddingSceneBackgroundStyle = .aurora
-    @State private var showSettings = false
+    /// The scene's names in the map: each cluster, or each library in All Libraries.
+    @State private var annotations: [Embedding3DSceneView.AnnotationData] = []
 
     // Data state
     @State private var isLoading = true
     @State private var points: [SCNVector3] = []
     @State private var colors: [PlatformColor] = []
-    @State private var annotations: [Embedding3DSceneView.AnnotationData] = []
     @State private var sceneReloadToken = UUID()
-    @State private var profile: LibraryProfile?
-    @State private var chunkTopicAssignments: [UUID: String] = [:]
     @State private var docLegendItems: [VizLegendItem] = [] // per-document legend
+    /// The chart's angle (5.7), held here so it outlasts the chart: a reload, a turn of the screen or a resize that
+    /// swaps the layout recreates the chart.
+    @State private var pose: Chart3DPose = .default
+    /// The library and scope the points on screen are from, so another one's load clears them rather than drawing
+    /// under the new names.
+    @State private var drawnScope: String?
+    /// All Libraries (5.7): every library whose vectors share one embedding space, drawn together in its own colour.
+    @State private var showsAllLibraries = false
+    /// Libraries left out of All Libraries because another embedding model made their vectors.
+    @State private var leftOutLibraries: [String] = []
+    /// How many documents the drawn passages come from.
+    @State private var documentsDrawn = 0
+    /// What the view last loaded (`AtlasContentKey`).
+    @State private var loadedKey: AtlasContentKey?
     @State private var dynamicAxisLabels: Embedding3DSceneView.AxisLabels = .placeholder
 
-    // FTS5-derived corpus intelligence for richer labels
-    @State private var fts5TopTerms: [String] = []
-    @State private var fts5KeyPhrases: [(phrase: String, count: Int)] = []
+    // A guard only: the passages arrive sampled to `RAGService.visualizationPassageLimit` (6,000) since 5.7.
+    private let sampleLimit = 50000
 
-    private let sampleLimit = 50000 // Show ALL points (up to 50K) for full visibility
-
-    /// Auto-scale point size based on point count for performance
-    private func autoScaledPointScale(for count: Int) -> Double {
-        if count >= 10000 { return 0.6 }  // Tiny dots for massive datasets
-        if count >= 5000 { return 0.7 }
-        if count >= 2000 { return 0.85 }
-        return 1.0  // Normal size for smaller datasets
-    }
-
+    // The 3D chart draws its own points (`AtlasChart3D`); point size and lines apply to the SceneKit scene only.
     private var sceneOptions: Embedding3DSceneView.SceneOptions {
-        // Auto-scale: blend user pointScale with auto-scaling based on point count
-        let autoScale = autoScaledPointScale(for: points.count)
-        let effectiveScale = pointScale * autoScale
-
-        return Embedding3DSceneView.SceneOptions(
-            pointScale: CGFloat(effectiveScale),
+        Embedding3DSceneView.SceneOptions(
+            pointScale: style == .scene ? CGFloat(pointScale * AtlasSceneLabels.pointScale(for: points.count)) : 1,
             autoRotate: autoRotate,
             showAxes: true, // Always show axes for spatial reference
-            showLines: showLines,
+            showLines: style == .scene && showLines,
             depthCue: depthCue,
             backgroundStyle: backgroundStyle,
             projectionMethod: projectionMethod,
@@ -1712,61 +1885,10 @@ struct Fullscreen3DAtlasView: View {
             // Background
             backgroundGradient
 
-            // Main 3D scene
-            if isLoading {
-                loadingView
-            } else if points.isEmpty {
-                emptyView
+            if style == .scene {
+                sceneLayout
             } else {
-                ZStack {
-                    Embedding3DSceneView(
-                        points: points,
-                        colors: colors,
-                        options: sceneOptions,
-                        reloadToken: sceneReloadToken,
-                        annotations: showLabels ? annotations : []
-                    )
-                    .ignoresSafeArea()
-
-                    // Document legend - top left
-                    VStack {
-                        HStack {
-                            fullscreenTopicLegend
-                            Spacer()
-                        }
-                        Spacer()
-                    }
-                    .padding(.top, 70) // Below topBar
-
-                    // Axis semantics legend - top right
-                    VStack {
-                        HStack {
-                            Spacer()
-                            axisSemanticLegend
-                        }
-                        Spacer()
-                    }
-                    .padding(.top, 70)
-
-                    // Interaction hint - bottom left
-                    VStack {
-                        Spacer()
-                        HStack {
-                            fullscreenHintOverlay
-                            Spacer()
-                        }
-                    }
-                    .padding(.bottom, 80) // Above bottomBar
-                }
-            }
-
-            // Overlay controls
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
-                if !isLoading && !points.isEmpty {
-                    bottomBar
-                }
+                chartLayout
             }
 
             // Settings panel
@@ -1776,17 +1898,286 @@ struct Fullscreen3DAtlasView: View {
         }
         .background(Color.black)
         .preferredColorScheme(.dark)
-        .task {
+        .onAppear {
+            if !appliedStyleDefaults {
+                appliedStyleDefaults = true
+                applyStyleDefaults()
+            }
+        }
+        .onChange(of: style) { _, _ in applyStyleDefaults() }
+        // One task keyed by the open library, the number of documents in every library once no import runs, the
+        // projection and the scope (`AtlasContentKey`, 5.7), so a change cancels the load it replaces and an import that
+        // ends while this is open shows in it. The key is recorded when a load finishes, and an interrupted load is
+        // done again.
+        .task(id: contentKey) {
+            let key = contentKey
+            guard !(key.onlyStartsAnImport(after: loadedKey) && !isLoading) else { return }
+            if key.settlesFirst(after: loadedKey) {
+                try? await Task.sleep(for: AtlasContentKey.settleDelay)
+                guard !Task.isCancelled else { return }
+            }
             await loadData()
+            if !Task.isCancelled { loadedKey = key }
         }
-        .onChange(of: projectionMethod) { _, _ in
-            Task { await loadData() }
+    }
+
+    /// The scene turns on Aurora and the chart stays still on Midnight, each from when it is chosen.
+    private func applyStyleDefaults() {
+        autoRotate = style == .scene
+        backgroundStyle = style == .scene ? .aurora : .midnight
+    }
+
+    /// The scene filling the screen with the cluster list, the axis names and the hint over it, and the cluster chips
+    /// and counts under it, as through 5.6. The legends sit under the top bar in the layout, so they move down as it
+    /// grows with the scope picker, the note of libraries left out or a large text size, where through 5.6 they sat a
+    /// fixed 70 points down (review, 2026-10-20).
+    private var sceneLayout: some View {
+        ZStack {
+            if !points.isEmpty {
+                Embedding3DSceneView(
+                    points: points,
+                    colors: colors,
+                    options: sceneOptions,
+                    reloadToken: sceneReloadToken,
+                    annotations: showLabels ? annotations : [],
+                    drawsScene: true,
+                    labelInsets: sceneLabelInsets
+                )
+                .ignoresSafeArea()
+                // The whole frame it draws in: what a geometry reader reports here is the frame inside the safe area, about
+                // 59 points short at the top of an iPhone 15 Pro (robot shot, 2026-10-20).
+                .onGeometryChange(for: CGRect.self, of: { Self.fullFrame($0) }) { sceneFrame = $0 }
+            }
+
+            VStack(spacing: 0) {
+                topBar
+                if isLoading && points.isEmpty {
+                    Spacer()
+                    loadingView
+                    Spacer()
+                } else if points.isEmpty {
+                    Spacer()
+                    emptyView
+                    Spacer()
+                } else {
+                    HStack(alignment: .top, spacing: 12) {
+                        fullscreenTopicLegend
+                        Spacer(minLength: 0)
+                        axisSemanticLegend
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { chromeTop = $0 }
+                    .overlay(alignment: .top) {
+                        if isLoading {
+                            ProgressView()
+                                .tint(.white)
+                                .padding(8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                    }
+                    Spacer()
+                    VStack(spacing: 0) {
+                        HStack {
+                            fullscreenHintOverlay
+                            Spacer()
+                        }
+                        bottomBar
+                    }
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { chromeBottom = $0 }
+                }
+            }
         }
-        .onChange(of: pointScale) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: autoRotate) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: depthCue) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: showLabels) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: backgroundStyle) { _, _ in sceneReloadToken = UUID() }
+    }
+
+    /// A view's frame in global coordinates with its safe area added back (5.7): the frame a view that ignores the safe
+    /// area draws in.
+    nonisolated static func fullFrame(_ proxy: GeometryProxy) -> CGRect {
+        let frame = proxy.frame(in: .global)
+        let insets = proxy.safeAreaInsets
+        return CGRect(
+            x: frame.minX - insets.leading, y: frame.minY - insets.top,
+            width: frame.width + insets.leading + insets.trailing, height: frame.height + insets.top + insets.bottom)
+    }
+
+    /// What the top bar, the legends and the controls cover of the full screen's scene, which its axis labels keep clear
+    /// of (5.7): on an upright phone the top 30% or so and the bottom 18%.
+    private var sceneLabelInsets: AxisLabelInsets {
+        guard sceneFrame.height > 0 else { return .zero }
+        let top = max(chromeTop - sceneFrame.minY, 0) / sceneFrame.height
+        let bottom = chromeBottom > 0 ? max(sceneFrame.maxY - chromeBottom, 0) / sceneFrame.height : 0
+        return AxisLabelInsets(top: Float(min(top, 0.45)), bottom: Float(min(bottom, 0.45)))
+    }
+
+    /// The chart and its key under or beside it (5.7).
+    private var chartLayout: some View {
+            VStack(spacing: 0) {
+                topBar
+                // The chart stays on screen while it reloads (5.7), so it keeps the angle it was turned to; the spinner
+                // is for a map with nothing drawn yet.
+                if isLoading && points.isEmpty {
+                    Spacer()
+                    loadingView
+                    Spacer()
+                } else if points.isEmpty {
+                    Spacer()
+                    emptyView
+                    Spacer()
+                } else {
+                    atlasLayout
+                        .overlay(alignment: .top) {
+                            if isLoading {
+                                ProgressView()
+                                    .tint(.white)
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                                    .padding(.top, 8)
+                            }
+                        }
+                }
+            }
+    }
+
+    // MARK: - The scene's overlays (as through 5.6; Atlas canvas overlays keep fixed sizes so they fit inside the 3D scene)
+
+    /// The clusters, or the libraries in All Libraries, with their colours and counts.
+    private var fullscreenTopicLegend: some View {
+        Group {
+            if !docLegendItems.isEmpty {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text(showsAllLibraries ? "Libraries" : "Clusters")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+
+                    ForEach(docLegendItems.prefix(5), id: \.docId) { item in
+                        HStack(spacing: DSSpacing.xs) {
+                            Circle()
+                                .fill(item.color)
+                                .frame(width: 8, height: 8)
+
+                            Text(item.name)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+
+                            Spacer()
+
+                            Text("\(item.count)")
+                                .font(.system(size: 9, weight: .regular, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                }
+                .padding(DSSpacing.sm)
+                .frame(maxWidth: 200)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
+            }
+        }
+    }
+
+    /// What each axis runs between, named from the passages at its two ends (`AtlasLabeling`).
+    private var axisSemanticLegend: some View {
+        let labels = dynamicAxisLabels
+        let hasContent = !labels.xPos.isEmpty || !labels.yPos.isEmpty || !labels.zPos.isEmpty
+
+        return Group {
+            if hasContent {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text("Axes")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+
+                    if !labels.xNeg.isEmpty || !labels.xPos.isEmpty {
+                        axisRow(color: .red, neg: labels.xNeg, pos: labels.xPos)
+                    }
+                    if !labels.yNeg.isEmpty || !labels.yPos.isEmpty {
+                        axisRow(color: .green, neg: labels.yNeg, pos: labels.yPos)
+                    }
+                    if !labels.zNeg.isEmpty || !labels.zPos.isEmpty {
+                        axisRow(color: .blue, neg: labels.zNeg, pos: labels.zPos)
+                    }
+                }
+                .padding(DSSpacing.sm)
+                .frame(maxWidth: 220)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
+            }
+        }
+    }
+
+    /// A single axis row showing "neg ↔ pos" with the axis color
+    private func axisRow(color: Color, neg: String, pos: String) -> some View {
+        HStack(spacing: DSSpacing.xs) {
+            Circle()
+                .fill(color.opacity(0.7))
+                .frame(width: 6, height: 6)
+
+            // An axis whose ends do not differ is "Component N" at both ends (5.7): named once.
+            if !neg.isEmpty && !pos.isEmpty && neg != pos {
+                Text("\(neg) ↔ \(pos)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            } else {
+                Text(neg.isEmpty ? pos : neg)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var fullscreenHintOverlay: some View {
+        HStack(spacing: DSSpacing.xs) {
+            Image(systemName: "hand.draw")
+                .font(.system(size: 9))
+            Text("Drag to rotate • Pinch to zoom")
+                .font(.system(size: 9))
+        }
+        .foregroundStyle(.white.opacity(0.35))
+        .padding(DSSpacing.sm)
+    }
+
+    /// The cluster chips (the libraries in All Libraries) and the counts under the scene.
+    private var bottomBar: some View {
+        VStack(spacing: DSSpacing.md) {
+            if !docLegendItems.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: DSSpacing.md) {
+                        ForEach(docLegendItems, id: \.docId) { item in
+                            HStack(spacing: DSSpacing.xs) {
+                                Circle()
+                                    .fill(item.color)
+                                    .frame(width: 10, height: 10)
+
+                                Text(item.name)
+                                    .font(.caption2)
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                            .padding(.horizontal, DSSpacing.sm)
+                            .padding(.vertical, DSSpacing.xs)
+                            .background(Color.white.opacity(0.1), in: Capsule())
+                        }
+                    }
+                    .padding(.horizontal, DSSpacing.lg)
+                }
+            }
+
+            HStack(spacing: DSSpacing.xl) {
+                Label("\(points.count)", systemImage: "cube.fill")
+                Label("\(documentsDrawn)", systemImage: "doc.fill")
+                Label("\(docLegendItems.count) \(showsAllLibraries ? "libraries" : "topics")", systemImage: "tag.fill")
+            }
+            .font(.caption)
+            .foregroundStyle(.white.opacity(0.7))
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.sm)
+            .background(.ultraThinMaterial.opacity(0.5), in: Capsule())
+        }
+        .padding(.bottom, DSSpacing.xl)
     }
 
     // MARK: - UI Components
@@ -1804,39 +2195,42 @@ struct Fullscreen3DAtlasView: View {
     }
 
     private var loadingView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
             ProgressView()
                 .scaleEffect(1.5)
                 .tint(.white)
 
             Text("Mapping semantic space…")
                 .font(.headline)
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundStyle(.white.opacity(0.8))
 
-            Text("Projecting \(ragService.documents.reduce(0) { $0 + $1.totalChunks }) chunks to 3D")
+            // No count: the map draws a sample of at most `RAGService.visualizationPassageLimit` passages, and
+            // through 5.6 this added up every library's passages (5.7).
+            Text("Projecting your passages into 3D")
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundStyle(.white.opacity(0.5))
         }
     }
 
     private var emptyView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DSSpacing.lg) {
             Image(systemName: "cube.transparent")
-                .font(.system(size: 64))
-                .foregroundColor(.white.opacity(0.3))
+                .scaledFont(size: 64)
+                .imageScale(.large)
+                .foregroundStyle(.white.opacity(0.3))
 
             Text("No documents to visualize")
                 .font(.headline)
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.6))
 
             Text("Add documents to your library to see them in 3D space")
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(0.4))
         }
     }
 
     private var topBar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: DSSpacing.lg) {
             // Close button
             Button {
                 dismiss()
@@ -1849,36 +2243,52 @@ struct Fullscreen3DAtlasView: View {
             Spacer()
 
             // Title + projection
-            VStack(spacing: 2) {
+            VStack(spacing: DSSpacing.xxs) {
                 Text("Semantic Atlas")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
 
                 Text("\(projectionMethodName) • \(points.count) points")
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.6))
+
+                Picker("Libraries", selection: $showsAllLibraries) {
+                    Text("This library").tag(false)
+                    Text("All libraries").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 240)
+                .padding(.top, DSSpacing.xs)
+
+                if showsAllLibraries && !leftOutLibraries.isEmpty {
+                    Text("Not shown, made with another embedding model: \(leftOutLibraries.joined(separator: ", "))")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
             }
 
             Spacer()
 
             // Settings toggle
             Button {
-                withAnimation(.spring(response: 0.3)) {
+                withAnimation(DSAnimations.snappySpring) {
                     showSettings.toggle()
                 }
             } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.title2)
-                    .padding(10)
+                    .padding(DSSpacing.sm)
                     .background(
                         Circle().fill(showSettings ? Color.white.opacity(0.25) : Color.white.opacity(0.1))
                     )
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.top, DSSpacing.md)
+        .padding(.bottom, DSSpacing.sm)
     }
 
     private var projectionMethodName: String {
@@ -1890,139 +2300,213 @@ struct Fullscreen3DAtlasView: View {
         }
     }
 
-    private var bottomBar: some View {
-        VStack(spacing: 12) {
-            // Topic legend
-            if let profile, !profile.dominantTopics.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(profile.dominantTopics) { topic in
+    // MARK: - Chart and key (5.7)
+
+    /// The chart and its key: beside it when the screen is wider than tall, under it otherwise. Through 5.6 the scene
+    /// filled the screen with the cluster list, the axis names, the hint and the topic chips laid over it; with the
+    /// chart square (`AtlasChart3D`) they have room of their own and nothing covers a passage.
+    private var atlasLayout: some View {
+        GeometryReader { geo in
+            if geo.size.width > geo.size.height {
+                HStack(alignment: .center, spacing: 20) {
+                    atlasChart
+                        .frame(width: min(geo.size.height, geo.size.width * 0.6))
+                    ScrollView {
+                        atlasKeyPanel
+                            .padding(.vertical, 12)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+            } else {
+                VStack(spacing: 14) {
+                    atlasChart
+                        .frame(height: min(geo.size.width - 32, geo.size.height * 0.62))
+                    ScrollView {
+                        atlasKeyPanel
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
+        }
+    }
+
+    private var atlasChart: some View {
+        Embedding3DSceneView(
+            points: points,
+            colors: colors,
+            options: sceneOptions,
+            reloadToken: sceneReloadToken,
+            annotations: [],
+            pose: $pose
+        )
+    }
+
+    /// What the axes run between, what each colour is (a cluster, or a library in All Libraries), and the counts.
+    private var atlasKeyPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                keyTitle("Axes")
+                AtlasAxisKey(labels: dynamicAxisLabels)
+            }
+
+            if !docLegendItems.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    keyTitle(showsAllLibraries ? "Libraries" : "Clusters")
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 150), spacing: 10, alignment: .leading)],
+                        alignment: .leading, spacing: 6
+                    ) {
+                        ForEach(docLegendItems, id: \.docId) { item in
                             HStack(spacing: 6) {
                                 Circle()
-                                    .fill(topic.color)
-                                    .frame(width: 10, height: 10)
-
-                                Text(topic.name)
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .fill(item.color)
+                                    .frame(width: 8, height: 8)
+                                Text(item.name)
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.85))
+                                    .lineLimit(1)
+                                Text("\(item.count)")
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.45))
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.1), in: Capsule())
+                            .accessibilityElement(children: .combine)
                         }
                     }
-                    .padding(.horizontal, 20)
                 }
             }
 
-            // Stats bar
-            HStack(spacing: 24) {
-                Label("\(points.count)", systemImage: "cube.fill")
-                Label("\(ragService.documents.count)", systemImage: "doc.fill")
-                if let profile {
-                    Label("\(profile.dominantTopics.count) topics", systemImage: "tag.fill")
-                }
+            HStack(spacing: 16) {
+                Label("\(points.count) passages", systemImage: "circle.grid.3x3.fill")
+                Label("\(documentsDrawn) \(documentsDrawn == 1 ? "document" : "documents")", systemImage: "doc.fill")
+                // A 3D chart turns with a drag and does not zoom with a pinch (probe, iOS 27 Simulator, 2026-10-19).
+                Label("Drag to turn", systemImage: "hand.draw")
             }
-            .font(.caption)
-            .foregroundColor(.white.opacity(0.7))
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(.ultraThinMaterial.opacity(0.5), in: Capsule())
+            .font(.caption2)
+            .foregroundStyle(.white.opacity(0.55))
         }
-        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func keyTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.45))
+            .textCase(.uppercase)
+            .tracking(0.5)
     }
 
     private var settingsPanel: some View {
         VStack(spacing: 0) {
             Spacer()
 
-            VStack(spacing: 16) {
+            VStack(spacing: DSSpacing.lg) {
                 // Drag handle
                 Capsule()
                     .fill(Color.white.opacity(0.3))
                     .frame(width: 40, height: 4)
-                    .padding(.top, 12)
+                    .padding(.top, DSSpacing.md)
 
                 // Projection method
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
                     Text("Projection")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundStyle(.white.opacity(0.6))
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: DSSpacing.sm) {
                         ForEach([ProjectionMethodKind.pca, .tsne, .umap], id: \.self) { method in
                             Button {
                                 projectionMethod = method
                             } label: {
                                 Text(methodName(method))
                                     .font(.caption.weight(.medium))
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, DSSpacing.lg)
+                                    .padding(.vertical, DSSpacing.sm)
                                     .background(
                                         Capsule().fill(projectionMethod == method ? Color.accentColor : Color.white.opacity(0.15))
                                     )
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(.white)
                             }
                         }
                     }
                 }
 
-                // Point scale
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Point Size")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
-                        Spacer()
-                        Text(String(format: "%.1fx", pointScale))
-                            .font(.caption.monospacedDigit())
-                            .foregroundColor(.accentColor)
+                // Scene or chart (`AtlasDrawingStyle`, 5.7).
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                    Text("Map")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Picker("Map", selection: $style) {
+                        ForEach(AtlasDrawingStyle.allCases, id: \.self) { style in
+                            Text(style.title).tag(style)
+                        }
                     }
-
-                    Slider(value: $pointScale, in: 0.5 ... 2.0, step: 0.1)
-                        .tint(.accentColor)
+                    .pickerStyle(.segmented)
                 }
 
-                // Toggles
-                HStack(spacing: 16) {
+                // Point size, for the scene: the chart draws its own points (`AtlasChart3D`).
+                if style == .scene {
+                    VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                        HStack {
+                            Text("Point Size")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.6))
+                            Spacer()
+                            Text(String(format: "%.1fx", pointScale))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(Color.accentColor)
+                        }
+
+                        Slider(value: $pointScale, in: 0.5 ... 2.0, step: 0.1)
+                            .tint(.accentColor)
+                            .accessibilityLabel("Point size")
+                    }
+                }
+
+                // Rotate turns the map; Depth fades far passages in the scene and draws the chart in perspective
+                // (`chart3DCameraProjection`). Labels and Lines are the scene's: the chart names no cluster in the map.
+                HStack(spacing: DSSpacing.lg) {
                     Toggle("Rotate", isOn: $autoRotate)
-                    Toggle("Labels", isOn: $showLabels)
-                    Toggle("Lines", isOn: $showLines)
                     Toggle("Depth", isOn: $depthCue)
+                    if style == .scene {
+                        Toggle("Labels", isOn: $showLabels)
+                        Toggle("Lines", isOn: $showLines)
+                    }
                 }
                 .toggleStyle(.button)
                 .buttonStyle(.bordered)
                 .font(.caption)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
 
                 // Background style
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
                     Text("Background")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundStyle(.white.opacity(0.6))
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: DSSpacing.sm) {
                         ForEach([EmbeddingSceneBackgroundStyle.aurora, .midnight, .parchment], id: \.self) { style in
                             Button {
                                 backgroundStyle = style
                             } label: {
                                 Text(styleName(style))
                                     .font(.caption2.weight(.medium))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, DSSpacing.md)
+                                    .padding(.vertical, DSSpacing.xs)
                                     .background(
                                         Capsule().fill(backgroundStyle == style ? Color.accentColor : Color.white.opacity(0.15))
                                     )
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(.white)
                             }
                         }
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.bottom, DSSpacing.xl)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .ignoresSafeArea(edges: .bottom)
             )
@@ -2053,164 +2537,77 @@ struct Fullscreen3DAtlasView: View {
 
     /// Topic color legend for fullscreen view
     /// Per-document legend overlay with material background
-    private var fullscreenTopicLegend: some View {
-        Group {
-            if !docLegendItems.isEmpty {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Clusters")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.4))
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-
-                    ForEach(docLegendItems.prefix(5), id: \.docId) { item in
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(item.color)
-                                .frame(width: 8, height: 8)
-
-                            Text(item.name)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.white.opacity(0.85))
-                                .lineLimit(1)
-
-                            Spacer()
-
-                            Text("\(item.count)")
-                                .font(.system(size: 9, weight: .regular, design: .rounded))
-                                .foregroundColor(.white.opacity(0.4))
-                        }
-                    }
-                }
-                .padding(10)
-                .frame(maxWidth: 200)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-        }
-    }
-
-    /// Axis semantics legend — shows what each PCA/UMAP axis represents based on content analysis
-    private var axisSemanticLegend: some View {
-        let labels = dynamicAxisLabels
-        let hasContent = !labels.xPos.isEmpty || !labels.yPos.isEmpty || !labels.zPos.isEmpty
-
-        return Group {
-            if hasContent {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Axes")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.4))
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-
-                    if !labels.xNeg.isEmpty || !labels.xPos.isEmpty {
-                        axisRow(color: .red, neg: labels.xNeg, pos: labels.xPos)
-                    }
-                    if !labels.yNeg.isEmpty || !labels.yPos.isEmpty {
-                        axisRow(color: .green, neg: labels.yNeg, pos: labels.yPos)
-                    }
-                    if !labels.zNeg.isEmpty || !labels.zPos.isEmpty {
-                        axisRow(color: .blue, neg: labels.zNeg, pos: labels.zPos)
-                    }
-                }
-                .padding(10)
-                .frame(maxWidth: 220)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-        }
-    }
-
-    /// A single axis row showing "neg ↔ pos" with the axis color
-    private func axisRow(color: Color, neg: String, pos: String) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color.opacity(0.7))
-                .frame(width: 6, height: 6)
-
-            if !neg.isEmpty && !pos.isEmpty {
-                Text("\(neg) ↔ \(pos)")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.75))
-                    .lineLimit(1)
-            } else {
-                Text(neg.isEmpty ? pos : neg)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.75))
-                    .lineLimit(1)
-            }
-        }
-    }
-
-    /// Overlay hint for fullscreen view
-    private var fullscreenHintOverlay: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "hand.draw")
-                .font(.system(size: 9))
-            Text("Drag to rotate • Pinch to zoom")
-                .font(.system(size: 9))
-        }
-        .foregroundColor(.white.opacity(0.35))
-        .padding(8)
-    }
-
     // MARK: - Data Loading
 
+    /// The open library, the number of documents in every library once no import runs, the projection and the scope
+    /// (`AtlasContentKey`).
+    private var contentKey: AtlasContentKey {
+        AtlasContentKey(
+            containerId: containerService.activeContainerId, documentCount: ragService.documents.count,
+            importing: ragService.isProcessing, variant: "\(projectionMethod.rawValue)|\(showsAllLibraries)")
+    }
+
     private func loadData() async {
-        await MainActor.run { isLoading = true }
-
-        // === LOAD FTS5 CORPUS INTELLIGENCE ===
-        let activeContainer = await MainActor.run { ragService.containerService.activeContainerId }
-        async let topTermsTask = SQLiteFullTextService.shared.getTopTermsForContainer(containerId: activeContainer, limit: 50)
-        async let keyPhrasesTask = SQLiteFullTextService.shared.getKeyPhrasesForContainer(containerId: activeContainer, limit: 20)
-
-        let (topTermsResult, keyPhrasesResult) = await (topTermsTask, keyPhrasesTask)
-
+        let (activeContainer, wantsAll) = await MainActor.run {
+            (ragService.containerService.activeContainerId, showsAllLibraries)
+        }
+        let scope = "\(activeContainer.uuidString)|\(wantsAll)"
         await MainActor.run {
-            self.fts5TopTerms = topTermsResult.map { $0.term }
-            self.fts5KeyPhrases = keyPhrasesResult
-        }
-
-        // Force fresh profile build if none exists or if we need updated topic analysis
-        let engine = LibraryVisualizationEngine.shared
-
-        // Trigger fresh analysis for the active container
-        let allChunks = await ragService.allChunksForActiveContainer()
-        let libraryPassageCount = await ragService.passageCountForActiveContainer()
-        let docs = await MainActor.run { ragService.documents }
-        await engine.analyze(
-            containerId: activeContainer,
-            documents: docs,
-            chunks: allChunks,
-            retrievalHistory: [],
-            libraryPassageCount: libraryPassageCount
-        )
-
-        // Now use the freshly built profile
-        if let freshProfile = engine.currentProfile {
-            await MainActor.run { profile = freshProfile }
-        }
-
-        // allChunks already fetched above
-
-        guard !allChunks.isEmpty else {
-            await MainActor.run {
+            isLoading = true
+            // Another library or scope (5.7): the old map would sit under the new names until this one is drawn.
+            if drawnScope != scope {
                 points = []
                 colors = []
                 annotations = []
+                docLegendItems = []
+                leftOutLibraries = []
+            }
+        }
+
+        // Through 5.6 this also read the corpus terms and phrases, which nothing here showed, and rebuilt the Atlas
+        // page's profile from every library's documents for the topic chips, cancelling the page's own analysis. From
+        // 5.7 it reads only what it draws, so All Libraries holds at most `visualizationPassageLimit` passages.
+
+        // This library, or every library in one embedding space (5.7).
+        var libraries: [KnowledgeContainer] = []
+        var libraryOfChunk: [UUID: Int] = [:]
+        var leftOut: [String] = []
+        let sampledChunks: [DocumentChunk]
+        if wantsAll {
+            let (included, excluded) = await ragService.atlasSamplesForAllLibraries()
+            libraries = included.map(\.library)
+            leftOut = excluded.map(\.name)
+            var joined: [DocumentChunk] = []
+            for (index, sample) in included.enumerated() {
+                for chunk in sample.chunks { libraryOfChunk[chunk.id] = index }
+                joined += sample.chunks
+            }
+            sampledChunks = joined
+        } else {
+            sampledChunks = sampleChunks(await ragService.allChunksForActiveContainer())
+        }
+
+        guard !sampledChunks.isEmpty else {
+            // Not when another load has taken this one's place (5.7): it draws, and these writes would leave its view
+            // empty, or skip its reload during an import.
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                points = []
+                colors = []
                 isLoading = false
             }
             return
         }
 
-        // Sample chunks
-        let sampledChunks = sampleChunks(allChunks)
         let embeddings = sampledChunks.map { $0.embedding }
 
         guard !embeddings.isEmpty else {
+            // Not when another load has taken this one's place (5.7): it draws, and these writes would leave its view
+            // empty, or skip its reload during an import.
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 points = []
                 colors = []
-                annotations = []
                 isLoading = false
             }
             return
@@ -2218,11 +2615,11 @@ struct Fullscreen3DAtlasView: View {
 
         // Project to 3D — use deterministic seed (not .hashValue which is randomized per launch)
         let seed = deterministicSeed(from: containerService.activeContainerId.uuidString)
-        let coords3D = ProjectionService.shared.project3D(
-            embeddings: embeddings,
-            method: projectionMethod,
-            seed: seed
-        )
+        // Off the main actor: UMAP and t-SNE take seconds on a few thousand passages (`ProjectionService`).
+        let method = projectionMethod
+        let coords3D = await Task.detached(priority: .userInitiated) {
+            ProjectionService.shared.project3D(embeddings: embeddings, method: method, seed: seed)
+        }.value
 
         // === CLUSTER MEMBERSHIP & NAMING ===
         // Cluster membership derives deterministically from embeddings via k-means.
@@ -2230,15 +2627,35 @@ struct Fullscreen3DAtlasView: View {
         let texts = sampledChunks.map { $0.content }
         // Splitting 6,000 passages into words and clustering their vectors is seconds of work on
         // a phone, so it is done off the main actor; only the results come back to it.
-        let (passageTerms, clusterIndices, clusterNames) = await Task.detached(priority: .userInitiated) {
+        // The axes' words are read here too (5.7): they were six passes over the sample on the main actor.
+        // What each passage belongs to (5.7): its document, its library in All Libraries, and its section heading, so
+        // an axis end or a cluster is named for the part of the library it is (`AtlasLabeling.PassageSources`). All
+        // Libraries names documents from every library's records (`OIDocumentEntityQuery.loadDocumentRecords`).
+        let documentNames = await MainActor.run {
+            Dictionary(
+                (wantsAll ? OIDocumentEntityQuery.loadDocumentRecords() : ragService.documents)
+                    .map { ($0.id, AtlasLabeling.shortDocumentName($0.filename)) },
+                uniquingKeysWith: { first, _ in first })
+        }
+        let sources = AtlasLabeling.PassageSources(
+            groups: sampledChunks.map { documentNames[$0.documentId] },
+            sections: sampledChunks.map(\.metadata.sectionTitle),
+            libraries: wantsAll ? sampledChunks.map { chunk in libraryOfChunk[chunk.id].map { libraries[$0].name } } : [])
+        let (clusterIndices, clusterNames, axisEnds) = await Task.detached(priority: .userInitiated) {
+            // The word classes of the passages' languages first (5.7), so an adverb names nothing in them.
+            await AtlasLabeling.loadWordClasses(for: texts)
             let terms = texts.map { AtlasLabeling.terms(in: $0) }
             let indices = AtlasLabeling.kMeans(embeddings: embeddings)
             let names = AtlasLabeling.clusterNames(
                 texts: texts,
                 clusterMembership: indices,
-                precomputedTerms: terms
+                precomputedTerms: terms,
+                sources: sources
             )
-            return (terms, indices, names)
+            return (
+                indices, names,
+                AtlasLabeling.axisLabels(coords: coords3D, texts: texts, passageTerms: terms, sources: sources)
+            )
         }.value
 
         let palette: [PlatformColor] = [
@@ -2250,14 +2667,11 @@ struct Fullscreen3DAtlasView: View {
             PlatformColor(.teal)
         ]
 
-        var topicAssignments: [UUID: String] = [:]
         var mappedColors: [PlatformColor] = []
         mappedColors.reserveCapacity(sampledChunks.count)
 
-        for (i, chunk) in sampledChunks.enumerated() {
+        for i in sampledChunks.indices {
             let c = (i < clusterIndices.count && clusterIndices[i] >= 0 && clusterIndices[i] < clusterNames.count) ? clusterIndices[i] : 0
-            let name = clusterNames[c]
-            topicAssignments[chunk.id] = name
             mappedColors.append(palette[c % palette.count])
         }
 
@@ -2281,30 +2695,99 @@ struct Fullscreen3DAtlasView: View {
             ))
         }
 
+        // All Libraries: each point in its library's own colour, and the legend lists the libraries (5.7).
+        if wantsAll {
+            let libraryColors = Self.distinctLibraryColors(libraries.map(\.colorHex), palette: palette)
+            mappedColors = sampledChunks.map { libraryColors[libraryOfChunk[$0.id] ?? 0] }
+            var counts = Array(repeating: 0, count: libraries.count)
+            for chunk in sampledChunks { counts[libraryOfChunk[chunk.id] ?? 0] += 1 }
+            clusterLegend = libraries.enumerated().compactMap { index, library in
+                counts[index] > 0
+                    ? VizLegendItem(docId: library.id, name: library.name, color: Color(libraryColors[index]), count: counts[index])
+                    : nil
+            }
+        }
+
         // Scale points properly for viewing
         let scaledPoints = scaleCoordinatesForViewing(coords3D)
 
-        // Build cluster annotations at actual cluster centroids
-        let clusterAnnotations = buildScaledAnnotations(
-            coords: coords3D,
-            clusterIndices: clusterIndices,
-            clusterNames: clusterNames,
-            palette: palette
-        )
+        // Each end of each axis named by the words of the passages there (5.7).
+        let axisLabels = Embedding3DSceneView.AxisLabels(ends: axisEnds)
 
-        // Analyze axis extremes for content-derived semantic labels using AtlasLabeling
-        let axisLabels = analyzeAxisLabels(coords: coords3D, chunks: sampledChunks, precomputedTerms: passageTerms)
+        // The scene's names in the map: each cluster, or in All Libraries each library, at the middle of its points.
+        let sceneAnnotations: [Embedding3DSceneView.AnnotationData]
+        if wantsAll {
+            let libraryColors = Self.distinctLibraryColors(libraries.map(\.colorHex), palette: palette)
+            sceneAnnotations = AtlasSceneLabels.annotations(
+                coords: coords3D, groups: sampledChunks.map { libraryOfChunk[$0.id] ?? 0 },
+                names: libraries.map(\.name), colors: libraryColors,
+                detailLevel: { $0 > 20 ? 2 : ($0 > 5 ? 1 : 0) })
+        } else {
+            sceneAnnotations = AtlasSceneLabels.annotations(
+                coords: coords3D, groups: clusterIndices, names: clusterNames, colors: palette,
+                detailLevel: { $0 > 20 ? 2 : ($0 > 5 ? 1 : 0) })
+        }
+
+        let drawnDocuments = Set(sampledChunks.map(\.documentId)).count
+
+        // A load for another method, library or scope started while this one worked: that one draws, not this.
+        guard !Task.isCancelled, method == projectionMethod,
+            activeContainer == ragService.containerService.activeContainerId,
+            wantsAll == showsAllLibraries
+        else { return }
 
         await MainActor.run {
             points = scaledPoints
             colors = mappedColors
-            annotations = clusterAnnotations
-            chunkTopicAssignments = topicAssignments
+            annotations = sceneAnnotations
             docLegendItems = clusterLegend
+            leftOutLibraries = leftOut
             dynamicAxisLabels = axisLabels
+            documentsDrawn = drawnDocuments
+            drawnScope = scope
             sceneReloadToken = UUID()
             isLoading = false
         }
+    }
+
+    /// A colour for each library on the All Libraries map (5.7), in order: its own, unless a library before it has one
+    /// that close; then the free palette colour farthest from those used, so neighbours on the map contrast (indigo
+    /// next to blue read as one in a robot shot, 2026-10-19); then further hues a golden angle apart. Every library
+    /// starts with the same colour (`ContainerService.defaultContainer`, `#4F46E5`), so repeats are the common case.
+    static func distinctLibraryColors(_ hexes: [String], palette: [PlatformColor]) -> [PlatformColor] {
+        var used: [SIMD3<Double>] = []
+        func nearest(_ color: PlatformColor) -> Double {
+            let rgb = Self.rgb(of: color)
+            return used.map { abs($0.x - rgb.x) + abs($0.y - rgb.y) + abs($0.z - rgb.z) }.min() ?? .infinity
+        }
+        func isTaken(_ color: PlatformColor) -> Bool { nearest(color) < 0.15 }
+        func take(_ color: PlatformColor) -> PlatformColor {
+            used.append(Self.rgb(of: color))
+            return color
+        }
+        var hue = 0.0
+        return hexes.map { hex in
+            if let own = Color(hex: hex).map({ PlatformColor($0) }), !isTaken(own) { return take(own) }
+            if let free = palette.filter({ !isTaken($0) }).max(by: { nearest($0) < nearest($1) }) { return take(free) }
+            var candidate = PlatformColor(hue: 0, saturation: 0.65, brightness: 0.95, alpha: 1)
+            for _ in 0..<64 {
+                hue = (hue + 0.618_033_988_749_895).truncatingRemainder(dividingBy: 1)
+                candidate = PlatformColor(hue: CGFloat(hue), saturation: 0.65, brightness: 0.95, alpha: 1)
+                if !isTaken(candidate) { break }
+            }
+            return take(candidate)
+        }
+    }
+
+    /// A colour's red, green and blue from 0 to 1, in sRGB.
+    static func rgb(of color: PlatformColor) -> SIMD3<Double> {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        #if canImport(UIKit)
+            color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        #else
+            (color.usingColorSpace(.sRGB) ?? color).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        #endif
+        return SIMD3(Double(red), Double(green), Double(blue))
     }
 
     private func sampleChunks(_ chunks: [DocumentChunk]) -> [DocumentChunk] {
@@ -2382,105 +2865,6 @@ struct Fullscreen3DAtlasView: View {
         return result
     }
 
-    /// Build annotations at cluster centroids
-    private func buildScaledAnnotations(
-        coords: [SIMD3<Float>],
-        clusterIndices: [Int],
-        clusterNames: [String],
-        palette: [PlatformColor]
-    ) -> [Embedding3DSceneView.AnnotationData] {
-        guard coords.count == clusterIndices.count, !coords.isEmpty else { return [] }
-
-        var minX = Float.greatestFiniteMagnitude, maxX = -Float.greatestFiniteMagnitude
-        var minY = Float.greatestFiniteMagnitude, maxY = -Float.greatestFiniteMagnitude
-        var minZ = Float.greatestFiniteMagnitude, maxZ = -Float.greatestFiniteMagnitude
-
-        for c in coords {
-            minX = min(minX, c.x); maxX = max(maxX, c.x)
-            minY = min(minY, c.y); maxY = max(maxY, c.y)
-            minZ = min(minZ, c.z); maxZ = max(maxZ, c.z)
-        }
-
-        let centerX = (minX + maxX) / 2
-        let centerY = (minY + maxY) / 2
-        let centerZ = (minZ + maxZ) / 2
-        let maxSpan = max(max(maxX - minX, maxY - minY), max(maxZ - minZ, 0.0001))
-        let scale: Float = 4.5 / maxSpan
-
-        var clusterPoints: [Int: [SIMD3<Float>]] = [:]
-        for (i, c) in clusterIndices.enumerated() {
-            guard i < coords.count else { continue }
-            clusterPoints[c, default: []].append(coords[i])
-        }
-
-        var result: [Embedding3DSceneView.AnnotationData] = []
-        for c in 0..<clusterNames.count {
-            guard let pts = clusterPoints[c], !pts.isEmpty else { continue }
-            var sumX: Float = 0, sumY: Float = 0, sumZ: Float = 0
-            for p in pts {
-                sumX += p.x; sumY += p.y; sumZ += p.z
-            }
-            let count = Float(pts.count)
-
-            let centroidX = ((sumX / count) - centerX) * scale
-            let centroidY = ((sumY / count) - centerY) * scale
-            let centroidZ = ((sumZ / count) - centerZ) * scale
-
-            let color = palette[c % palette.count]
-
-            result.append(Embedding3DSceneView.AnnotationData(
-                position: SCNVector3(centroidX, centroidY, centroidZ),
-                title: clusterNames[c],
-                keywords: ["\(pts.count) pts"],
-                color: color,
-                detailLevel: pts.count > 20 ? 2 : (pts.count > 5 ? 1 : 0),
-                clusterSize: pts.count,
-                isDocumentCluster: false
-            ))
-        }
-
-        return result
-    }
-
-    // MARK: - Semantic Axis Label Analysis
-
-    /// Analyze what content appears at the extremes of each projection axis.
-    /// Returns content-derived labels like "Maintenance ↔ Specifications" for each axis.
-    private func analyzeAxisLabels(
-        coords: [SIMD3<Float>],
-        chunks: [DocumentChunk],
-        precomputedTerms: [Set<String>]? = nil
-    ) -> Embedding3DSceneView.AxisLabels {
-        guard coords.count == chunks.count, !coords.isEmpty else {
-            return .placeholder
-        }
-
-        let texts = chunks.map { $0.content }
-        let allTerms = precomputedTerms ?? texts.map { AtlasLabeling.terms(in: $0) }
-
-        let xValues = coords.map { $0.x }
-        let yValues = coords.map { $0.y }
-        let zValues = coords.map { $0.z }
-
-        let xEnds = AtlasLabeling.axisEnds(values: xValues, texts: texts, passageTerms: allTerms)
-        let yEnds = AtlasLabeling.axisEnds(values: yValues, texts: texts, passageTerms: allTerms)
-        let zEnds = AtlasLabeling.axisEnds(values: zValues, texts: texts, passageTerms: allTerms)
-
-        let xNeg = xEnds?.lowLabel ?? ""
-        let xPos = xEnds != nil ? (xEnds?.highLabel ?? "") : "Component 1"
-
-        let yNeg = yEnds?.lowLabel ?? ""
-        let yPos = yEnds != nil ? (yEnds?.highLabel ?? "") : "Component 2"
-
-        let zNeg = zEnds?.lowLabel ?? ""
-        let zPos = zEnds != nil ? (zEnds?.highLabel ?? "") : "Component 3"
-
-        return Embedding3DSceneView.AxisLabels(
-            xNeg: xNeg, xPos: xPos,
-            yNeg: yNeg, yPos: yPos,
-            zNeg: zNeg, zPos: zPos
-        )
-    }
 }
 
 // MARK: - Compact Atlas Scene View
@@ -2496,45 +2880,42 @@ struct CompactAtlasSceneView: View {
 
     // Settings passed from parent
     let projectionMethod: ProjectionMethodKind
-    let pointScale: Double
     let autoRotate: Bool
     let depthCue: Bool
-    let showLabels: Bool
     let backgroundStyle: EmbeddingSceneBackgroundStyle
+    /// Scene or chart (`AtlasDrawingStyle`, 5.7), and the scene's own two settings.
+    let style: AtlasDrawingStyle
+    let pointScale: Double
+    let showLabels: Bool
 
     @State private var isLoading = true
     @State private var points: [SCNVector3] = []
     @State private var colors: [PlatformColor] = []
-    @State private var annotations: [Embedding3DSceneView.AnnotationData] = []
     @State private var sceneReloadToken = UUID()
-    @State private var chunkTopicAssignments: [UUID: String] = [:] // chunk.id → topic name
-    @State private var legendItems: [TopicColorItem] = []
-
-    // FTS5-derived corpus intelligence for richer labels
-    @State private var fts5TopTerms: [String] = []
-    @State private var fts5KeyPhrases: [(phrase: String, count: Int)] = []
+    /// The chart's angle (5.7), held here so it outlasts the chart while the card reloads.
+    @State private var pose: Chart3DPose = .default
+    /// The library the points on screen are from, so another library's load clears them rather than drawing under
+    /// its name.
+    @State private var drawnLibrary: UUID?
+    /// What the card last loaded (`AtlasContentKey`).
+    @State private var loadedKey: AtlasContentKey?
 
     // Dynamic axis labels derived from content analysis
     @State private var dynamicAxisLabels: Embedding3DSceneView.AxisLabels = .placeholder
+    /// The scene's cluster names in the map, and the box of cluster names over its corner (the Scene style).
+    @State private var annotations: [Embedding3DSceneView.AnnotationData] = []
+    @State private var legendItems: [TopicColorItem] = []
+    // Where the scene is and where the cluster box and hint over it start, for its axis labels (`cardLabelInsets`).
+    @State private var cardSceneFrame: CGRect = .zero
+    @State private var cardChromeTop: CGFloat = 0
 
-    private let sampleLimit = 50000 // Show ALL points (up to 50K) for full visibility
+    // A guard only: the passages arrive sampled to `RAGService.visualizationPassageLimit` (6,000) since 5.7.
+    private let sampleLimit = 50000
 
-    /// Auto-scale point size based on point count for performance
-    private func autoScaledPointScale(for count: Int) -> Double {
-        if count >= 10000 { return 0.6 }  // Tiny dots for massive datasets
-        if count >= 5000 { return 0.7 }
-        if count >= 2000 { return 0.85 }
-        return 1.0  // Normal size for smaller datasets
-    }
-
-    // Computed scene options from settings (auto-scales point size based on count)
+    // The 3D chart draws its own points (`AtlasChart3D`); point size applies to the SceneKit scene only.
     private var sceneOptions: Embedding3DSceneView.SceneOptions {
-        // Auto-scale: blend user pointScale with auto-scaling based on point count
-        let autoScale = autoScaledPointScale(for: points.count)
-        let effectiveScale = pointScale * autoScale // User can still adjust relative size
-
-        return Embedding3DSceneView.SceneOptions(
-            pointScale: CGFloat(effectiveScale),
+        Embedding3DSceneView.SceneOptions(
+            pointScale: style == .scene ? CGFloat(pointScale * AtlasSceneLabels.pointScale(for: points.count)) : 1,
             autoRotate: autoRotate,
             showAxes: true, // Always show axes for spatial reference
             showLines: true,
@@ -2547,39 +2928,50 @@ struct CompactAtlasSceneView: View {
 
     var body: some View {
         ZStack {
-            if isLoading {
+            // The chart stays on screen while it reloads (5.7), so it keeps the angle it was turned to.
+            if isLoading && points.isEmpty {
                 loadingPlaceholder
             } else if points.isEmpty {
                 emptyPlaceholder
             } else {
                 sceneContent
+                    .overlay(alignment: .topTrailing) {
+                        if isLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                                .padding(10)
+                        }
+                    }
             }
         }
         .frame(height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .task(id: containerService.activeContainerId) {
+        .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
+        // One task keyed by the open library, the number of documents in every library once no import runs, and the
+        // projection (`AtlasContentKey`, 5.7). Through 5.6 there were two, one per key, so both loaded when the card
+        // appeared, and an import that ended with the card on screen never showed in it. The key is recorded when a
+        // load finishes, and an interrupted load is done again.
+        .task(id: contentKey) {
+            let key = contentKey
+            guard !(key.onlyStartsAnImport(after: loadedKey) && !isLoading) else { return }
+            if key.settlesFirst(after: loadedKey) {
+                try? await Task.sleep(for: AtlasContentKey.settleDelay)
+                guard !Task.isCancelled else { return }
+            }
             await loadAndProject()
+            if !Task.isCancelled { loadedKey = key }
         }
-        .task(id: projectionMethod) {
-            await loadAndProject()
-        }
-        // Trigger scene reload when settings change (without full recompute)
-        .onChange(of: pointScale) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: autoRotate) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: depthCue) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: showLabels) { _, _ in sceneReloadToken = UUID() }
-        .onChange(of: backgroundStyle) { _, _ in sceneReloadToken = UUID() }
     }
 
     private var loadingPlaceholder: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: DSSpacing.md) {
             ProgressView()
                 .scaleEffect(1.2)
                 .tint(.white.opacity(0.7))
 
             Text("Mapping semantic space…")
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundStyle(.white.opacity(0.6))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -2592,57 +2984,75 @@ struct CompactAtlasSceneView: View {
     }
 
     private var emptyPlaceholder: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: DSSpacing.sm) {
             Image(systemName: "cube.transparent")
-                .font(.system(size: 36))
-                .foregroundColor(.white.opacity(0.4))
+                .scaledFont(size: 36)
+                .foregroundStyle(.white.opacity(0.4))
 
             Text("Add documents to visualize")
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundStyle(.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(white: 0.12))
     }
 
+    /// The scene with its labels, the box of cluster names and the hint over its lower corner, as through 5.6; or the
+    /// chart and under it what its axes run between (5.7), with the chips under the card naming the clusters.
+    @ViewBuilder
     private var sceneContent: some View {
-        ZStack(alignment: .bottomLeading) {
-            Embedding3DSceneView(
-                points: points,
-                colors: colors,
-                options: sceneOptions,
-                reloadToken: sceneReloadToken,
-                annotations: showLabels ? annotations : []
-            )
+        if style == .scene {
+            ZStack(alignment: .bottomLeading) {
+                Embedding3DSceneView(
+                    points: points,
+                    colors: colors,
+                    options: sceneOptions,
+                    reloadToken: sceneReloadToken,
+                    annotations: showLabels ? annotations : [],
+                    drawsScene: true,
+                    labelInsets: cardLabelInsets
+                )
+                .onGeometryChange(for: CGRect.self, of: { Fullscreen3DAtlasView.fullFrame($0) }) { cardSceneFrame = $0 }
 
-            // Legend overlay with topic colors
-            VStack(alignment: .leading, spacing: 0) {
-                topicLegendOverlay
-                sceneHintOverlay
+                VStack(alignment: .leading, spacing: 0) {
+                    topicLegendOverlay
+                    sceneHintOverlay
+                }
+                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { cardChromeTop = $0 }
             }
+        } else {
+            chartContent
         }
     }
 
-    /// Shows what each color represents
+    /// What the cluster box and the hint cover of the card's scene, along its bottom, which its axis labels keep clear
+    /// of (5.7).
+    private var cardLabelInsets: AxisLabelInsets {
+        guard cardSceneFrame.height > 0, cardChromeTop > 0 else { return .zero }
+        let bottom = max(cardSceneFrame.maxY - cardChromeTop, 0) / cardSceneFrame.height
+        return AxisLabelInsets(bottom: Float(min(bottom, 0.45)))
+    }
+
+    /// Shows what each color represents (Atlas canvas overlay keeps fixed sizes so it fits inside the compact 3D scene)
     private var topicLegendOverlay: some View {
         Group {
             if !legendItems.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     ForEach(legendItems.prefix(5), id: \.name) { item in
-                        HStack(spacing: 5) {
+                        HStack(spacing: DSSpacing.xs) {
                             Circle()
                                 .fill(item.color)
                                 .frame(width: 6, height: 6)
 
                             Text(item.name)
                                 .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundStyle(.white.opacity(0.6))
                                 .lineLimit(1)
                         }
                     }
                 }
-                .padding(6)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(DSSpacing.xs)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
             }
         }
     }
@@ -2653,43 +3063,72 @@ struct CompactAtlasSceneView: View {
         let count: Int
     }
 
-    /// Small overlay explaining what the user is looking at
+    /// Small overlay explaining what the user is looking at (Atlas canvas overlay keeps fixed sizes)
     private var sceneHintOverlay: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DSSpacing.xs) {
             Image(systemName: "hand.draw")
                 .font(.system(size: 8))
             Text("Drag to rotate • Pinch to zoom")
                 .font(.system(size: 8))
         }
-        .foregroundColor(.white.opacity(0.4))
-        .padding(6)
+        .foregroundStyle(.white.opacity(0.4))
+        .padding(DSSpacing.xs)
+    }
+
+    private var chartContent: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            Embedding3DSceneView(
+                points: points,
+                colors: colors,
+                options: sceneOptions,
+                reloadToken: sceneReloadToken,
+                annotations: [],
+                pose: $pose
+            )
+            AtlasAxisKey(labels: dynamicAxisLabels, lineLimit: 1)
+                .padding(.horizontal, DSSpacing.sm)
+            // A 3D chart turns with a drag and does not zoom with a pinch (probe, iOS 27 Simulator, 2026-10-19).
+            Label("Drag to turn", systemImage: "hand.draw")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.45))
+                .padding(.horizontal, DSSpacing.sm)
+                .padding(.bottom, DSSpacing.xs)
+        }
     }
 
     // MARK: - Data Loading
 
+    /// The open library, the number of documents in every library once no import runs, and the projection
+    /// (`AtlasContentKey`).
+    private var contentKey: AtlasContentKey {
+        AtlasContentKey(
+            containerId: containerService.activeContainerId, documentCount: ragService.documents.count,
+            importing: ragService.isProcessing, variant: projectionMethod.rawValue)
+    }
+
     private func loadAndProject() async {
-        await MainActor.run { isLoading = true }
-
-        // === LOAD FTS5 CORPUS INTELLIGENCE ===
-        // Get real terms and phrases from the SQLite FTS5 index for this container
+        // Through 5.6 this also read the corpus terms and phrases, which nothing on the card showed (5.7).
         let activeId = containerService.activeContainerId
-        async let topTermsTask = SQLiteFullTextService.shared.getTopTermsForContainer(containerId: activeId, limit: 50)
-        async let keyPhrasesTask = SQLiteFullTextService.shared.getKeyPhrasesForContainer(containerId: activeId, limit: 20)
-
-        let (topTermsResult, keyPhrasesResult) = await (topTermsTask, keyPhrasesTask)
-
         await MainActor.run {
-            self.fts5TopTerms = topTermsResult.map { $0.term }
-            self.fts5KeyPhrases = keyPhrasesResult
+            isLoading = true
+            // Another library (5.7): the old map would sit under the new library's name until this one is drawn.
+            if drawnLibrary != activeId {
+                points = []
+                colors = []
+                annotations = []
+                legendItems = []
+            }
         }
 
         let allChunks = await ragService.allChunksForActiveContainer()
 
         guard !allChunks.isEmpty else {
+            // Not when another load has taken this one's place (5.7): it draws, and these writes would leave its view
+            // empty, or skip its reload during an import.
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 points = []
                 colors = []
-                annotations = []
                 isLoading = false
             }
             return
@@ -2700,10 +3139,12 @@ struct CompactAtlasSceneView: View {
         let embeddings = sampledChunks.map { $0.embedding }
 
         guard !embeddings.isEmpty else {
+            // Not when another load has taken this one's place (5.7): it draws, and these writes would leave its view
+            // empty, or skip its reload during an import.
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 points = []
                 colors = []
-                annotations = []
                 isLoading = false
             }
             return
@@ -2711,11 +3152,11 @@ struct CompactAtlasSceneView: View {
 
         // Project to 3D — use deterministic seed (not .hashValue which is randomized per launch)
         let seed = deterministicSeed(from: containerService.activeContainerId.uuidString)
-        let coords3D = ProjectionService.shared.project3D(
-            embeddings: embeddings,
-            method: projectionMethod,
-            seed: seed
-        )
+        // Off the main actor: UMAP and t-SNE take seconds on a few thousand passages (`ProjectionService`).
+        let method = projectionMethod
+        let coords3D = await Task.detached(priority: .userInitiated) {
+            ProjectionService.shared.project3D(embeddings: embeddings, method: method, seed: seed)
+        }.value
 
         // === CLUSTER MEMBERSHIP & NAMING ===
         // Cluster membership derives deterministically from embeddings via k-means.
@@ -2723,15 +3164,32 @@ struct CompactAtlasSceneView: View {
         let texts = sampledChunks.map { $0.content }
         // Splitting 6,000 passages into words and clustering their vectors is seconds of work on
         // a phone, so it is done off the main actor; only the results come back to it.
-        let (passageTerms, clusterIndices, clusterNames) = await Task.detached(priority: .userInitiated) {
+        // The axes' words are read here too (5.7): they were six passes over the sample on the main actor.
+        // What each passage belongs to (5.7): its document and its section heading, so an axis end or a cluster is named
+        // for the part of the library it is (`AtlasLabeling.PassageSources`).
+        let documentNames = await MainActor.run {
+            Dictionary(
+                ragService.documents.map { ($0.id, AtlasLabeling.shortDocumentName($0.filename)) },
+                uniquingKeysWith: { first, _ in first })
+        }
+        let sources = AtlasLabeling.PassageSources(
+            groups: sampledChunks.map { documentNames[$0.documentId] },
+            sections: sampledChunks.map(\.metadata.sectionTitle))
+        let (clusterIndices, clusterNames, axisEnds) = await Task.detached(priority: .userInitiated) {
+            // The word classes of the passages' languages first (5.7), so an adverb names nothing in them.
+            await AtlasLabeling.loadWordClasses(for: texts)
             let terms = texts.map { AtlasLabeling.terms(in: $0) }
             let indices = AtlasLabeling.kMeans(embeddings: embeddings)
             let names = AtlasLabeling.clusterNames(
                 texts: texts,
                 clusterMembership: indices,
-                precomputedTerms: terms
+                precomputedTerms: terms,
+                sources: sources
             )
-            return (terms, indices, names)
+            return (
+                indices, names,
+                AtlasLabeling.axisLabels(coords: coords3D, texts: texts, passageTerms: terms, sources: sources)
+            )
         }.value
 
         let palette: [PlatformColor] = [
@@ -2743,14 +3201,11 @@ struct CompactAtlasSceneView: View {
             PlatformColor(.teal)
         ]
 
-        var topicAssignments: [UUID: String] = [:]
         var mappedColors: [PlatformColor] = []
         mappedColors.reserveCapacity(sampledChunks.count)
 
-        for (i, chunk) in sampledChunks.enumerated() {
+        for i in sampledChunks.indices {
             let c = (i < clusterIndices.count && clusterIndices[i] >= 0 && clusterIndices[i] < clusterNames.count) ? clusterIndices[i] : 0
-            let name = clusterNames[c]
-            topicAssignments[chunk.id] = name
             mappedColors.append(palette[c % palette.count])
         }
 
@@ -2758,41 +3213,33 @@ struct CompactAtlasSceneView: View {
         // This preserves natural clustering and semantic structure!
         let scaledPoints = scalePointsForViewing(coords3D)
 
-        // Build 3D cluster label annotations at ACTUAL cluster positions
-        let clusterAnnotations = buildClusterAnnotations(
-            coords: coords3D,
-            clusterIndices: clusterIndices,
-            clusterNames: clusterNames,
-            palette: palette
-        )
-
+        // The scene's cluster names in the map and its box of names (the Scene style). The chart shows neither: the
+        // chips under the card name the clusters (`atlasTopicLegend`).
+        let clusterAnnotations = AtlasSceneLabels.annotations(
+            coords: coords3D, groups: clusterIndices, names: clusterNames, colors: palette,
+            detailLevel: { $0 > 50 ? 2 : ($0 > 20 ? 1 : 0) })
         var clusterCounts = Array(repeating: 0, count: clusterNames.count)
-        for c in clusterIndices {
-            if c >= 0 && c < clusterCounts.count {
-                clusterCounts[c] += 1
-            }
-        }
-        var legendItems: [TopicColorItem] = []
-        for c in 0..<clusterNames.count {
-            let count = clusterCounts[c]
-            guard count > 0 else { continue }
-            legendItems.append(TopicColorItem(
-                name: clusterNames[c],
-                color: Color(palette[c % palette.count]),
-                count: count
-            ))
+        for c in clusterIndices where c >= 0 && c < clusterCounts.count { clusterCounts[c] += 1 }
+        let clusterLegend: [TopicColorItem] = clusterNames.indices.compactMap { c in
+            clusterCounts[c] > 0
+                ? TopicColorItem(name: clusterNames[c], color: Color(palette[c % palette.count]), count: clusterCounts[c])
+                : nil
         }
 
-        // Analyze axis extremes for content-derived semantic labels
-        let axisLabels = analyzeAxisLabelsCompact(coords: coords3D, chunks: sampledChunks, precomputedTerms: passageTerms)
+        // Each end of each axis named by the words of the passages there (5.7).
+        let axisLabels = Embedding3DSceneView.AxisLabels(ends: axisEnds)
+
+        // A load for another method or library started while this one worked: that one draws, not this.
+        // `.task(id: contentKey)` cancels this one when its key changes.
+        guard !Task.isCancelled, activeId == containerService.activeContainerId else { return }
 
         await MainActor.run {
             points = scaledPoints
             colors = mappedColors
             annotations = clusterAnnotations
-            chunkTopicAssignments = topicAssignments
-            self.legendItems = legendItems
+            legendItems = clusterLegend
             dynamicAxisLabels = axisLabels
+            drawnLibrary = activeId
             sceneReloadToken = UUID()
             isLoading = false
         }
@@ -2853,83 +3300,6 @@ struct CompactAtlasSceneView: View {
 
 
 
-    // MARK: - 3D Cluster Annotations
-
-    private func buildClusterAnnotations(
-        coords: [SIMD3<Float>],
-        clusterIndices: [Int],
-        clusterNames: [String],
-        palette: [PlatformColor]
-    ) -> [Embedding3DSceneView.AnnotationData] {
-        guard coords.count == clusterIndices.count, !coords.isEmpty else { return [] }
-
-        // First, compute the same scaling parameters used for points
-        var minX = Float.greatestFiniteMagnitude, maxX = -Float.greatestFiniteMagnitude
-        var minY = Float.greatestFiniteMagnitude, maxY = -Float.greatestFiniteMagnitude
-        var minZ = Float.greatestFiniteMagnitude, maxZ = -Float.greatestFiniteMagnitude
-
-        for c in coords {
-            minX = min(minX, c.x); maxX = max(maxX, c.x)
-            minY = min(minY, c.y); maxY = max(maxY, c.y)
-            minZ = min(minZ, c.z); maxZ = max(maxZ, c.z)
-        }
-
-        let centerX = (minX + maxX) / 2
-        let centerY = (minY + maxY) / 2
-        let centerZ = (minZ + maxZ) / 2
-
-        let spanX = max(maxX - minX, 0.0001)
-        let spanY = max(maxY - minY, 0.0001)
-        let spanZ = max(maxZ - minZ, 0.0001)
-        let maxSpan = max(spanX, max(spanY, spanZ))
-        let scale = 4.5 / maxSpan // Same as scalePointsForViewing
-
-        // Group points by cluster
-        var clusterPoints: [Int: [SIMD3<Float>]] = [:]
-        for (index, c) in clusterIndices.enumerated() {
-            guard index < coords.count else { continue }
-            clusterPoints[c, default: []].append(coords[index])
-        }
-
-        // Create annotation at centroid of each cluster
-        var annotations: [Embedding3DSceneView.AnnotationData] = []
-
-        for c in 0..<clusterNames.count {
-            guard let pointsInCluster = clusterPoints[c], pointsInCluster.count >= 1 else { continue }
-
-            // Calculate centroid in ORIGINAL coords
-            var sumX: Float = 0
-            var sumY: Float = 0
-            var sumZ: Float = 0
-            for p in pointsInCluster {
-                sumX += p.x
-                sumY += p.y
-                sumZ += p.z
-            }
-            let count = Float(pointsInCluster.count)
-
-            // Apply same scaling as points so label appears at cluster center!
-            let centroidX = ((sumX / count) - centerX) * scale
-            let centroidY = ((sumY / count) - centerY) * scale
-            let centroidZ = ((sumZ / count) - centerZ) * scale
-
-            let centroid = SCNVector3(centroidX, centroidY, centroidZ)
-            let color = palette[c % palette.count]
-
-            annotations.append(Embedding3DSceneView.AnnotationData(
-                position: centroid,
-                title: clusterNames[c],
-                keywords: ["\(pointsInCluster.count) pts"],
-                color: color,
-                detailLevel: pointsInCluster.count > 50 ? 2 : (pointsInCluster.count > 20 ? 1 : 0),
-                clusterSize: pointsInCluster.count,
-                isDocumentCluster: false
-            ))
-        }
-
-        return annotations
-    }
-
     // MARK: - Sampling
 
     private func sampleChunks(_ chunks: [DocumentChunk]) -> [DocumentChunk] {
@@ -2977,47 +3347,6 @@ struct CompactAtlasSceneView: View {
 
         return sampled
     }
-
-    // MARK: - Semantic Axis Label Analysis (Compact)
-
-    /// Analyze what content appears at the extremes of each projection axis.
-    private func analyzeAxisLabelsCompact(
-        coords: [SIMD3<Float>],
-        chunks: [DocumentChunk],
-        precomputedTerms: [Set<String>]? = nil
-    ) -> Embedding3DSceneView.AxisLabels {
-        guard coords.count == chunks.count, !coords.isEmpty else {
-            return .placeholder
-        }
-
-        let texts = chunks.map { $0.content }
-        let allTerms = precomputedTerms ?? texts.map { AtlasLabeling.terms(in: $0) }
-
-        let xValues = coords.map { $0.x }
-        let yValues = coords.map { $0.y }
-        let zValues = coords.map { $0.z }
-
-        let xEnds = AtlasLabeling.axisEnds(values: xValues, texts: texts, passageTerms: allTerms)
-        let yEnds = AtlasLabeling.axisEnds(values: yValues, texts: texts, passageTerms: allTerms)
-        let zEnds = AtlasLabeling.axisEnds(values: zValues, texts: texts, passageTerms: allTerms)
-
-        let xNeg = xEnds?.lowLabel ?? ""
-        let xPos = xEnds != nil ? (xEnds?.highLabel ?? "") : "Component 1"
-
-        let yNeg = yEnds?.lowLabel ?? ""
-        let yPos = yEnds != nil ? (yEnds?.highLabel ?? "") : "Component 2"
-
-        let zNeg = zEnds?.lowLabel ?? ""
-        let zPos = zEnds != nil ? (zEnds?.highLabel ?? "") : "Component 3"
-
-        return Embedding3DSceneView.AxisLabels(
-            xNeg: xNeg, xPos: xPos,
-            yNeg: yNeg, yPos: yPos,
-            zNeg: zNeg, zPos: zPos
-        )
-    }
-
-
 }
 
 #Preview {

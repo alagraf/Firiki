@@ -98,6 +98,17 @@ final class IngestionLiveActivityService {
         }
     }
 
+    /// Ends every import Live Activity but the one running, once the person is back in the app (5.7). A finished
+    /// import's stayed on the Lock Screen for ten minutes (`endCurrentActivity`), and after the app was opened it was a
+    /// leftover (the owner, 2026-10-17). `.immediate` removes an ended Live Activity at once (Apple's
+    /// `ActivityUIDismissalPolicy.immediate`, read 2026-10-17).
+    func dismissFinished() {
+        let running = currentActivity?.id
+        for activity in Activity<IngestionLiveActivityAttributes>.activities where activity.id != running {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     func endCurrentActivity(finalState: IngestionLiveActivityAttributes.ContentState?) {
         let allActivities = Activity<IngestionLiveActivityAttributes>.activities
         
@@ -319,15 +330,17 @@ final class IngestionLiveActivityService {
         }
     }
 
+    /// The Live Activity's tint follows the profile the import runs with (5.7). Until 5.7 it followed GPU-level
+    /// thresholds that put an iPad mini's Performance, capped at 0.7, under Balanced.
     private func processingMode(for device: DeviceCapabilityService) -> IngestionLiveActivityProcessingMode {
-        let level = device.activeGPUAccelerationLevel
-        if level > 0.7 {
-            return .turbo
+        if device.isBackgroundCPUSafeIngestionActive {
+            return .eco
         }
-        if level >= 0.3 {
-            return .balanced
+        switch device.activeGPUExecutionProfile {
+        case .efficiency: return .eco
+        case .balanced: return .balanced
+        case .performance, .maximum: return .turbo
         }
-        return .eco
     }
 
     private func deviceSummary(for device: DeviceCapabilityService) -> String {
@@ -347,11 +360,13 @@ final class IngestionLiveActivityService {
         for device: DeviceCapabilityService,
         thermalBucket: IngestionLiveActivityThermalBucket
     ) -> String {
-        let mode = processingMode(for: device).displayName
+        // The profile's own name, so Maximum reads Maximum, and what a background import without the GPU runs on.
+        let mode = device.isBackgroundCPUSafeIngestionActive ? "No GPU (background)" : device.activeGPUExecutionProfile.displayName
         if thermalBucket == .serious || thermalBucket == .critical {
             return "\(mode) • thermal management active"
         }
-        return "\(mode) • \(device.gpuConcurrency)x GPU • \(device.ocrExtractionConcurrency)x OCR"
+        // Until 5.7 this read "Nx GPU" from a value nothing else in the app used; both figures here are applied.
+        return "\(mode) • \(device.pdfRenderingConcurrency)x pages • \(device.ocrExtractionConcurrency)x OCR"
     }
 
     private func trimmed(_ text: String, maxLength: Int) -> String {
@@ -389,6 +404,7 @@ final class IngestionLiveActivityService {
     private init() {}
 
     func restoreExistingActivityIfNeeded() {}
+    func dismissFinished() {}
     func sync(items _: [IngestionItem], containerName _: String?) {}
     func endCurrentActivity(finalState _: Any? = nil) {}
     func finish(items _: [IngestionItem], containerName _: String?) {}

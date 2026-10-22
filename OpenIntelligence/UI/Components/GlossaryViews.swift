@@ -52,7 +52,7 @@ struct GlossaryTermDetail: View {
                     relatedCard
                 }
             }
-            .padding()
+            .padding(DSSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -65,10 +65,10 @@ struct GlossaryTermDetail: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(DSColors.accent)
                 .frame(width: 34, height: 34)
-                .background(DSColors.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(DSColors.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text(term.term)
                     .font(.title3.bold())
                 Text(term.section.title)
@@ -110,7 +110,7 @@ struct GlossaryTermDetail: View {
                         .foregroundStyle(DSColors.accent)
                         .frame(width: 20)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                         Text("THE TECHNICAL VERSION")
                             .font(.footnote.weight(.semibold))
                             .tracking(0.8)
@@ -155,6 +155,7 @@ struct GlossaryTermDetail: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(.vertical, DSSpacing.sm)
+                        .frame(minHeight: DSSpacing.tapTarget)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

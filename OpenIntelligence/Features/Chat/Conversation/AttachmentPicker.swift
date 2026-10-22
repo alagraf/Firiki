@@ -268,7 +268,7 @@ struct AttachmentPreviewChip: View {
     let onRemove: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DSSpacing.xs) {
             // Thumbnail or icon
             #if os(iOS)
                 if let thumbnail = attachment.thumbnail {
@@ -276,14 +276,14 @@ struct AttachmentPreviewChip: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 28, height: 28)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
                 } else {
                     Image(systemName: attachment.type.icon)
-                        .font(.system(size: 14, weight: .medium))
+                        .scaledFont(size: 14, weight: .medium)
                         .foregroundStyle(DSColors.accent)
                         .frame(width: 28, height: 28)
                         .background(DSColors.accent.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
                 }
             #else
                 if let thumbnail = attachment.thumbnail {
@@ -291,20 +291,20 @@ struct AttachmentPreviewChip: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 28, height: 28)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
                 } else {
                     Image(systemName: attachment.type.icon)
-                        .font(.system(size: 14, weight: .medium))
+                        .scaledFont(size: 14, weight: .medium)
                         .foregroundStyle(DSColors.accent)
                         .frame(width: 28, height: 28)
                         .background(DSColors.accent.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous))
                 }
             #endif
 
             // Filename
             Text(attachment.url.lastPathComponent)
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: 13, weight: .medium)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -312,15 +312,15 @@ struct AttachmentPreviewChip: View {
             // Remove button
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
+                    .scaledFont(size: 16)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
     }
@@ -350,25 +350,31 @@ struct AttachmentMenuButton: View {
                     Label("Take Photo", systemImage: "camera.fill")
                 }
 
-                // Vision Capture - Advanced camera with live OCR and document detection
-                if let onVisionCapture = onVisionCapture {
-                    Divider()
+                // Vision Capture - Advanced camera with live OCR and document detection. Debug builds only
+                // (5.7), as the camera screen it opens is.
+                #if DEBUG
+                    if let onVisionCapture = onVisionCapture {
+                        Divider()
 
-                    Button(action: onVisionCapture) {
-                        // Not a document scanner. It opens a live view that names what the camera
-                        // is looking at: objects, text, faces, animals, the scene as a whole.
-                        // "Scan Document" described one of the things it can do and set the wrong
-                        // expectation for all the rest.
-                        Label("Look at Something", systemImage: "camera.viewfinder")
+                        Button(action: onVisionCapture) {
+                            // Not a document scanner. It opens a live view that names what the camera
+                            // is looking at: objects, text, faces, animals, the scene as a whole.
+                            // "Scan Document" described one of the things it can do and set the wrong
+                            // expectation for all the rest.
+                            Label("Look at Something", systemImage: "camera.viewfinder")
+                        }
                     }
-                }
+                #endif
             }
         } label: {
             Image(systemName: "paperclip")
-                .font(.system(size: 18, weight: .medium))
+                .scaledFont(size: 18, weight: .medium)
                 .foregroundStyle(DSColors.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Attach")
     }
 }
 

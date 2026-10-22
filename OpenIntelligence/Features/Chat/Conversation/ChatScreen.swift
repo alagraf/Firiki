@@ -232,6 +232,10 @@ struct ChatScreen: View {
     @State private var showThreadSidebar: Bool = false
     @State private var messages: [ChatMessage] = []
     @State private var didSeedScreenshotDemo: Bool = false
+    #if DEBUG
+        /// The listing's page scene: a cited passage open on its PDF page (5.7).
+        @State private var storeScenePage: StoreScenePage? = nil
+    #endif
     @State private var streamingText: String = ""
     /// Text another part of the system handed over to ask about, put in the composer unsent (5.7).
     @State private var composerDraft: ComposerDraft? = nil
@@ -362,7 +366,6 @@ struct ChatScreen: View {
 
     // Dynamic suggested questions
     @State private var dynamicSuggestedQuestions: [String] = []
-    @State private var dynamicQuestionCategories: [String: SuggestedQuestionsService.QuestionCategory] = [:]
     @State private var dynamicQuestionDetails: [String: SuggestedQuestionsService.SuggestedQuestion] = [:]
     @State private var suggestedQuestionsTask: Task<Void, Never>? = nil
     @State private var isRefreshingSuggestions = false
@@ -423,8 +426,9 @@ struct ChatScreen: View {
             return audit.availableContextTokens > 0 ? audit.availableContextTokens : audit.baseWindowTokens
         }
 
-        // Fallback to base window tokens
-        return 4096
+        // Before the first answer, the window this device reports (5.7; this was a fixed 4096, under the 8,192 a
+        // Mac on macOS 27 reported). A device that reports none keeps 4096.
+        return FoundationModelTokenBudget.reportedOnDeviceContextSize ?? FoundationModelTokenBudget.baseContextLength
     }
 
     // MARK: - Metrics Bar Helpers (split to avoid type-check timeout)
@@ -614,9 +618,11 @@ struct ChatScreen: View {
                 onCancelAll: { ragService.cancelAllIngestion() },
                 onContinuePaused: { ragService.continuePausedIngestionQueue() },
                 onDiscardPaused: { ragService.discardPausedIngestionQueue() },
-                onStopAndDismiss: { ragService.stopAndDismissIngestionQueue() }
+                onStopAndDismiss: { ragService.stopAndDismissIngestionQueue() },
+                onPause: { ragService.pauseIngestionQueue() },
+                pausedByPerson: ragService.ingestionPausedByPerson
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, DSSpacing.md)
             .padding(.bottom, 88)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
 
@@ -638,7 +644,7 @@ struct ChatScreen: View {
                         let containerId = ragService.containerService.activeContainerId
                         let loadedMessages = ragService.loadThread(threadId, for: containerId)
                         messages = loadedMessages
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        withAnimation(DSAnimations.snappySpring) {
                             showThreadSidebar = false
                         }
                     }
@@ -660,13 +666,15 @@ struct ChatScreen: View {
         // iOS only: `CameraVisionOverlayView` is inside `#if os(iOS)` and has no macOS equivalent.
         // `NSCameraUsageDescription` is set via INFOPLIST_KEY in the project, so the permission
         // prompt has copy to show.
-        #if os(iOS)
+        #if os(iOS) && DEBUG
             .fullScreenCover(isPresented: $showVisionCapture) {
                 CameraVisionOverlayView(
                     ragService: ragService,
                     containerService: ragService.containerService
                 )
             }
+        #endif
+        #if os(iOS)
             .fullScreenCover(isPresented: $showDocumentScanner) {
                 SystemDocumentScanner(
                     onScan: { scan in
@@ -768,7 +776,6 @@ struct ChatScreen: View {
             if !isSameDocsContainer {
                 // Immediately clear old suggested questions so stale pills never flash
                 dynamicSuggestedQuestions = []
-                dynamicQuestionCategories = [:]
                 dynamicQuestionDetails = [:]
 
                 // Invalidate cached questions for the new container before regenerating
@@ -832,7 +839,7 @@ struct ChatScreen: View {
                 #if os(iOS)
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            withAnimation(DSAnimations.snappySpring) {
                                 showThreadSidebar.toggle()
                             }
                         } label: {
@@ -875,18 +882,23 @@ struct ChatScreen: View {
                                 Label("Clear Chat", systemImage: "trash")
                             }
                             .disabled(messages.isEmpty)
+
+                            // The chat's technical view (5.7), also in Settings, Appearance. The menu is open with an
+                            // empty chat for it; the chat actions above stay off until there is a chat.
+                            Divider()
+                            Toggle(isOn: $settings.showTechnicalDetails) {
+                                Label("Technical Details", systemImage: "waveform.path.ecg")
+                            }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                                 .imageScale(.large)
-                                .opacity(messages.isEmpty ? 0.5 : 1.0)
                         }
-                        .disabled(messages.isEmpty)
                         .animation(nil, value: messages.count)
                     }
                 #else
                     ToolbarItem(placement: .navigation) {
                         Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            withAnimation(DSAnimations.snappySpring) {
                                 showThreadSidebar.toggle()
                             }
                         } label: {
@@ -923,12 +935,17 @@ struct ChatScreen: View {
                                 Label("Clear Chat", systemImage: "trash")
                             }
                             .disabled(messages.isEmpty)
+
+                            // The chat's technical view (5.7), also in Settings, Appearance. The menu is open with an
+                            // empty chat for it; the chat actions above stay off until there is a chat.
+                            Divider()
+                            Toggle(isOn: $settings.showTechnicalDetails) {
+                                Label("Technical Details", systemImage: "waveform.path.ecg")
+                            }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                                 .imageScale(.large)
-                                .opacity(messages.isEmpty ? 0.5 : 1.0)
                         }
-                        .disabled(messages.isEmpty)
                         .animation(nil, value: messages.count)
                     }
                 #endif
@@ -940,6 +957,8 @@ struct ChatScreen: View {
                         retrievedChunks: currentRetrievedChunks,
                         structuredAnswer: currentStructuredAnswer
                     )
+                    // The library's documents, so a source can open its page (5.7).
+                    .environment(\.libraryDocumentLookup, documentLookup)
                 } else {
                     VStack(alignment: .leading, spacing: DSSpacing.md) {
                         Text("Retrieved Sources")
@@ -947,7 +966,7 @@ struct ChatScreen: View {
                         if currentRetrievedChunks.isEmpty {
                             Text("Searching…")
                                 .font(DSTypography.body)
-                                .foregroundColor(DSColors.secondaryText)
+                                .foregroundStyle(DSColors.secondaryText)
                         } else {
                             SourceChipsView(chunks: currentRetrievedChunks) {}
                         }
@@ -973,6 +992,12 @@ struct ChatScreen: View {
             .sheet(isPresented: $showPlanSheet) {
                 PlanUpgradeSheet(entryPoint: planEntryPoint)
             }
+            #if DEBUG
+                .sheet(item: $storeScenePage) { scene in
+                    SourcePageView(
+                        document: scene.document, pageNumber: scene.page, passage: scene.passage, chunk: scene.chunk)
+                }
+            #endif
             .sheet(item: $activeCloudConsent) { record in
                 CloudConsentPromptView(record: record) { decision in
                     Task { await ragService.resolveCloudConsent(decision: decision) }
@@ -981,7 +1006,7 @@ struct ChatScreen: View {
                 #if os(iOS)
                     .presentationDetents([.height(580), .large])
                     .presentationDragIndicator(.hidden)
-                    .presentationCornerRadius(24)
+                    .presentationCornerRadius(DSCorners.sheet)
                     .presentationBackground(.ultraThinMaterial)
                 #endif
             }
@@ -1077,6 +1102,16 @@ struct ChatScreen: View {
             }
             .onDisappear {
                 isAppeared = false
+            }
+            // The Stop button on the answer's Live Activity (5.7, `StopLongAnswerIntent`): stops the
+            // answer like the chat's own stop button, only if the Live Activity is the running one's.
+            .onReceive(NotificationCenter.default.publisher(for: .stopLongAnswer)) { notification in
+                #if os(iOS) && canImport(ActivityKit) && !targetEnvironment(macCatalyst)
+                    guard let sessionID = notification.userInfo?["sessionID"] as? String,
+                        QueryLiveActivityService.shared.isRunningActivity(sessionID: sessionID)
+                    else { return }
+                    stopGeneration()
+                #endif
             }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ActiveModelRouteResolved"))) {
                 notification in
@@ -1596,7 +1631,10 @@ struct ChatScreen: View {
         /// sheet, and the Private Cloud Compute consent sheet. The one figure shown, 27 tokens a
         /// second on device, is the measured A18 Pro number. DEBUG only; nothing here ships.
         ///
-        /// `--screenshot --screenshot-tab chat --screenshot-store answer|refusal|sources|consent`
+        /// `--screenshot --screenshot-tab chat --screenshot-store answer|refusal|sources|consent|page`
+        ///
+        /// `page` (added 2026-10-17) opens the first claim's passage on page 7 of a lease PDF drawn for the scene
+        /// (`StoreScenePDF`), as tapping the claim does in 5.7: the real page view with the passage highlighted. iOS only.
         private func seedStoreScene(_ scene: String) {
             streamingText = ""
             currentStructuredAnswer = nil
@@ -1712,6 +1750,13 @@ struct ChatScreen: View {
             case "sources":
                 currentMetadata = answeredMeta
                 showRetrievedDetails = true
+            case "page":
+                #if os(iOS)
+                    if let url = StoreScenePDF.lease(termination: s1, earlyTermination: s2) {
+                        let lease = Document(filename: "Apartment Lease.pdf", fileURL: url, contentType: .pdf)
+                        storeScenePage = StoreScenePage(document: lease, page: 7, passage: s1, chunk: chunks[0])
+                    }
+                #endif
             case "consent":
                 activeCloudConsent = CloudTransmissionRecord(
                     provider: .applePCC,
@@ -1779,7 +1824,7 @@ struct ChatScreen: View {
                     • **Review**: make citations, source snippets, and warnings easier to inspect
 
                     ## Privacy Architecture
-                    All processing happens **on-device by default**. When additional compute is needed, Apple's Private Cloud Compute ensures your data never leaves Apple's secure enclaves.
+                    Reading, searching and citing happen **on your device**. An answer goes to Apple's Private Cloud Compute only with your permission, and Apple states it keeps nothing after answering.
 
                     The hybrid search combines semantic understanding with keyword matching for accurate, grounded responses. [S1] [S2]
                     """,
@@ -1829,7 +1874,7 @@ struct ChatScreen: View {
                 title: "Privacy Architecture",
                 page: 1,
                 snippet:
-                    "Privacy-first: Data stays on-device or Apple PCC. No third-party cloud. Secure enclave processing.",
+                    "Privacy-first: reading and searching stay on the device; an answer goes to Apple's Private Cloud Compute only with permission. No third-party cloud.",
                 score: 0.88
             ),
             makeChunk(
@@ -1925,16 +1970,25 @@ struct ChatScreen: View {
         messages.isEmpty
     }
 
-    /// Starter prompts - prefer curated sample-workspace questions, then dynamic questions.
-    /// If a library does not yield grounded prompts yet, fail closed instead of inventing them.
+    /// Starter prompts: the service's questions for this library, which for a library of sample
+    /// documents are the hand-written ones. Until the service has answered, a sample library shows
+    /// that list straight away. A library that does not yield grounded prompts yet shows none
+    /// rather than invented ones.
+    ///
+    /// Until 5.7 a second hand-written list here came first whenever two of three sample names were
+    /// present, and one of the three was "OpenIntelligence Roadmap", a name no sample in this
+    /// repository's history has had. So the set decided on 2026-09-14 showed only when the
+    /// architecture or Private Cloud Compute guide was there as a numbered copy alone, the refresh
+    /// button changed nothing under this list, a library of the samples and the person's own files
+    /// kept showing questions about the samples, and a sample library without one of those two
+    /// guides got neither list.
     private var starterPrompts: [String] {
-        if let sampleWorkspaceStarterPrompts = sampleWorkspaceStarterPrompts {
-            return sampleWorkspaceStarterPrompts
-        }
-
-        // If we have dynamic questions based on library content, use them
         if !dynamicSuggestedQuestions.isEmpty {
             return dynamicSuggestedQuestions
+        }
+
+        if let curated = curatedSampleQuestions {
+            return curated.map(\.text)
         }
 
         // An empty library offers nothing to tap. Until 5.6 it offered four lines, the first an
@@ -1955,41 +2009,20 @@ struct ChatScreen: View {
         }
     }
 
-    private var sampleWorkspaceStarterPrompts: [String]? {
-        let activeNames = Set(
-            activeDocumentsForStarterPrompts.map {
-                normalizeStarterWorkspaceDocumentName(starterDisplayDocumentName($0.filename))
-            }
-        )
-        let sampleNames: Set<String> = [
-            "openintelligence roadmap",
-            "rag technical architecture",
-            "apple intelligence & private cloud compute",
-        ]
-
-        guard activeNames.intersection(sampleNames).count >= 2 else { return nil }
-
-        return [
-            "How does OpenIntelligence work around the 4,096-token model limit?",
-            "What file types does OpenIntelligence handle best?",
-            "Why is OpenIntelligence different from a generic AI chat app?",
-            "When does processing stay on-device, and when does Apple Private Cloud Compute step in?",
-        ]
+    /// The hand-written questions when every document in this library is a sample, else nil.
+    private var curatedSampleQuestions: [SuggestedQuestionsService.SuggestedQuestion]? {
+        SuggestedQuestionsService.curatedSampleQuestions(
+            forFilenames: activeDocumentsForStarterPrompts.map(\.filename))
     }
 
-    private func starterDisplayDocumentName(_ filename: String) -> String {
-        filename
-            .replacingOccurrences(of: "\\.[^.]+$", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func normalizeStarterWorkspaceDocumentName(_ name: String) -> String {
-        name
-            .lowercased()
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// The source line and category for each prompt shown, the curated list's included before the
+    /// service has answered, so its chips carry them from the first frame.
+    private var starterQuestionDetails: [String: SuggestedQuestionsService.SuggestedQuestion] {
+        if !dynamicSuggestedQuestions.isEmpty {
+            return dynamicQuestionDetails
+        }
+        guard let curated = curatedSampleQuestions else { return [:] }
+        return Dictionary(curated.map { ($0.text, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Generate dynamic suggested questions based on library content
@@ -2019,7 +2052,6 @@ struct ChatScreen: View {
 
             guard !documents.isEmpty else {
                 dynamicSuggestedQuestions = []
-                dynamicQuestionCategories = [:]
                 dynamicQuestionDetails = [:]
                 return
             }
@@ -2063,9 +2095,6 @@ struct ChatScreen: View {
                 }
 
                 dynamicSuggestedQuestions = questions.map { $0.text }
-                dynamicQuestionCategories = Dictionary(
-                    uniqueKeysWithValues: questions.map { ($0.text, $0.category) }
-                )
                 dynamicQuestionDetails = Dictionary(
                     uniqueKeysWithValues: questions.map { ($0.text, $0) }
                 )
@@ -2073,7 +2102,6 @@ struct ChatScreen: View {
             } catch {
                 Log.warning("[ChatScreen] Failed to generate dynamic questions: \(error.localizedDescription)")
                 dynamicSuggestedQuestions = []
-                dynamicQuestionCategories = [:]
                 dynamicQuestionDetails = [:]
             }
         }
@@ -2087,12 +2115,24 @@ struct ChatScreen: View {
         if ragService.containerService.activeContainerId == containerId {
             messages.append(message)
             persistChatHistory(for: containerId)
+            recordForLibraryWidget(message, in: containerId)
             return
         }
 
         var history = ragService.chatHistory(for: containerId)
         history.append(message)
         ragService.persistChatHistory(history, for: containerId)
+    }
+
+    /// The "Your Library" widget shows the last question in the open library and the start of its answer (5.7,
+    /// `WidgetSnapshot`). Only an answer counts, which is a message with an answer's metadata: an error, a stopped
+    /// answer or a notice in the chat is not written. Called after the conversation is saved, so it has its id.
+    private func recordForLibraryWidget(_ message: ChatMessage, in containerId: UUID) {
+        guard message.role == .assistant, message.metadata != nil, !message.content.isEmpty else { return }
+        let question = message.traceQuery ?? messages.last(where: { $0.role == .user })?.content
+        WidgetSnapshot.recordAnswer(
+            question: question, answer: message.content, libraryId: containerId,
+            threadId: ragService.activeThreadId, messageId: message.id)
     }
 
     /// A request that ends in this screen: a new conversation, the camera, text to ask about, or an
@@ -2307,6 +2347,8 @@ struct ChatScreen: View {
         thinkingEvents.removeAll()
         requestedExecutionContext = .automatic
         ragService.clearChatHistory(for: ragService.containerService.activeContainerId)
+        // The "Your Library" widget drops the cleared conversation's last answer (5.7).
+        WidgetSnapshot.forgetAnswer(inLibrary: ragService.containerService.activeContainerId)
     }
 
     /// Stops generation immediately and preserves partial response
@@ -2514,6 +2556,13 @@ struct ChatScreen: View {
     // MARK: - Main Content Area
 
     @ViewBuilder private var mainContentArea: some View {
+        mainContentStack
+            // How much machinery the chat shows (5.7): the step console, the badges under an answer and Fact Check's
+            // numbers read it.
+            .environment(\.showsTechnicalDetails, settings.showTechnicalDetails)
+    }
+
+    @ViewBuilder private var mainContentStack: some View {
         VStack(spacing: 0) {
             CompactChatHeader(
                 containerService: ragService.containerService,
@@ -2524,21 +2573,26 @@ struct ChatScreen: View {
                 onMaximumModeBlocked: presentMaximumModePaywall
             )
 
-            if let metricsData = consolidatedMetricsData {
+            // The stats bar is part of the technical view (5.7); the plain chat says what it is doing in the answer's
+            // own bubble instead.
+            if !settings.showTechnicalDetails {
+                EmptyView()
+            } else if let metricsData = consolidatedMetricsData {
                 primaryMetricsBar(metricsData: metricsData)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.bottom, DSSpacing.xs)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.15), value: metricsData.tokens)
             } else if isProcessing || currentRetrievedChunks.count > 0 {
                 minimalMetricsBar()
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.bottom, DSSpacing.xs)
                     .transition(.opacity)
             }
 
             chatContentArea
             followUpSuggestionsBar
+            unansweredQuestionBar
 
             Divider().opacity(0.5)
 
@@ -2572,8 +2626,12 @@ struct ChatScreen: View {
                     hasDocuments: activeDocCount > 0,
                     modelNotice: appleIntelligenceNotice,
                     prompts: starterPrompts,
-                    categories: dynamicQuestionCategories,
-                    questionDetails: dynamicQuestionDetails,
+                    categories: starterQuestionDetails.mapValues(\.category),
+                    questionDetails: starterQuestionDetails,
+                    // The chips shown, not the library: after a document is added or removed the
+                    // previous chips stay until the new ones arrive.
+                    writtenForSamples: !starterPrompts.isEmpty
+                        && starterPrompts.allSatisfy(SuggestedQuestionsService.curatedQuestionTexts.contains),
                     libraryDocumentCount: activeDocCount,
                     isRefreshing: isRefreshingSuggestions,
                     onPromptSelected: sendSuggestedPrompt,
@@ -2635,14 +2693,14 @@ struct ChatScreen: View {
     @ViewBuilder private var followUpSuggestionsBar: some View {
         if !followUpSuggestions.isEmpty && !isProcessing {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     ForEach(followUpSuggestions) { suggestion in
                         Button {
                             DSHaptics.selection()
                             followUpSuggestions = []
                             sendMessage(suggestion.text)
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: DSSpacing.xxs) {
                                 Image(systemName: suggestion.category.iconName)
                                     .font(.caption2)
                                 Text(suggestion.text)
@@ -2650,10 +2708,10 @@ struct ChatScreen: View {
                                     .lineLimit(3)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, DSSpacing.md)
+                            .padding(.vertical, DSSpacing.sm)
                             .background(DSColors.surface)
-                            .foregroundColor(.accentColor)
+                            .foregroundStyle(DSColors.accent)
                             .clipShape(Capsule())
                             .overlay(Capsule().stroke(Color.accentColor.opacity(0.3), lineWidth: 1))
                         }
@@ -2662,24 +2720,67 @@ struct ChatScreen: View {
                 }
                 .padding(.horizontal, DSSpacing.md)
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, DSSpacing.xxs)
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .animation(.easeInOut(duration: 0.25), value: followUpSuggestions.isEmpty)
         }
     }
 
+    /// The chat's last message when it is a question with no answer and nothing is working on one (5.7). On the
+    /// owner's iPhone (2026-10-21) a Deep Think question ended with the app in the background, and the reopened chat
+    /// showed the question and nothing under it, with no way to get the answer but typing it again.
+    private var unansweredQuestion: ChatMessage? {
+        guard !isProcessing, !isCheckingFinishedAnswer, questionAfterCheck == nil,
+            let last = messages.last, last.role == .user
+        else { return nil }
+        return last
+    }
+
+    @ViewBuilder private var unansweredQuestionBar: some View {
+        if let question = unansweredQuestion {
+            HStack(spacing: DSSpacing.sm) {
+                Text("This answer didn't finish.")
+                    .font(.caption)
+                    .foregroundStyle(DSColors.secondaryText)
+                Spacer(minLength: 0)
+                Button {
+                    DSHaptics.selection()
+                    messages.removeAll { $0.id == question.id }
+                    sendMessage(question.content)
+                } label: {
+                    HStack(spacing: DSSpacing.xxs) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption2)
+                        Text("Ask again")
+                            .font(.caption)
+                    }
+                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.vertical, DSSpacing.sm)
+                    .background(DSColors.surface)
+                    .foregroundStyle(DSColors.accent)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.accentColor.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.vertical, DSSpacing.xxs)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
     @ViewBuilder private var writingToolsProgressOverlay: some View {
         if writingToolsProcessing {
-            VStack(spacing: 12) {
+            VStack(spacing: DSSpacing.md) {
                 Spacer()
-                HStack(spacing: 10) {
+                HStack(spacing: DSSpacing.sm) {
                     ProgressView().tint(.white)
                     Text("\(writingToolsTitle)…")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.md)
                 .background(.ultraThinMaterial.opacity(0.95))
                 .background(DSColors.accent.opacity(0.6))
                 .clipShape(Capsule())
@@ -2689,7 +2790,7 @@ struct ChatScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
             .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: writingToolsProcessing)
+            .animation(DSAnimations.snappySpring, value: writingToolsProcessing)
         }
     }
 
@@ -3190,7 +3291,7 @@ struct ChatScreen: View {
                     self.generatingStartTS = nil
                     self.generatingElapsedFinal = nil
                     self.continuedQueryCoordinator.markEmbedding()
-                    // StatusPillV2 shows stage - no toast needed
+                    // UnifiedMetricsBar, or the answer's bubble with details off, shows the stage - no toast needed
                     DSHaptics.processingPulse()  // Feel the pipeline starting
                 }
                 try? await Task.sleep(nanoseconds: 250_000_000)
@@ -3206,7 +3307,7 @@ struct ChatScreen: View {
                         self.embeddingElapsedFinal = Date().timeIntervalSince(embStart)
                     }
                     self.continuedQueryCoordinator.markSearching()
-                    // StatusPillV2 shows stage - no toast needed
+                    // UnifiedMetricsBar, or the answer's bubble with details off, shows the stage - no toast needed
                     DSHaptics.processingPulse()  // Feel the search starting
                 }
 
@@ -3265,7 +3366,7 @@ struct ChatScreen: View {
                         self.searchingElapsedFinal = genStart.timeIntervalSince(searchStart)
                     }
                     self.continuedQueryCoordinator.markGenerating()
-                    // StatusPillV2 shows stage - no toast needed
+                    // UnifiedMetricsBar, or the answer's bubble with details off, shows the stage - no toast needed
                     DSHaptics.messageReceived()  // Feel the response starting
                 }
 
@@ -3339,13 +3440,15 @@ struct ChatScreen: View {
                     // and only when the verifier let it through.
                     ReviewPromptService.shared.noteAnswer(
                         gatingDecision: response.metadata.gatingDecision,
-                        retrievedSourceCount: response.retrievedChunks.count)
+                        retrievedSourceCount: response.retrievedChunks.count,
+                        claims: response.structuredAnswer?.claims ?? [])
                     // And the one unprompted look at the plans, after real use, free tier
                     // only, once per install. See PlanAskService.
                     PlanAskService.shared.noteAnswer(
                         gatingDecision: response.metadata.gatingDecision,
                         retrievedSourceCount: response.retrievedChunks.count,
-                        isFreeTier: !self.entitlementStore.effectiveTier.isAtLeast(.pro))
+                        isFreeTier: !self.entitlementStore.effectiveTier.isAtLeast(.pro),
+                        claims: response.structuredAnswer?.claims ?? [])
 
                     if let genStart = self.generatingStartTS {
                         self.generatingElapsedFinal = Date().timeIntervalSince(genStart)
@@ -3362,14 +3465,17 @@ struct ChatScreen: View {
                             ChatAnswerNotice.shared.answerFinishedOffScreen()
                         }
 
-                        // Show completion toast with token count
-                        let tokenCount = response.metadata.tokensGenerated
+                        // The token count is a technical detail: the plain chat (5.7) ends on the answer itself
+                        // and the haptic above, and Technical Details keeps the toast.
                         self.toastManager.clearAll()
-                        self.pushToast(
-                            tokenCount > 0 ? "Done • \(tokenCount) tokens" : "Complete",
-                            icon: "checkmark.circle.fill",
-                            tint: .green
-                        )
+                        if self.settings.showTechnicalDetails {
+                            let tokenCount = response.metadata.tokensGenerated
+                            self.pushToast(
+                                tokenCount > 0 ? "Done • \(tokenCount) tokens" : "Complete",
+                                icon: "checkmark.circle.fill",
+                                tint: .green
+                            )
+                        }
 
                         // Mark the foreground answer as complete immediately.
                         // Any smart replies generated after this point are background work.
@@ -3898,7 +4004,7 @@ struct ChatHeader: View {
     let onClearChat: () -> Void
     var body: some View {
         HStack {
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 Image(systemName: "sparkles")
                     .foregroundStyle(
                         LinearGradient(
@@ -3909,7 +4015,6 @@ struct ChatHeader: View {
                     )
                 Text("Chat")
                     .font(.title3)
-                    .fontWeight(.semibold)
             }
 
             Spacer()
@@ -3930,8 +4035,8 @@ struct ChatHeader: View {
                     .imageScale(.large)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
         .background(.ultraThinMaterial)
     }
 }
@@ -3944,31 +4049,34 @@ struct ContextStatusBarView: View {
     let usedK: Int
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DSSpacing.sm) {
             Image(systemName: "doc.text.fill")
                 .font(.caption2)
-                .foregroundColor(.green)
+                .foregroundStyle(.green)
 
             Text("\(docCount) document\(docCount == 1 ? "" : "s")")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .monospacedDigit()
+                .foregroundStyle(DSColors.secondaryText)
 
             Text("•")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(DSColors.secondaryText)
 
             Text("\(chunkCount) chunks")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .monospacedDigit()
+                .foregroundStyle(DSColors.secondaryText)
 
             Spacer()
 
             Text("k used: \(usedK)")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .monospacedDigit()
+                .foregroundStyle(DSColors.secondaryText)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
         .background(Color.green.opacity(0.05))
     }
 }
@@ -3992,35 +4100,50 @@ struct CompactChatHeader: View {
         containerService.activeContainer
     }
 
+    /// The bottom row's two pills. Both are fixed size (5.7), so the row wraps instead of squeezing one
+    /// (`WrappingRowLayout`): the pills and the counts on one line when everything fits, the counts on a line of their
+    /// own when it does not (on a 402-point iPhone a library of 100 passages or more no longer fits beside the pills),
+    /// and the pills on lines of their own when they are wider than the screen together.
+    @ViewBuilder
+    private var bottomRowPills: some View {
+        // Always show quality mode picker - Deep Think is useful for all users
+        QualityModeQuickPicker(
+            selectedMode: $settings.ragQualityMode, onMaximumModeBlocked: onMaximumModeBlocked
+        ) { _, _ in
+            // Reset stale Deep Think/Maximum metrics when mode changes
+            ragService.resetDeepThinkLiveMetrics()
+        }
+
+        // Model indicator (compact)
+        ModelStatusIndicator()
+    }
+
+    /// Stats for active container
+    private var bottomRowCounts: some View {
+        HStack(spacing: DSSpacing.sm) {
+            StatChip(icon: "doc.fill", value: "\(docCount)", color: .blue)
+            // The passages are the search's units, not the person's: shown with the technical view (5.7).
+            if settings.showTechnicalDetails {
+                StatChip(icon: "square.grid.3x3.fill", value: "\(chunkCount)", color: .purple)
+            }
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: DSSpacing.sm) {
             // Top row: Library picker strip (scrollable)
             libraryPickerStrip
 
-            // Bottom row: Model status + Quality mode picker + Stats
-            HStack(spacing: 10) {
-                // Always show quality mode picker - Deep Think is useful for all users
-                QualityModeQuickPicker(
-                    selectedMode: $settings.ragQualityMode, onMaximumModeBlocked: onMaximumModeBlocked
-                ) { _, _ in
-                    // Reset stale Deep Think/Maximum metrics when mode changes
-                    ragService.resetDeepThinkLiveMetrics()
-                }
-
-                // Model indicator (compact)
-                ModelStatusIndicator()
-
-                Spacer()
-
-                // Stats for active container
-                HStack(spacing: 8) {
-                    StatChip(icon: "doc.fill", value: "\(docCount)", color: .blue)
-                    StatChip(icon: "square.grid.3x3.fill", value: "\(chunkCount)", color: .purple)
-                }
+            // Bottom row: Quality mode picker + Model status + Stats, on as few lines as fit (see `bottomRowPills`)
+            WrappingRowLayout(spacing: DSSpacing.sm, lineSpacing: DSSpacing.sm, lastAtTrailingEdge: true) {
+                bottomRowPills
+                bottomRowCounts
             }
-            .padding(.horizontal, 16)
+            // Stacked, the row is only as wide as its widest pill, and the header's stack would center it.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, DSSpacing.md)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, DSSpacing.sm)
         .onAppear {
             deviceCapabilities = RAGService.checkDeviceCapabilities()
         }
@@ -4031,17 +4154,17 @@ struct CompactChatHeader: View {
     private var libraryPickerStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             if #available(iOS 26.0, *) {
-                GlassEffectContainer(spacing: 8) {
-                    HStack(spacing: 8) {
+                GlassEffectContainer(spacing: DSSpacing.sm) {
+                    HStack(spacing: DSSpacing.sm) {
                         libraryPillList
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, DSSpacing.md)
                 }
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     libraryPillList
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, DSSpacing.md)
             }
         }
     }
@@ -4057,7 +4180,7 @@ struct CompactChatHeader: View {
                 badgeText: documentCountText(for: container),
                 badgeStyle: .count
             ) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                withAnimation(DSAnimations.snappySpring) {
                     containerService.setActive(container.id)
                 }
                 SiriDonations.libraryUsed(container)
@@ -4087,7 +4210,7 @@ struct QualityModeQuickPicker: View {
                 Button {
                     guard canSelect(mode) else { return }
                     let previousMode = selectedMode
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    withAnimation(DSAnimations.snappySpring) {
                         selectedMode = mode
                     }
                     DSHaptics.selection()
@@ -4118,13 +4241,14 @@ struct QualityModeQuickPicker: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: DSSpacing.xs) {
                 ZStack {
                     Circle()
                         .fill(modeColor.opacity(0.14))
                         .frame(width: 20, height: 20)
                     Image(systemName: selectedMode.canonical.icon)
-                        .font(.system(size: 10, weight: .semibold))
+                        .scaledFont(size: 10, weight: .semibold)
+                        .foregroundStyle(modeColor)
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -4132,13 +4256,15 @@ struct QualityModeQuickPicker: View {
                         .font(.caption.weight(.semibold))
                     Text(modeTagline)
                         .font(.caption2)
-                        .foregroundStyle(modeColor.opacity(0.85))
+                        .monospacedDigit()
                 }
 
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
             }
-            .foregroundStyle(modeColor)
+            // The words in the label color, the mode's color in the icon and the tint (5.7, the owner's choice). Blue
+            // on the blue-tinted chip measured 3.6 to 1 even in Apple's high-contrast blue; Apple asks for 4.5.
+            .foregroundStyle(DSColors.primaryText)
             .padding(.horizontal, DSSpacing.sm)
             .padding(.vertical, DSSpacing.xs)
             // Shared shape and material with the model pill beside it. These two sat
@@ -4226,15 +4352,15 @@ struct QualityModeQuickPicker: View {
 /// Reliability-first indicator (shown when advanced tuning is disabled).
 struct AccuracyModeBadge: View {
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DSSpacing.xxs) {
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 10, weight: .semibold))
+                .scaledFont(size: 10, weight: .semibold)
             Text("Reliability First")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
         }
         .foregroundStyle(Color.green)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xxs)
         .background(
             Capsule()
                 .fill(Color.green.opacity(0.12))
@@ -4249,15 +4375,19 @@ private struct StatChip: View {
     let color: Color
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DSSpacing.xxs) {
             Image(systemName: icon)
-                .font(.system(size: 10, weight: .medium))
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(color)
+            // The count in the label color, the color in the icon and the tint (5.7): colored digits on the tinted
+            // capsule measured 4.1 to 1.
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(.system(.caption, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(DSColors.primaryText)
         }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xxs)
         .background(
             Capsule()
                 .fill(color.opacity(0.1))
@@ -4270,8 +4400,8 @@ private struct StatChip: View {
 struct MessageListEmptyContent: View {
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                Spacer(minLength: 24)
+            VStack(spacing: DSSpacing.lg) {
+                Spacer(minLength: DSSpacing.lg)
 
                 ZStack {
                     Circle()
@@ -4285,7 +4415,7 @@ struct MessageListEmptyContent: View {
                         .frame(width: 120, height: 120)
 
                     Image(systemName: "sparkles")
-                        .font(.system(size: 48))
+                        .scaledFont(size: 48)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.purple, .blue],
@@ -4295,21 +4425,20 @@ struct MessageListEmptyContent: View {
                         )
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: DSSpacing.sm) {
                     Text("New Chat UI (V2)")
                         .font(.title3)
-                        .fontWeight(.bold)
 
                     Text(
                         "A modern, modular interface is being enabled behind a feature flag. This is the initial scaffold."
                     )
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(DSColors.secondaryText)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, DSSpacing.xl)
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: DSSpacing.md) {
                     ChatV2FeatureRow(
                         icon: "brain.head.profile", title: "Semantic Search",
                         description: "Context-aware retrieval from your documents.")
@@ -4320,13 +4449,13 @@ struct MessageListEmptyContent: View {
                         icon: "lock.shield", title: "Privacy First",
                         description: "On-Device or Private Cloud Compute.")
                 }
-                .padding(.horizontal, 32)
-                .padding(.top, 8)
+                .padding(.horizontal, DSSpacing.xl)
+                .padding(.top, DSSpacing.sm)
 
-                Spacer(minLength: 24)
+                Spacer(minLength: DSSpacing.lg)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, DSSpacing.md)
         }
     }
 }
@@ -4339,6 +4468,8 @@ private struct FirstQueryPromptView: View {
     let prompts: [String]
     let categories: [String: SuggestedQuestionsService.QuestionCategory]
     let questionDetails: [String: SuggestedQuestionsService.SuggestedQuestion]
+    /// Every prompt shown is one of the questions written by hand for the sample documents.
+    var writtenForSamples: Bool = false
     let libraryDocumentCount: Int
     let isRefreshing: Bool
     let onPromptSelected: (String) -> Void
@@ -4360,6 +4491,10 @@ private struct FirstQueryPromptView: View {
         guard !prompts.isEmpty else {
             return
                 "No grounded suggestions are ready yet. Ask about a specific warning, requirement, step, setting, or value in this library."
+        }
+
+        if writtenForSamples {
+            return "These questions were written for the sample documents."
         }
 
         guard !questionDetails.isEmpty else {
@@ -4399,7 +4534,7 @@ private struct FirstQueryPromptView: View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
             HStack(alignment: .top, spacing: DSSpacing.md) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 28, weight: .semibold))
+                    .scaledFont(size: 28, weight: .semibold)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [DSColors.accent, DSColors.accent.opacity(0.7)],
@@ -4409,7 +4544,7 @@ private struct FirstQueryPromptView: View {
                     )
                     .shadow(color: DSColors.accent.opacity(0.3), radius: 8)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(headerText)
                         .font(DSTypography.title)
                         .foregroundStyle(DSColors.primaryText)
@@ -4428,9 +4563,9 @@ private struct FirstQueryPromptView: View {
                         onRefresh()
                     } label: {
                         Image(systemName: "arrow.trianglehead.2.clockwise")
-                            .font(.system(size: 16, weight: .bold))
+                            .scaledFont(size: 16, weight: .bold)
                             .foregroundStyle(DSColors.accent)
-                            .padding(8)
+                            .padding(DSSpacing.sm)
                             .background(DSColors.accent.opacity(0.1))
                             .clipShape(Circle())
                             .rotationEffect(.degrees(isRefreshing ? 360 : 0))
@@ -4459,7 +4594,7 @@ private struct FirstQueryPromptView: View {
                 .padding(DSSpacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.orange.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
                 .accessibilityElement(children: .combine)
             }
 
@@ -4472,7 +4607,7 @@ private struct FirstQueryPromptView: View {
                             HStack(spacing: DSSpacing.md) {
                                 if let category = categories[prompt] {
                                     Image(systemName: category.icon)
-                                        .font(.system(size: 14, weight: .semibold))
+                                        .scaledFont(size: 14, weight: .semibold)
                                         .foregroundStyle(.white)
                                         .frame(width: 32, height: 32)
                                         .background(
@@ -4481,7 +4616,7 @@ private struct FirstQueryPromptView: View {
                                         )
                                 }
 
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                                     Text(prompt)
                                         .font(DSTypography.body.weight(.medium))
                                         .foregroundStyle(DSColors.primaryText)
@@ -4546,19 +4681,18 @@ struct ChatV2FeatureRow: View {
     let description: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSSpacing.md) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundColor(.accentColor)
+                .foregroundStyle(DSColors.accent)
                 .frame(width: 32)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text(title)
                     .font(.subheadline)
-                    .fontWeight(.semibold)
                 Text(description)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(DSColors.secondaryText)
             }
         }
     }
@@ -4570,13 +4704,13 @@ struct ComposerStub: View {
     @State private var text: String = ""
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 12) {
+        HStack(alignment: .bottom, spacing: DSSpacing.md) {
             TextField("Message AI...", text: $text, axis: .vertical)
                 .lineLimit(1...4)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, DSSpacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: DSCorners.sheet, style: .continuous)
                         .fill(DSColors.surface)
                 )
 
@@ -4589,14 +4723,14 @@ struct ComposerStub: View {
                         .frame(width: 36, height: 36)
 
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                        .scaledFont(size: 16, weight: .semibold)
+                        .foregroundStyle(.white)
                 }
             }
             .disabled(true)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.md)
         .background(DSColors.background)
     }
 }

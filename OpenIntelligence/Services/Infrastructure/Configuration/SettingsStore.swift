@@ -116,6 +116,7 @@ final class SettingsStore: ObservableObject {
         // Appearance
         static let appAccentColorHex = "appAccentColorHex" // nil = system default
         static let showSiliconHUD = "showSiliconHUD" // Bool - Show hardware activity overlay
+        static let showTechnicalDetails = "showTechnicalDetails" // Bool - The chat's console, stats bar and badges
         static let hudGlowIntensity = "hudGlowIntensity" // Double 0.0-1.0 - HUD glow brightness
         static let hudShowMetrics = "hudShowMetrics" // Bool - Show real-time metrics in legend
         static let hudShowTaptic = "hudShowTaptic" // Bool - Show Taptic Engine on HUD
@@ -287,6 +288,12 @@ final class SettingsStore: ObservableObject {
     /// Show the Silicon HUD overlay during processing.
     /// Displays subtle borders at the physical SoC and Taptic Engine locations.
     @Published var showSiliconHUD: Bool
+
+    /// The chat's technical view (5.7): the live stats bar, the step-by-step console while an answer is on its way,
+    /// and the badges and reasoning steps under an answer. Off on a new install, where the chat says what it is doing
+    /// in plain words instead (the owner, 2026-10-17: "I love it personally, but I'm sure it's too complicated feeling
+    /// for the average user"); on for anyone who used an earlier version, so their chat looks as it did.
+    @Published var showTechnicalDetails: Bool
 
     /// HUD glow intensity multiplier (0.0 = invisible, 1.0 = full brightness)
     @Published var hudGlowIntensity: Double
@@ -573,8 +580,22 @@ final class SettingsStore: ObservableObject {
         // Appearance settings
         // Accent color - nil means use system default
         appAccentColorHex = defaults.string(forKey: Keys.appAccentColorHex)
-        // Silicon HUD - defaults to true (show the X-ray overlay)
-        showSiliconHUD = defaults.object(forKey: Keys.showSiliconHUD) as? Bool ?? true
+        // Silicon HUD - off on a new install (5.7, the owner's word): a hardware monitor over Chat was the first thing a
+        // new person saw, with none of what they came for. Anyone who has opened the app has the setting saved
+        // (`persistAll` writes every setting at launch), so they keep what they had. Read with `bool(forKey:)` once a
+        // value exists, so a launch argument (`-showSiliconHUD NO`, which the accessibility UI test passes) reads as
+        // the Bool it names; `as? Bool` saw the string "NO" and fell back to the default (5.7).
+        showSiliconHUD =
+            defaults.object(forKey: Keys.showSiliconHUD) == nil ? false : defaults.bool(forKey: Keys.showSiliconHUD)
+        // An install that ran before has its settings saved (`persistAll` writes every one at launch, as every
+        // version has), so it keeps the chat it had; a new one starts simple (5.7). Read before anything is written
+        // this launch, from the model temperature, which no launch argument and no script sets. The first version
+        // read the X-Ray's setting, and `-showSiliconHUD NO` (the accessibility UI tests) or the screenshot steps'
+        // write of it made a new install look like one that ran before (review, 2026-10-17).
+        showTechnicalDetails =
+            defaults.object(forKey: Keys.showTechnicalDetails) == nil
+            ? defaults.object(forKey: Keys.temperature) != nil
+            : defaults.bool(forKey: Keys.showTechnicalDetails)
         hudGlowIntensity = defaults.object(forKey: Keys.hudGlowIntensity) as? Double ?? 0.6
         hudShowMetrics = defaults.object(forKey: Keys.hudShowMetrics) as? Bool ?? true
         hudShowTaptic = defaults.object(forKey: Keys.hudShowTaptic) as? Bool ?? true
@@ -667,6 +688,7 @@ final class SettingsStore: ObservableObject {
             $enableConversationMemory.map { _ in () }.eraseToAnyPublisher(),
             $appAccentColorHex.map { _ in () }.eraseToAnyPublisher(),
             $showSiliconHUD.map { _ in () }.eraseToAnyPublisher(),
+            $showTechnicalDetails.map { _ in () }.eraseToAnyPublisher(),
             $hudGlowIntensity.map { _ in () }.eraseToAnyPublisher(),
             $hudShowMetrics.map { _ in () }.eraseToAnyPublisher(),
             $hudShowTaptic.map { _ in () }.eraseToAnyPublisher(),
@@ -683,6 +705,18 @@ final class SettingsStore: ObservableObject {
             $smartReplyCount.map { _ in () }.eraseToAnyPublisher(),
             $enableSharedWorkspaceSync.map { _ in () }.eraseToAnyPublisher(),
             $fmPreference.map { _ in () }.eraseToAnyPublisher(),
+            // Saved by `persistAll` but missing from this list until 5.7 (found by a triage read, 2026-10-18). For a
+            // person, Developer & Diagnostics' Pipeline Trace and Force Reasoning Chain reverted on relaunch, since
+            // their switches change nothing else. Advanced's sampling strategy, top-K and seed were saved anyway,
+            // because its Apply also sets settings that were on the list, and document summaries and query routing
+            // have no control. The quality mode saves through its own sink, and RAG tuning is forced off by its own.
+            $samplingStrategy.map { _ in () }.eraseToAnyPublisher(),
+            $topK.map { _ in () }.eraseToAnyPublisher(),
+            $seed.map { _ in () }.eraseToAnyPublisher(),
+            $forceReasoningChain.map { _ in () }.eraseToAnyPublisher(),
+            $enableDocumentSummaries.map { _ in () }.eraseToAnyPublisher(),
+            $enableQueryRouting.map { _ in () }.eraseToAnyPublisher(),
+            $enablePipelineTrace.map { _ in () }.eraseToAnyPublisher(),
         ]
         // A `@Published` property publishes from its `willSet`, so a sink that runs straight away
         // reads the value the property had before. Through 5.6 that is what `persistAll` saved:
@@ -897,6 +931,7 @@ final class SettingsStore: ObservableObject {
         // Appearance
         defaults.set(appAccentColorHex, forKey: Keys.appAccentColorHex)
         defaults.set(showSiliconHUD, forKey: Keys.showSiliconHUD)
+        defaults.set(showTechnicalDetails, forKey: Keys.showTechnicalDetails)
         defaults.set(hudGlowIntensity, forKey: Keys.hudGlowIntensity)
         defaults.set(hudShowMetrics, forKey: Keys.hudShowMetrics)
         defaults.set(hudShowTaptic, forKey: Keys.hudShowTaptic)
@@ -1034,16 +1069,16 @@ extension SettingsStore {
             switch executionContext {
             case .automatic:
                 // Was "prefers PCC for library queries; falls back on-device", which had
-                // the direction backwards. `FoundationModelRoutePolicy.determineRoute`
-                // returns `.onDevice` on every branch of the `.automatic` path unless the
-                // estimated context *exceeds* the on-device window AND PCC is both allowed
-                // and available; `.exactLookup` is unconditionally on-device. So the device
-                // is the default and PCC is the escalation, not the preference.
-                return "On-device first; escalates to Private Cloud Compute only when a question is too large to fit on this device"
+                // the direction backwards: the device is the default. Corrected again
+                // 2026-10-15: `ModelExecutionPlanner`, which routes answers, also sends a
+                // Deep Think or Maximum answer drawn from more than one document
+                // (`complexityRequestsPCC`), not only one too large for the device.
+                return "On-device first; Private Cloud Compute, with your permission, for an answer too large for this device or a Deep Think or Maximum answer from more than one document"
             case .onDeviceOnly:
                 return "On-device only (may fail for complex queries)"
             case .preferCloud:
-                return "Prefer Private Cloud Compute (higher quality)"
+                // The planner reads no preference for the cloud, so this routes as Automatic.
+                return "On-device first; Private Cloud Compute, with your permission, for an answer too large for this device or a Deep Think or Maximum answer from more than one document"
             case .cloudOnly:
                 return "Private Cloud Compute only (requires network)"
             }

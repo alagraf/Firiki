@@ -159,7 +159,7 @@ enum LLMStreamingContext {
 /// FoundationModels.swiftinterface, Xcode 27A266a: LanguageModelSession.usage is
 /// @available(iOS 27.0, macOS 27.0, ...), Usage.Output declares totalTokenCount and
 /// reasoningTokenCount, Usage.Input declares totalTokenCount and cachedTokenCount]`
-struct GenerationUsage: Equatable {
+nonisolated struct GenerationUsage: Equatable, Codable, Sendable {
     /// Tokens the model produced, as Apple counts them, not as the app counts words.
     let outputTokens: Int
     /// Of those, the ones spent reasoning rather than writing. Zero on the on-device model,
@@ -177,6 +177,38 @@ struct GenerationUsage: Equatable {
 
     var summary: String {
         "in=\(inputTokens)(cached \(cachedInputTokens)) out=\(outputTokens) reasoning=\(reasoningTokens)"
+    }
+
+    /// Two generations' figures added up (5.7): an answer makes several model calls, and its count is all of them.
+    static func + (lhs: GenerationUsage, rhs: GenerationUsage) -> GenerationUsage {
+        GenerationUsage(
+            outputTokens: lhs.outputTokens + rhs.outputTokens,
+            reasoningTokens: lhs.reasoningTokens + rhs.reasoningTokens,
+            inputTokens: lhs.inputTokens + rhs.inputTokens,
+            cachedInputTokens: lhs.cachedInputTokens + rhs.cachedInputTokens)
+    }
+}
+
+/// Adds up Apple's usage over every model call one answer makes (5.7). `RAGService.query` sets one for the
+/// answer, `LLMService` adds each generation's figures where it reads them, and `finalizeResponse` puts the
+/// total in the answer's metadata. Deep Think and Maximum make several calls, and Standard can rewrite the
+/// question and check the answer as well as write it, so the total is what the answer cost, not its last call.
+nonisolated final class AnswerUsageTally: @unchecked Sendable {
+    @TaskLocal static var current: AnswerUsageTally?
+    private let lock = NSLock()
+    private var sum: GenerationUsage?
+
+    func add(_ usage: GenerationUsage?) {
+        guard let usage else { return }
+        lock.lock()
+        sum = sum.map { $0 + usage } ?? usage
+        lock.unlock()
+    }
+
+    var total: GenerationUsage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return sum
     }
 }
 
@@ -904,7 +936,13 @@ struct LLMResponse {
             // `for try await` — exactly what the composer's Stop button produces —
             // reached neither, and left the HUD's Neural Engine indicator lit for the
             // rest of the session. `sustain` is idempotent, so the double call is safe.
-            HardwareTelemetryReporter.reportLLMInference(active: true)
+            // A Private Cloud Compute answer is written on Apple's servers, so it lights no chip on this device; it lit
+            // the Neural Engine until 5.7. On the device, Apple's 2024 research article names its neural engines for
+            // the model's key-value cache (machinelearning.apple.com/research/introducing-apple-foundation-models).
+            if case .privateCloudCompute = actualRoute {
+            } else {
+                HardwareTelemetryReporter.reportLLMInference(active: true)
+            }
             defer { HardwareTelemetryReporter.sustain(.llmInference, active: false) }
 
             var lastTokenTimestamp = Date()
@@ -1162,6 +1200,7 @@ struct LLMResponse {
             }
             RouteLog.completed(actualTarget: actualTarget, receipt: executionReceipt)
             let usage = readUsage(from: session)
+            AnswerUsageTally.current?.add(usage)
             if let usage {
                 // Logged next to the route because the two answer different questions: the route
                 // is what the app asked for, reasoning tokens are what the model actually spent.
@@ -1298,6 +1337,7 @@ struct LLMResponse {
             }
             RouteLog.completed(actualTarget: actualTarget, receipt: executionReceipt)
             let usage = readUsage(from: session)
+            AnswerUsageTally.current?.add(usage)
             if let usage {
                 Log.info(
                     "[FM] usage \(usage.summary) route=\(actualRoute) path=structured",

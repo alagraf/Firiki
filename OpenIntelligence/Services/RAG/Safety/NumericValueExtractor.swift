@@ -52,12 +52,15 @@ nonisolated enum NumericValueExtractor {
         var attachedSuffix: String?
         /// One letter written against the front of the digits: "Q" in "Q3", "v" in "v2.1".
         var attachedPrefix: String?
+        /// True for an amount written in words (`spelledAmounts`), which only a claim's own check counts.
+        var isSpelled = false
 
         var value: Double { base * (scale?.multiplier ?? 1) }
 
         /// How the mention reads in a message: "2.5 billion", "Qwen-2.5-3B".
         var written: String {
             if let identifier { return identifier }
+            if NumericValueExtractor.isOrdinal(self) { return digits + (attachedSuffix ?? "") }
             let digits = (attachedPrefix ?? "") + digits
             guard let scale else { return digits }
             return scaleIsSuffix ? "\(digits) (\(scale.rawValue))" : "\(digits) \(scale.rawValue)"
@@ -74,6 +77,9 @@ nonisolated enum NumericValueExtractor {
         let compactText: String
         /// Scale words in the passage that do not follow a number: "(in millions)".
         let freeScales: Set<Scale>
+        /// Whole numbers from 1 to 99 the passage writes as words, "sixth" or "twenty-one", which an
+        /// ordinal in an answer ("the 6th") may stand for.
+        var spelledNumbers: Set<Int> = []
     }
 
     // MARK: - Reading
@@ -81,17 +87,19 @@ nonisolated enum NumericValueExtractor {
     /// The numbers an answer states. Citation labels ("[S2]", "[3]") and list numbers at the start
     /// of a line are not numbers the answer states, and are left out.
     static func mentions(inAnswer text: String) -> [Mention] {
-        scan(strippingAnswerMarkup(text), forEvidence: false).mentions
+        let stripped = strippingAnswerMarkup(text)
+        return scan(stripped, forEvidence: false).mentions + spelledAmounts(in: stripped)
     }
 
     static func evidence(from passages: [String]) -> [Evidence] {
         passages.map { passage in
             let result = scan(passage, forEvidence: true)
             return Evidence(
-                values: result.mentions.filter { $0.identifier == nil },
+                values: result.mentions.filter { $0.identifier == nil } + spelledAmounts(in: passage),
                 compactIdentifiers: result.mentions.compactMap { $0.identifier.map(compact) },
                 compactText: compact(passage),
-                freeScales: result.freeScales
+                freeScales: result.freeScales,
+                spelledNumbers: spelledNumbers(in: passage)
             )
         }
     }
@@ -109,6 +117,9 @@ nonisolated enum NumericValueExtractor {
     /// the gate skipped, so a right answer that says "Q3" where the passage says "third quarter" is
     /// no worse off than it was.
     static func isCountedByGate(_ mention: Mention) -> Bool {
+        // An amount in words (5.7) is checked in a claim, like an ordinal, and not by the gate over a whole answer,
+        // where "a hundred percent" or "one in a million" in a right answer would count as an unstated figure.
+        if mention.isSpelled { return false }
         if let identifier = mention.identifier {
             let range = NSRange(identifier.startIndex..., in: identifier)
             return oldCodePattern.firstMatch(in: identifier, range: range) != nil
@@ -116,6 +127,18 @@ nonisolated enum NumericValueExtractor {
         if mention.attachedPrefix != nil || mention.scaleIsSuffix { return false }
         guard let suffix = mention.attachedSuffix else { return true }
         return gateUnits.contains(suffix)
+    }
+
+    /// Whether this is a whole number written as an ordinal: "6th", "21st". The gate has never
+    /// counted these (`isCountedByGate`). A claim's check counts them from 5.7, against the same
+    /// number in digits or in words, so "the 16th day" is not Supported by a passage that says "the
+    /// 6th day" (`ClaimCheckEvaluationTests`, a known gap from 2026-10-09).
+    static func isOrdinal(_ mention: Mention) -> Bool {
+        guard mention.identifier == nil, mention.scale == nil, mention.attachedPrefix == nil,
+            let suffix = mention.attachedSuffix?.lowercased(), ["st", "nd", "rd", "th"].contains(suffix),
+            mention.base >= 1, mention.base == mention.base.rounded()
+        else { return false }
+        return true
     }
 
     // MARK: - Matching
@@ -148,8 +171,238 @@ nonisolated enum NumericValueExtractor {
             let named = word + compact(mention.digits)
             if evidence.contains(where: { $0.compactIdentifiers.contains { $0.contains(named) } }) { return true }
         }
+        // "the 6th" against "the sixth day".
+        if isOrdinal(mention), evidence.contains(where: { $0.spelledNumbers.contains(Int(mention.base)) }) {
+            return true
+        }
         return false
     }
+
+    private static let unitWords: [String: Int] = [
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+        "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
+        "ninth": 9,
+    ]
+    private static let teenWords: [String: Int] = [
+        "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+        "seventeen": 17, "eighteen": 18, "nineteen": 19, "tenth": 10, "eleventh": 11, "twelfth": 12,
+        "thirteenth": 13, "fourteenth": 14, "fifteenth": 15, "sixteenth": 16, "seventeenth": 17,
+        "eighteenth": 18, "nineteenth": 19,
+    ]
+    private static let tensWords: [String: Int] = [
+        "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80,
+        "ninety": 90, "twentieth": 20, "thirtieth": 30, "fortieth": 40, "fiftieth": 50, "sixtieth": 60,
+        "seventieth": 70, "eightieth": 80, "ninetieth": 90,
+    ]
+
+    /// The whole numbers from 1 to 99 a text writes as words, cardinal or ordinal: "twenty-first" is 21.
+    static func spelledNumbers(in text: String) -> Set<Int> {
+        let words = text.lowercased().split { !$0.isLetter }.map(String.init)
+        var found: Set<Int> = []
+        var index = 0
+        while index < words.count {
+            let word = words[index]
+            if let tens = tensWords[word] {
+                // "twenty-one", "thirty first": a tens word runs into the unit after it.
+                if !word.hasSuffix("tieth"), index + 1 < words.count, let unit = unitWords[words[index + 1]] {
+                    found.insert(tens + unit)
+                    index += 2
+                    continue
+                }
+                found.insert(tens)
+            } else if let value = unitWords[word] ?? teenWords[word] {
+                found.insert(value)
+            }
+            index += 1
+        }
+        return found
+    }
+
+    /// The amounts a text writes in words, as values (5.7): a number with "hundred", "thousand", "million", "billion"
+    /// or "trillion" in it ("four hundred", "a thousand", "two thousand five hundred"), or one followed by "dollars",
+    /// "dollar", "euros" or "euro" ("twenty-five dollars"; "five dollars and fifty cents" is 5.50). A claim's check
+    /// counts them like digits (`isSpelled`; the gate over a whole answer does not), and in a passage they are values an
+    /// answer's digits can match. Through 5.6 only digits were read, so "Pets are allowed with a refundable deposit of
+    /// four hundred dollars" read Supported against a lease asking $300.00 (household sample set, Check a Claim in the
+    /// iOS 27.0 Simulator, 2026-10-20).
+    ///
+    /// Not read: a small number with no amount word after it ("two cats", "one dog"), which prose says without stating
+    /// a figure; words that run on without a number's grammar ("five twenty", "nineteen ninety", "two thousand and three
+    /// thousand"); a share or a decimal ("half a million", "a quarter of a million", "two point five million"); and
+    /// "one in a million", "a hundred percent" and "a thousand times", which say no figure. Punctuation, a line break
+    /// or digits end an amount, so a list or range in words ("two hundred, three hundred dollars") is read as its parts.
+    static func spelledAmounts(in text: String) -> [Mention] {
+        let lowered = text.lowercased()
+        guard amountTriggers.contains(where: { lowered.contains($0) }) else { return [] }
+        let words = amountWords(in: lowered)
+        enum Last { case none, unit, teen, tens, hundred, scale, joiner }
+        var found: [Mention] = []
+        var index = 0
+        while index < words.count {
+            let first = words[index].word
+            let before = index > 0 ? words[index - 1].word : ""
+            // A decimal's whole part follows "point"; "a" after a share or "in" is not one ("half a million", "a
+            // quarter of a million", "one in a million").
+            if words[index].joined,
+                before == "point" || ((first == "a" || first == "an") && shareWords.contains(before))
+            {
+                index += 1
+                continue
+            }
+            var cursor = index
+            var total = 0.0, value = 0.0
+            var last = Last.none
+            var lastScale = Double.infinity
+            var multiplied = false
+            var used: [String] = []
+            // The amount as it stood after its last "hundred" or scale word. Number words after it that a "hundred" or
+            // scale word cannot take are the start of the next amount: "two hundred three hundred" is 200 then 300, and
+            // "two thousand and three thousand" is 2,000 then 3,000, not 2,003.
+            var saved: (cursor: Int, total: Double, value: Double, used: [String])?
+            func restore() {
+                guard let saved, last == .unit || last == .teen || last == .tens else { return }
+                cursor = saved.cursor
+                total = saved.total
+                value = saved.value
+                used = saved.used
+                last = .hundred
+            }
+            while cursor < words.count {
+                if cursor > index, !words[cursor].joined { break }
+                let word = words[cursor].word
+                let following = cursor + 1 < words.count && words[cursor + 1].joined ? words[cursor + 1].word : ""
+                let leadingA = used == ["a"] || used == ["an"]
+                if let number = cardinalWords[word] {
+                    let kind: Last = number < 10 ? .unit : number < 20 ? .teen : .tens
+                    // A number word starts an amount or follows a multiplier or "and"; after a tens word only a unit
+                    // goes on ("twenty-five").
+                    if last == .unit || last == .teen || (last == .tens && kind != .unit) { break }
+                    value += Double(number)
+                    last = kind
+                } else if word == "hundred" {
+                    // Only a value of 1 to 99 takes hundreds: "four hundred", not "two hundred three hundred".
+                    guard leadingA || ((last == .unit || last == .teen || last == .tens) && value >= 1 && value < 100)
+                    else {
+                        restore()
+                        break
+                    }
+                    value = max(value, 1) * 100
+                    last = .hundred
+                    multiplied = true
+                    used.append(word)
+                    cursor += 1
+                    saved = (cursor, total, value, used)
+                    continue
+                } else if let scale = amountScales[word] {
+                    // A scale smaller than the one before it: "two million five hundred thousand", not "two thousand
+                    // three thousand".
+                    guard scale < lastScale, leadingA || (value > 0 && last != .joiner) else {
+                        restore()
+                        break
+                    }
+                    total += max(value, 1) * scale
+                    value = 0
+                    lastScale = scale
+                    last = .scale
+                    multiplied = true
+                    used.append(word)
+                    cursor += 1
+                    saved = (cursor, total, value, used)
+                    continue
+                } else if word == "a" || word == "an", used.isEmpty, following == "hundred" || amountScales[following] != nil {
+                    last = .none
+                } else if word == "and", last == .hundred || last == .scale, let next = cardinalWords[following],
+                    next < 100
+                {
+                    // "four hundred and fifty": only a tail under a hundred.
+                    last = .joiner
+                } else {
+                    break
+                }
+                used.append(word)
+                cursor += 1
+            }
+            var amount = total + value
+            let next = cursor < words.count && words[cursor].joined ? words[cursor].word : ""
+            let currency = currencyWords.contains(next)
+            let idiom = next == "times" || (next == "percent" && amount == 100)
+            if amount > 0, last != .joiner, next != "point", !idiom, multiplied || currency {
+                var end = cursor
+                if currency {
+                    end += 1
+                    let (cents, length) = centsAfter(end, in: words)
+                    amount += cents
+                    end += length
+                }
+                found.append(
+                    Mention(
+                        digits: used.joined(separator: " "), base: amount, scale: nil, scaleIsSuffix: false,
+                        identifier: nil, precedingWord: before.isEmpty ? nil : before, attachedSuffix: nil,
+                        attachedPrefix: nil, isSpelled: true))
+                index = max(end, index + 1)
+            } else {
+                index = max(cursor, index + 1)
+            }
+        }
+        return found
+    }
+
+    /// The words of a lowercased text, each with whether only spaces, or spaces and one hyphen ("twenty-five"), part it
+    /// from the word before. Anything else between two words (punctuation, a line break, digits) parts an amount.
+    private static func amountWords(in lowered: String) -> [(word: String, joined: Bool)] {
+        var words: [(word: String, joined: Bool)] = []
+        var current = ""
+        var separator = ""
+        func close() {
+            guard !current.isEmpty else { return }
+            let trimmed = separator.trimmingCharacters(in: CharacterSet(charactersIn: " \t"))
+            words.append((current, trimmed.isEmpty || trimmed == "-" || trimmed == "‑"))
+            current = ""
+            separator = ""
+        }
+        for character in lowered {
+            if character.isLetter {
+                current.append(character)
+            } else {
+                close()
+                separator.append(character)
+            }
+        }
+        close()
+        return words
+    }
+
+    /// "and fifty cents" or "and twenty-five cents" at `start`, as a share of one, with how many words it took.
+    private static func centsAfter(_ start: Int, in words: [(word: String, joined: Bool)]) -> (Double, Int) {
+        guard start + 2 < words.count, words[start].word == "and", words[start].joined, words[start + 1].joined,
+            let first = cardinalWords[words[start + 1].word]
+        else { return (0, 0) }
+        if words[start + 2].joined, words[start + 2].word.hasPrefix("cent") { return (Double(first) / 100, 3) }
+        if first >= 20, start + 3 < words.count, let unit = cardinalWords[words[start + 2].word], unit < 10,
+            words[start + 2].joined, words[start + 3].joined, words[start + 3].word.hasPrefix("cent")
+        {
+            return (Double(first + unit) / 100, 4)
+        }
+        return (0, 0)
+    }
+
+    /// Words before "a" that make it not a number: a share ("half a million", "a quarter of a million") or "one in a
+    /// million".
+    private static let shareWords: Set<String> = ["half", "quarter", "quarters", "third", "thirds", "of", "in"]
+
+    /// Words without which a text holds no amount in words, checked before it is split into words.
+    private static let amountTriggers = ["hundred", "thousand", "million", "billion", "trillion", "dollar", "euro"]
+
+    private static let cardinalWords: [String: Int] = [
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+        "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+        "seventy": 70, "eighty": 80, "ninety": 90,
+    ]
+    private static let amountScales: [String: Double] = [
+        "thousand": 1_000, "million": 1_000_000, "billion": 1_000_000_000, "trillion": 1_000_000_000_000,
+    ]
+    private static let currencyWords: Set<String> = ["dollars", "dollar", "euros", "euro"]
 
     /// The first number in `sentence` that no passage states, or nil. `exempt` lets the caller pass
     /// numbers it does not check, such as years.
