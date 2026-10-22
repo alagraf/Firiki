@@ -1,168 +1,33 @@
-# OpenIntelligence — Repository Operating Protocol
+# Claude Code: thesis fork
 
-<!-- Context OS control plane. Detail belongs in Docs/ai/ and Docs/, not here. Keep under 200 lines. -->
+@AGENTS.md
 
-Local-first RAG app for Apple platforms, shipping on the App Store. Swift/SwiftUI, one Xcode
-project plus a local SwiftPM engine target. Ingestion, indexing, retrieval and ranking run on
-device. Only the final answer may optionally reach Apple Private Cloud Compute, after consent.
+The rules above (`AGENTS.md`) apply in full. This file only adds Claude Code's role.
 
-`AGENTS.md` is the full cross-agent directive list. Claude Code reads `CLAUDE.md` and not
-`AGENTS.md`, so the operative parts are restated below. **`AGENTS.md` wins on what any directive
-requires; this file governs what to load and when.** Every directive in it is binding as written.
-Its rule 15 is the loading rule, restated under "Where things live" below.
+## Role: planner
 
-`Docs/AgentPlaybooks/00_SUPERSEDING_EVIDENCE_PROTOCOL.md` overrides both. Read it before any audit
-or documentation pass.
+- Turn the owner's request into a plan before any edit:
+  - the goal in one sentence;
+  - the files and functions you read, with line ranges;
+  - every file you'd change, and what changes in each;
+  - how it will be verified (exact commands);
+  - the open questions.
 
-## Before your first action
+  Then stop and wait for approval.
+- When the plan is for Antigravity to execute, save it as `Docs/Thesis/plans/<short-name>.md` and
+  tell the owner the path.
+- When the owner approves a small task here, carry it out, then show the test or build output as
+  `AGENTS.md` requires.
 
-1. **Builds fail here for a non-obvious reason.** The repo lives in iCloud-synced `~/Documents`.
-   iCloud writes duplicate files (`Foo 2.swift`) that Xcode's synchronized file groups compile for
-   real, and stamps extended attributes that break `codesign`. On any nonsensical build failure run
-   `scripts/check_icloud_conflicts.sh --fix` **before** debugging code. Always build with
-   `-derivedDataPath` outside `~/Documents`. `.git` is a file pointing at `.git.nosync` on purpose;
-   do not "fix" it.
-2. **Route the task.** Run the preflight (below). It reports the binding read-first docs, allowed
-   and forbidden edit paths, required tests and required doc updates for the matched route. Those
-   are not advisory. Read its `state` alongside `version`: `in_development` means `last_shipped` is
-   already out and new work targets the *next* release, never that one.
-3. **Implementation gate.** Present a plan and wait for an explicit `PROCEED: IMPLEMENT` before the
-   first source edit. "It is only a log line" is not an exemption.
-4. **Hard-boundary files.** Never edit unless the user names the file in their approval:
-   `project.pbxproj`, `*.storekit`, `*.entitlements`, `Info.plist` capabilities, `Package.swift`
-   pins, `ChatMessage.swift`, `WorkspaceSyncService.swift`, `SQLiteFullTextService.swift` schema,
-   `BNNSVectorDatabase.swift` format, `EntitlementStore.swift`, `QuotaPolicy.swift` tier limits,
-   `RAGAppIntents.swift` shortcut count, `FoundationModelRoutePolicy.swift`,
-   `FoundationModelSessionFactory.swift`, `EngineSDKCompatibility.swift`. Reasons in
-   `Docs/RepoOS/03_FORBIDDEN_EDIT_BOUNDARIES.md`.
-5. **Docs move in the same turn as code.** A code change without its matching doc update is an
-   incomplete task, not a follow-up. The path-to-doc table is `.agents/rules/01-docs-and-notion-sync.md`.
-   `.claude/rules/` restates the parts that apply to files you are actually editing.
+## Keeping the context small
 
-## Non-negotiables
+- Read `Docs/ai/codemap/INDEX.md` and the feature slice before opening source files, and read
+  functions by range, never whole large files.
+- Don't load the original author's documentation set. `Docs/` describes the original app; open a
+  document only when the task needs it.
 
-- **Never answer "I don't know" about something installed on this machine or published on the web.**
-  A knowledge cutoff is a reason to look, not a reason to shrug. Xcode, the SDKs, the simulators and
-  every framework are on disk: `find`, `strings`, `plutil` and `--help` answer questions about them
-  in seconds. For anything Apple ships or documents, check the local install first and
-  `developer.apple.com` second. Telling the user to go look themselves, when the artifact is on
-  their own machine, is the failure this rule exists to prevent — it happened on 2026-08-18 with the
-  Xcode 27 Instruments templates, which took one `find` to enumerate.
-- Never run destructive git commands. Never `git add .`. Never delete docs.
-- **Never delete a benchmark run directory.** `BenchmarkRuns/*` is gitignored, so a deleted run is
-  gone permanently, and its `results.jsonl` is the only auditable evidence behind whatever
-  `LEDGER.md` claims about it. On 2026-08-19 three directories were deleted during tidying and took
-  with them the raw data behind a figure the ledger still cites. Tidy the ledger, never the runs.
-- Never claim a command passed unless you ran it and read the output.
-- Every architecture or documentation claim carries `[evidence_level: ..., confidence: ...]`.
-- Do not present a conceptual relationship as an exact code linkage.
-- Before removing a factual claim from user-facing copy, docs, or the roadmap, use the
-  `oi-claim-audit` skill. Withdrawing a true claim has happened here and costs more than leaving it.
-- Roadmap truth is the Notion database, not `Docs/ROADMAP.md`. Use the `notion-roadmap` skill; never
-  answer a roadmap question from memory, and never locate the database by workspace search.
-- **Start substantive work from the roadmap, not from what you just noticed.** Before proposing what
-  to do next, read the active-release rows. Work that is not on the board is work nobody decided to
-  do.
-- **The active release is scope-frozen. New findings default to `Future Backlog`.** A defect only
-  gets the active release if it passes one of three tests, and you must say which in the row:
-  1. It loses or corrupts user data.
-  2. It makes an advertised capability not work.
-  3. It blocks the build from shipping at all.
-  Everything else — quality improvements, performance, features, tooling, test coverage — is
-  `Future Backlog` unless the user explicitly pulls it in. Finding a bug is not the same as
-  scheduling it, and conflating those is what makes a release scope grow every time work gets done.
-- **Fixed is not closed.** A row moves to `Completed` only when its behaviour is verified where the
-  defect appeared, which for this app usually means on device. Suite-green closes nothing. Say what
-  would close a row at the moment you claim it is fixed.
-- **`Status` tracks the work; `Shipped On` tracks reach.** Decided 2026-08-28. A verified fix that is
-  live on one platform is `Completed` with `Shipped On` naming that platform, not held open because
-  the other platform has not had a release. The platforms diverged on 2026-08-26 — macOS reached
-  5.0.2 while iOS is on 5.0 — and before the property existed such a row had no honest state:
-  `Completed` lied to an iPhone user, `In Progress` lied to a Mac user. Leaving `Shipped On` empty
-  means *not recorded*, never *not shipped*.
+## Apple APIs
 
-## Commands
-
-Verified in this repository:
-
-```bash
-python3 .codex/skills/route-openintelligence-work/scripts/repoos_router.py preflight --task "..." --path <path>
-```
-
-```bash
-python3 scripts/secret_scan.py
-```
-
-```bash
-scripts/check_icloud_conflicts.sh
-```
-
-```bash
-python3 .claude/codemap/codemap.py check
-```
-
-Build and test, from `Docs/ai/RUNBOOK.md`, which records what has and has not been re-verified:
-
-```bash
-bash scripts/build_simulator_smoke.sh
-```
-
-Xcode 27.0 (`27A266a`, Swift 6.4) is the installed release at `/Applications/Xcode.app` and is
-what `xcode-select` points at; `/Applications/Xcode-beta.app` was removed on 2026-09-10.
-Scheme `OpenIntelligence`, test target
-`OpenIntelligenceTests`. `xcodebuild test` needs an explicit iOS 27 simulator destination and a
-`-derivedDataPath` outside `~/Documents`; the exact invocation is in the runbook's `## Test` section.
-
-## Where things live
-
-| Need | Read |
-|---|---|
-| Current objective, blockers, exact next action | `Docs/ai/STATE.md` |
-| What the project is, scope, constraints | `Docs/ai/PROJECT.md` |
-| Component map and which doc owns which area | `Docs/ai/ARCHITECTURE.md` |
-| Why something is the way it is | `Docs/ai/DECISIONS.md` |
-| How to build, test, release, recover | `Docs/ai/RUNBOOK.md` |
-| Full agent directives | `AGENTS.md` |
-| Tool-neutral pointer for agents that do not read this file | `HANDOFF.md` |
-| Evidence and supersession rules, before any audit or docs pass | `Docs/AgentPlaybooks/00_SUPERSEDING_EVIDENCE_PROTOCOL.md` |
-| Routing, edit boundaries, release gate | `Docs/RepoOS/` |
-| Absolute ground truth on product claims | `Docs/CANONICAL_OPENINTELLIGENCE_SOURCE_OF_TRUTH.md` |
-| Subsystem detail | `Docs/OPENINTELLIGENCE_ARCHITECTURE_ATLAS.md`, `Docs/RETRIEVAL_PIPELINE.md`, `Docs/INGESTION_PIPELINE.md`, `Docs/PRIVACY_AND_ROUTING.md` |
-| Every file at once: which docs still match the code, unused Swift, loose files | the `repo-map` skill, which rebuilds the owner's Repo Map page |
-| Which code makes up a feature, and what ties into what | `Docs/ai/codemap/INDEX.md`, then that feature's `features/<id>.json`; the prompt hook prints the slice a prompt names (`AGENTS.md` rule 19) |
-
-Load these on demand. Do not read the documentation set by default. Every task reads `Docs/ai/STATE.md`,
-the superseding protocol and `Docs/ai/ARCHITECTURE.md`; the preflight names the rest. Read large
-files by section (`grep -n '^## ' <file>`, then that range), never whole: `CHANGELOG.md` (only its
-first numbered section is the open release), `Docs/ai/RUNBOOK.md`, `Docs/ai/DECISIONS.md`, the Atlas,
-`Docs/INGESTION_PIPELINE.md`. Swift is no different: `RAGService.swift` is about 1 MB and 20,000
-lines, so find the symbol with `grep -n` and read that range.
-
-## Context governance
-
-Route durable information to one home and do not copy it across layers:
-
-- Invariant that applies every session → this file.
-- Rule that applies only to certain paths → `.claude/rules/`.
-- Repeatable procedure → `.claude/skills/`.
-- Current execution state → `Docs/ai/STATE.md`.
-- Stable project truth → `Docs/ai/PROJECT.md`, `Docs/ai/ARCHITECTURE.md`.
-- Rationale that cannot be reconstructed from code → `Docs/ai/DECISIONS.md`.
-- Operational procedure → `Docs/ai/RUNBOOK.md`.
-- Recurring quirk you learned the hard way → auto memory.
-- Broad repository exploration → an isolated Explore subagent, not the main context.
-- Parallel write-capable work in this repo → a separate git worktree, created outside `~/Documents`.
-  One writer per checkout. Two write-capable sessions in the same checkout will fight.
-
-A subagent that can write inherits every rule in this file. It does **not** inherit an approval:
-`PROCEED: IMPLEMENT` is granted to you by the user, not to an agent you spawn, and a subagent may
-not touch a hard-boundary file for the same reason you may not. Delegate reading and analysis
-freely; delegate edits only inside an approval you already hold, and say so in the subagent's brief.
-
-## Handoff
-
-Before ending substantive work, and when the objective materially changes, run the
-`project-handoff` skill so `Docs/ai/STATE.md` stands on its own without this transcript. A fresh
-session should be able to open `STATE.md` and take the next action without asking anything.
-
-Do not paste conversation summaries into durable docs. Do not record a test result you did not run.
+Answer questions about Apple frameworks from the SDK installed on this machine and Apple's
+documentation, not from memory. The `apple-api-truth` skill describes how. Before naming the cause
+of a bug, use `diagnose-before-claiming`.
