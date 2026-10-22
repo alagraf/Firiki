@@ -6,9 +6,10 @@ Apple Intelligence. It is the reference for the thesis's implementation chapter 
 updated with every further change.
 
 - **Repository:** `OpenIntelligence-main/` (thesis folder)
-- **Branch:** `thesis-sync`. It holds every fork change rebuilt on the original repository's
-  history, plus the sync with the original author's latest code (2.7). The earlier local `main`
-  (same changes, no shared history) is kept unchanged until the owner switches over.
+- **Branch:** `main`. It holds every fork change rebuilt on the original repository's history, plus
+  the sync with the original author's latest code (2.7). It was developed as `thesis-sync` and
+  renamed to `main` on 2026-10-22. The earlier `main` (the same fork changes before the sync, with no
+  shared history) is kept as the backup branch `main-pre-sync`.
 - **Original repository:** https://github.com/Gunnarguy/OpenIntelligence (git remote `upstream`);
   the owner's GitHub fork is https://github.com/alagraf/OpenIntelligence
 - **Last updated:** 2026-10-22
@@ -340,7 +341,7 @@ That costs tokens and doesn't apply to a thesis. `DocumentProcessor.swift` (abou
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):
 
 ```bash
-git log --oneline --first-parent 67977e40..thesis-sync
+git log --oneline --first-parent 67977e40..main
 ```
 
 One change, for example the jurisdiction caveat:
@@ -352,7 +353,7 @@ git show f11ce119 --stat
 Everything the fork changes compared with the original author's latest code:
 
 ```bash
-git diff upstream/main thesis-sync -- OpenIntelligence
+git diff upstream/main main -- OpenIntelligence
 ```
 
 ## 4. Open items and known limitations
@@ -364,8 +365,6 @@ git diff upstream/main thesis-sync -- OpenIntelligence
   signal is "unknown". Court authority (for example Areios Pagos plenary decisions versus
   lower courts) and whether a provision was in force on the date of the facts aren't handled yet;
   both need per-document legal metadata.
-- **Switch `main` to `thesis-sync`:** the local `main` still holds the pre-sync history. Until the
-  owner switches, work continues on `thesis-sync`.
 - **Device checks after the sync (2.7):** import freeze, Greek PDFs, and the Share and Lock Screen
   capture extensions with the fork's app group still need checking on an iPhone.
 - **Live Activities:** the fork setup (2.1) removed `NSSupportsLiveActivities` and
