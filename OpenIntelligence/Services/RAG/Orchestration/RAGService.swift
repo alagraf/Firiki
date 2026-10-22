@@ -10392,7 +10392,7 @@ class RAGService: ObservableObject {
     ) async throws -> RAGResponse {
         resetThinkingTimeline()
         finishAnswerNowRequested = false
-        return try await LLMStreamingContext.$handler.withValue(streamHandler) {
+        let response = try await LLMStreamingContext.$handler.withValue(streamHandler) {
             try await self.queryInternal(
                 question,
                 topK: topK,
@@ -10403,6 +10403,27 @@ class RAGService: ObservableObject {
                 trace: trace
             )
         }
+        return applyingJurisdictionCaveat(to: response, query: question)
+    }
+
+    /// Evidence from another legal order is used, never refused, and the answer says so. Applied
+    /// here, at the entry point, because not every internal path reaches `finalizeResponse`: the
+    /// Deep Think and Maximum precision lookup (`executeAgenticPrecisionLookupIfAvailable`) returns
+    /// its own response, and a caveat applied only in the finalizer never reached those answers.
+    private func applyingJurisdictionCaveat(to response: RAGResponse, query: String) -> RAGResponse {
+        let caveated = JurisdictionService.caveated(
+            response.generatedResponse, query: query, chunks: response.retrievedChunks)
+        guard caveated != response.generatedResponse else { return response }
+        return RAGResponse(
+            id: response.id,
+            queryId: response.queryId,
+            retrievedChunks: response.retrievedChunks,
+            generatedResponse: caveated,
+            metadata: response.metadata,
+            confidenceScore: response.confidenceScore,
+            qualityWarnings: response.qualityWarnings,
+            structuredAnswer: response.structuredAnswer?.updatingAnswer(caveated)
+        )
     }
 
     /// - Parameter trace: optional per-query stage recorder for the retrieval benchmark. Nil
@@ -18276,13 +18297,7 @@ class RAGService: ObservableObject {
         // Clean up the response text (normalize whitespace, preserve markdown formatting)
         let cleanedResponse = cleanupResponseText(response.generatedResponse)
         let stabilizedResponse = trimIncompleteResponseTail(cleanedResponse)
-        let urlRepairedResponse = repairMalformedURLs(stabilizedResponse)
-        // Evidence from another legal order is used, never refused, and the answer says so. Every
-        // answer path ends here, so this is the one place the caveat covers all of them.
-        let jurisdictionCaveat = JurisdictionService.assess(query: query, chunks: response.retrievedChunks).caveat
-        let repairedResponse = jurisdictionCaveat.map {
-            JurisdictionService.applyingCaveat($0, to: urlRepairedResponse)
-        } ?? urlRepairedResponse
+        let repairedResponse = repairMalformedURLs(stabilizedResponse)
         let finalizedStructuredAnswer = response.structuredAnswer?.updatingAnswer(repairedResponse)
         let fallbackReasoningTrace = await MainActor.run {
             self.thinkingEvents.compactReasoningTrace()

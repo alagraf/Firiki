@@ -94,6 +94,36 @@ final class JurisdictionServiceTests: XCTestCase {
         XCTAssertNil(assessment.caveat)
     }
 
+    // MARK: - Applied at the entry point
+
+    /// `RAGService.query` applies this to every answer, including the Deep Think and Maximum
+    /// precision lookup that never reaches `finalizeResponse`.
+    func testCaveatedAnswerCarriesTheGreekCaveatForCypriotEvidence() {
+        let answer = "Η αποζημίωση οφείλεται όταν η απόλυση γίνεται χωρίς εύλογη αιτία [S1]."
+        let caveated = Service.caveated(
+            answer,
+            query: "Πότε οφείλεται αποζημίωση απόλυσης;",
+            chunks: [passage(cypriotCourt)]
+        )
+        XCTAssertTrue(caveated.hasPrefix("*Σημείωση: Οι διαθέσιμες πηγές αφορούν το κυπριακό δίκαιο"))
+        XCTAssertTrue(caveated.hasSuffix(answer))
+    }
+
+    func testCaveatedAnswerIsUnchangedWithoutAMismatch() {
+        let answer = "Η καταγγελία πρέπει να είναι έγγραφη [S1]."
+        XCTAssertEqual(
+            Service.caveated(answer, query: "Πώς γίνεται η καταγγελία;", chunks: [passage(greekStatute)]),
+            answer
+        )
+    }
+
+    func testCaveatedIsSafeToApplyTwice() {
+        let query = "Πότε οφείλεται αποζημίωση απόλυσης;"
+        let chunks = [passage(cypriotCourt)]
+        let once = Service.caveated("Απάντηση.", query: query, chunks: chunks)
+        XCTAssertEqual(Service.caveated(once, query: query, chunks: chunks), once)
+    }
+
     func testCaveatIsAppliedOnce() {
         let once = Service.applyingCaveat("Note: x", to: "Answer.")
         XCTAssertEqual(once, "*Note: x*\n\nAnswer.")

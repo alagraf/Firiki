@@ -284,6 +284,13 @@ enum JurisdictionService {
             + "and can serve only as persuasive or interpretive material."
     }
 
+    /// The answer with the caveat its evidence calls for, or the answer unchanged when none does.
+    /// Safe to apply more than once.
+    nonisolated static func caveated(_ answer: String, query: String, chunks: [RetrievedChunk]) -> String {
+        guard let caveat = assess(query: query, chunks: chunks).caveat else { return answer }
+        return applyingCaveat(caveat, to: answer)
+    }
+
     /// Prefixes the caveat once. A response that already carries it is returned unchanged.
     nonisolated static func applyingCaveat(_ caveat: String, to response: String) -> String {
         let marked = "*\(caveat)*"
