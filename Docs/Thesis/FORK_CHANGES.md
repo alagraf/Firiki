@@ -12,7 +12,7 @@ updated with every further change.
   shared history) is kept as the backup branch `main-pre-sync`.
 - **Original repository:** https://github.com/Gunnarguy/OpenIntelligence (git remote `upstream`);
   the owner's GitHub fork is https://github.com/alagraf/OpenIntelligence
-- **Last updated:** 2026-10-22
+- **Last updated:** 2026-10-23
 
 ## 1. Baseline
 
@@ -46,7 +46,8 @@ thesis change.
 | 2.6 | 2026-10-22 | `943e8639` | Answer verification | Jurisdiction caveat applied at the query entry point so every answer path gets it |
 | 2.7 | 2026-10-22 | `f0f8fd6a` | Sync | Original author's latest code merged in (139 commits), keeping the fork's identity and guardrails |
 | 2.8 | 2026-10-22 | `8f757eb5` | Agent workflow | Original author's agent rules, hooks and routing replaced by the thesis workflow |
-| 2.9 | 2026-10-22 | commit after `8f757eb5` | Documentation | Stale retrieval-pipeline note fixed; smoke build defaults to an installed simulator; this record updated |
+| 2.9 | 2026-10-22 | `97604145` | Documentation | Stale retrieval-pipeline note fixed; smoke build defaults to an installed simulator; this record updated |
+| 2.10 | 2026-10-23 | commit after `6b221e5d` | Answer verification | Jurisdiction caveat removed (2.5's caveat and 2.6); the medical check stays removed |
 
 Commits `2e2d9086` and `10da7226` added and updated this document. Before the history was rebuilt,
 2.1–2.6 had the commit IDs `e61cbb4`, `e61cbb4`, `1244d88`, `c73c6d5`, `61218d3` and `7b83c4a`.
@@ -139,7 +140,7 @@ simplifies the navigation.
 `CHANGELOG.md`, for example the Shortcuts actions, JSON Lines import and app links. Documentation
 only: the code those entries describe is still in the app.
 
-### 2.5 Medical domain isolation replaced by a jurisdiction caveat (`f11ce119`)
+### 2.5 Medical domain isolation replaced by a jurisdiction caveat (`f11ce119`; caveat removed in 2.10)
 
 **Problem observed:** answers were replaced with:
 
@@ -223,7 +224,7 @@ and the answer says what it is.
   "When is severance pay owed?" returned an answer that opened with the English caveat. The
   simulator has no Apple Intelligence, so this was the excerpt-answer path, not a written one.
 
-### 2.6 Caveat applied at the query entry point (`943e8639`)
+### 2.6 Caveat applied at the query entry point (`943e8639`; removed in 2.10)
 
 **Problem observed (reported 2026-10-22):** with the model writing answers, a question asked in
 Greek showed no caveat. The mode and documents used weren't recorded.
@@ -336,6 +337,33 @@ That costs tokens and doesn't apply to a thesis. `DocumentProcessor.swift` (abou
 - `scripts/build_simulator_smoke.sh` defaults to the iPhone 18 Pro simulator, which is installed,
   instead of the iPhone 17 Pro.
 
+### 2.10 Jurisdiction caveat removed
+
+**Why:** on 2026-10-23 the owner reported that the caveat doesn't actually work and asked for it to
+be reverted. The cause wasn't investigated. The removal of the medical domain-isolation check (2.5)
+is kept, so the "DOMAIN ISOLATION BREACH" error can't return. Nothing replaces it; answers no longer
+carry any jurisdiction note.
+
+**What changed:**
+- `JurisdictionService.swift` and `JurisdictionServiceTests.swift` (13 tests) deleted.
+- `RAGService.query` returns the answer directly again. It is now identical to the original
+  author's latest version.
+- Verification gate I (`VerificationGate.jurisdiction`) removed. The fork runs gates A–H, so the
+  overall confidence is the average of eight gates instead of nine. Gate I always passed, so the
+  average can come out slightly lower than before.
+- The Settings capability list now says "Verification Gates A–H" and "8-stage" instead of "A–I" and
+  "9-stage".
+- Comments and docs updated: `SourceOnlyAnswerService.swift`, `VerificationGateService.swift`'s
+  header, `Docs/HOW_IT_WORKS.md` (Gate I row removed, with a note that the fork runs eight checks),
+  `Docs/RETRIEVAL_PIPELINE.md`, `AGENTS.md`.
+
+**Files:** `JurisdictionService.swift` (deleted), `JurisdictionServiceTests.swift` (deleted),
+`RAGService.swift`, `VerificationGateService.swift`, `SourceOnlyAnswerService.swift`,
+`SettingsView.swift`, `Docs/HOW_IT_WORKS.md`, `Docs/RETRIEVAL_PIPELINE.md`, `AGENTS.md`,
+`CHANGELOG.md`
+
+**Verification:** see the commit message for the build and test results.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):
@@ -358,13 +386,8 @@ git diff upstream/main main -- OpenIntelligence
 
 ## 4. Open items and known limitations
 
-- **iPhone check pending:** the caveat has been seen working on macOS (M3 MacBook Pro), but not yet
-  on an iPhone. For a complete record, check a Greek question in each mode (Standard, Deep Think,
-  Maximum); Deep Think and Maximum lookups are the path fixed in 2.6.
-- **Jurisdiction is recognised from text patterns only.** A chunk with no citation, court or gazette
-  signal is "unknown". Court authority (for example Areios Pagos plenary decisions versus
-  lower courts) and whether a provision was in force on the date of the facts aren't handled yet;
-  both need per-document legal metadata.
+- **No legal-specific check on answers:** since 2.10, nothing flags evidence from another legal order,
+  a lower-authority court, or a provision that wasn't in force on the date of the facts.
 - **Device checks after the sync (2.7):** import freeze, Greek PDFs, and the Share and Lock Screen
   capture extensions with the fork's app group still need checking on an iPhone.
 - **Live Activities:** the fork setup (2.1) removed `NSSupportsLiveActivities` and
@@ -387,5 +410,5 @@ git diff upstream/main main -- OpenIntelligence
 
 ## 5. Authorship note
 
-The changes in sections 2.5 to 2.9 were implemented with the help of Claude Code (Anthropic). Each
+The changes in sections 2.5 to 2.10 were implemented with the help of Claude Code (Anthropic). Each
 of those commits carries a `Co-Authored-By` trailer.

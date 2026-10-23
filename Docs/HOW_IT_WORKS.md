@@ -613,7 +613,8 @@ The same five call sites in the working tree at 22:11 on 2026-10-20 (5.7): the s
 | `F` | Quote Faithfulness | Catches an abbreviation being expanded using a different document that happened to be in the same context. |
 | `G` | Generation Quality | Structural soundness of the output itself. It reads the answer alone. |
 | `H` | Answer Completeness | Multi-step and comparison answers where each step is individually plausible but the chain is not supported end to end. It needs the question's type, which Standard does not pass it, so in Standard it always passes. Deep Think and Maximum pass the type (5.7). |
-| `I` | Jurisdiction | Advisory, never refuses. Recognises which legal order each piece of evidence belongs to (Greek, EU, ECHR, or a foreign one such as Cypriot law) from citation patterns, courts and gazettes. When evidence comes from a legal order the question's courts are not bound by, the answer is kept and opens with a caveat saying so. Evidence with no recognisable signal never triggers a caveat. Replaced the medical Domain Isolation check (in vitro / in vivo) in the legal fork. |
+
+> **Thesis fork:** check `I` is removed. The original app's Domain Isolation check was replaced by a jurisdiction caveat on 2026-10-22, and that was removed on 2026-10-23, so the fork runs the eight checks A–H. Where this document says "the nine checks", it describes the original app (`Docs/Thesis/FORK_CHANGES.md`, 2.5 and 2.10).
 
 Thresholds rise with mode: 0.50 in Standard, 0.60 in Deep Think, 0.80 in Maximum. Failing a critical check produces a grounded abstention rather than a hedged answer.
 

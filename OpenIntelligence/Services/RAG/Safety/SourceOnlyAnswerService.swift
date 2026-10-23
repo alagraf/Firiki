@@ -146,8 +146,8 @@ final class SourceOnlyAnswerService {
 
         // The medical domain-isolation pre-check (in vitro / in vivo / clinical) that used to sit
         // here was removed for the legal fork. It abstained before verification and replaced the
-        // drafted answer with "DOMAIN ISOLATION BREACH". Jurisdiction mismatches are reported as a
-        // caveat instead (`JurisdictionService`, applied in `RAGService.finalizeResponse`).
+        // drafted answer with "DOMAIN ISOLATION BREACH". Nothing replaces it: the jurisdiction
+        // caveat that briefly did was removed on 2026-10-23 (Docs/Thesis/FORK_CHANGES.md, 2.10).
 
         // Budget the prompt before building it, because this session has no other protection.
         //

@@ -11446,7 +11446,7 @@ class RAGService: ObservableObject {
         finishAnswerNowRequested = false
         // Apple's usage for every model call this answer makes is added up (`AnswerUsageTally`, 5.7) and put in
         // its metadata by `finalizeResponse`.
-        let response = try await AnswerUsageTally.$current.withValue(AnswerUsageTally()) {
+        return try await AnswerUsageTally.$current.withValue(AnswerUsageTally()) {
             try await LLMStreamingContext.$handler.withValue(streamHandler) {
                 try await self.queryInternal(
                     question,
@@ -11459,27 +11459,6 @@ class RAGService: ObservableObject {
                 )
             }
         }
-        return applyingJurisdictionCaveat(to: response, query: question)
-    }
-
-    /// Evidence from another legal order is used, never refused, and the answer says so. Applied
-    /// here, at the entry point, because not every internal path reaches `finalizeResponse`: the
-    /// Deep Think and Maximum precision lookup (`executeAgenticPrecisionLookupIfAvailable`) returns
-    /// its own response, and a caveat applied only in the finalizer never reached those answers.
-    private func applyingJurisdictionCaveat(to response: RAGResponse, query: String) -> RAGResponse {
-        let caveated = JurisdictionService.caveated(
-            response.generatedResponse, query: query, chunks: response.retrievedChunks)
-        guard caveated != response.generatedResponse else { return response }
-        return RAGResponse(
-            id: response.id,
-            queryId: response.queryId,
-            retrievedChunks: response.retrievedChunks,
-            generatedResponse: caveated,
-            metadata: response.metadata,
-            confidenceScore: response.confidenceScore,
-            qualityWarnings: response.qualityWarnings,
-            structuredAnswer: response.structuredAnswer?.updatingAnswer(caveated)
-        )
     }
 
     /// - Parameter trace: optional per-query stage recorder for the retrieval benchmark. Nil
