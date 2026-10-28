@@ -406,3 +406,142 @@ struct GreekTranslationRetrievalTests {
         #expect(targets.contains("article:22") && targets.contains("article:5") && targets.contains("statute:4808/2021"), "\(targets)")
     }
 }
+
+// MARK: - Phase 5: verification gates, strict abstention, Greek answers
+
+@Suite("Greek legal verification and abstention")
+struct GreekLegalVerificationTests {
+    static func retrieved(_ text: String, score: Float, greek: String? = nil, index: Int = 0) -> RetrievedChunk {
+        let entities = GreekLegalEntityMasker.extractEntities(from: greek ?? text)
+        let legal = LegalChunkMetadata(
+            sourceTextEl: greek, sourceLanguage: greek == nil ? "en" : "el", legalEntities: entities,
+            primaryStatuteKey: GreekLegalEntityMasker.primaryStatuteKey(for: entities)
+        )
+        let chunk = DocumentChunk(
+            documentId: UUID(), content: text, embedding: [], metadata: ChunkMetadata(chunkIndex: index), legal: legal)
+        return RetrievedChunk(chunk: chunk, similarityScore: score, rank: index + 1, sourceDocument: "law.pdf")
+    }
+
+    static func response(_ text: String, chunks: [RetrievedChunk]) -> RAGResponse {
+        RAGResponse(
+            queryId: UUID(), retrievedChunks: chunks, generatedResponse: text,
+            metadata: ResponseMetadata(
+                timeToFirstToken: nil, totalGenerationTime: 1, tokensGenerated: 40, tokensPerSecond: nil,
+                modelUsed: "Apple Intelligence (On-Device)", retrievalTime: 0, retrievalConfigSummary: "test",
+                gatingDecision: nil, toolCallsMade: 0, embeddingProvider: nil
+            )
+        )
+    }
+
+    static let article38 = retrieved(
+        "Article 38 [Άρθρο 38] of Law 4808/2021 [Ν. 4808/2021]: the employer records working time in the digital work card.",
+        score: 0.9,
+        greek: "Άρθρο 38 του Ν. 4808/2021: ο εργοδότης καταγράφει τον χρόνο εργασίας στην ψηφιακή κάρτα εργασίας."
+    )
+
+    @Test func testGateFHallucinatedArticleRejection() async {
+        #expect(LegalVerificationPolicy.unsupportedLegalIdentifiers(
+            response: "Σύμφωνα με το Άρθρο 99 του Ν. 4808/2021 ο εργοδότης ...", chunks: [Self.article38]) == ["ART:99"])
+        #expect(LegalVerificationPolicy.unsupportedLegalIdentifiers(
+            response: "Under Article 38 of Law 4808/2021 working time is recorded [C1].", chunks: [Self.article38]).isEmpty)
+
+        let draft = "Under Article 99 of Law 4808/2021, the employer records working time in the digital work card [C1]."
+        let result = await VerificationGateService().verify(
+            response: draft, query: "How is working time recorded under Law 4808/2021?",
+            retrievedChunks: [Self.article38], topScores: [0.9], enforceLegalChecks: true)
+        let gateF = result.gateResults.first { $0.gate == .quoteFaithfulness }
+        #expect(gateF?.passed == false)
+        #expect(result.shouldAbstain)
+
+        // Rejected before the UI: the reviewed answer is the Greek abstention, nothing is translated.
+        var translated = false
+        let reviewed = await GreekLegalAnswerFinalizer.review(
+            question: "Πώς καταγράφεται ο χρόνος εργασίας;", queryEn: "How is working time recorded under Law 4808/2021?",
+            response: Self.response(draft, chunks: [Self.article38]),
+            verify: { d, q, c in await VerificationGateService().verify(response: d, query: q, retrievedChunks: c, topScores: [0.9], enforceLegalChecks: true) },
+            translate: { text, _ in translated = true; return text }
+        )
+        #expect(reviewed.response.generatedResponse == LegalVerificationPolicy.greekAbstentionMessage)
+        #expect(reviewed.review.abstained)
+        #expect(!translated)
+    }
+
+    @Test func testGateILegalConstitutionNoFalseBreach() async {
+        let constitution = Self.retrieved(
+            "Article 51 [Άρθρο 51]: The number of Members of Parliament is fixed by law; it may not be less than two hundred nor more than three hundred.",
+            score: 0.8,
+            greek: "Άρθρο 51: Ο αριθμός των βουλευτών ορίζεται με νόμο, δεν μπορεί όμως να είναι κατώτερος από διακόσιους ούτε ανώτερος από τριακόσιους."
+        )
+        for query in ["What is the minimum and maximum allowable number of Members of Parliament?", "Ποιος είναι ο ελάχιστος και μέγιστος αριθμός βουλευτών;"] {
+            let result = await VerificationGateService().verify(
+                response: "Parliament has at least two hundred and at most three hundred Members [C1].",
+                query: query, retrievedChunks: [constitution], topScores: [0.8], enforceLegalChecks: true)
+            let gateI = result.gateResults.first { $0.gate == .statutoryIsolation }
+            #expect(gateI?.passed == true)
+            let allDetails = result.gateResults.map(\.details).joined(separator: " ").uppercased()
+            #expect(!allDetails.contains("IN VIVO") && !allDetails.contains("IN VITRO") && !allDetails.contains("DOMAIN ISOLATION"))
+        }
+        // A real statutory conflict: the question names Ν. 4808/2021, every passage cites only Ν. 3863/2010.
+        let other = Self.retrieved("Article 4 of Law 3863/2010 [Ν. 3863/2010] sets the pension contribution.", score: 0.8)
+        #expect(LegalVerificationPolicy.statutoryIsolationViolation(
+            query: "Τι ορίζει ο Ν. 4808/2021 για τις εισφορές;", chunks: [other.chunk]) == "LAW:4808/2021")
+        #expect(LegalVerificationPolicy.statutoryIsolationViolation(
+            query: "Τι ορίζει ο Ν. 4808/2021;", chunks: [other.chunk, Self.article38.chunk]) == nil)
+    }
+
+    @Test func testStrictAbstentionBelowThreshold() async {
+        let weak = Self.retrieved("Annual leave is granted by the employer.", score: 0.15)
+        #expect(GreekLegalAnswerFinalizer.preGenerationAbstentionReason(query: "What is the severance for dismissal?", chunks: [weak]) != nil)
+        #expect(GreekLegalAnswerFinalizer.preGenerationAbstentionReason(query: "x", chunks: []) != nil)
+        // 0.25 with no overlap abstains, with an overlapping word it doesn't.
+        let middling = Self.retrieved("Annual leave is granted by the employer.", score: 0.25)
+        #expect(GreekLegalAnswerFinalizer.preGenerationAbstentionReason(query: "What is the severance for dismissal?", chunks: [middling]) != nil)
+        #expect(GreekLegalAnswerFinalizer.preGenerationAbstentionReason(query: "When is annual leave granted?", chunks: [middling]) == nil)
+
+        var verified = false
+        let reviewed = await GreekLegalAnswerFinalizer.review(
+            question: "Ποια είναι η αποζημίωση απόλυσης;", queryEn: "What is the severance for dismissal?",
+            response: Self.response("Severance is two months of pay.", chunks: [weak]),
+            verify: { d, q, c in verified = true; return await VerificationGateService().verify(response: d, query: q, retrievedChunks: c, topScores: [0.15]) },
+            translate: { text, _ in text }
+        )
+        #expect(reviewed.response.generatedResponse == LegalVerificationPolicy.greekAbstentionMessage)
+        #expect(!verified, "no gate run, no second attempt, no raw passages")
+        #expect(reviewed.response.retrievedChunks.count == 1)
+    }
+
+    @Test func verifiedDraftIsTranslated() async {
+        let draft = "Under Article 38 of Law 4808/2021, the employer records working time in the digital work card [C1]."
+        let reviewed = await GreekLegalAnswerFinalizer.review(
+            question: "Πώς καταγράφεται ο χρόνος εργασίας;", queryEn: "How does the employer record working time?",
+            response: Self.response(draft, chunks: [Self.article38]),
+            verify: { _, _, _ in
+                RAGVerificationResult(passed: true, gateResults: [], claimResults: [], overallConfidence: 0.9, shouldAbstain: false, abstainReason: nil)
+            },
+            translate: { text, _ in "GREEK: " + text }
+        )
+        #expect(reviewed.response.generatedResponse == "GREEK: " + draft)
+        #expect(reviewed.review.englishDraft == draft)
+        #expect(!reviewed.review.abstained)
+        #expect(reviewed.response.structuredAnswer == nil)
+    }
+
+    @Test func greekNumeralsAndLegalQueries() {
+        #expect(LegalVerificationPolicy.normalizeGreekNumerals("αποζημίωση 1.200,50 ευρώ από 19.06.2021, ποσοστό 12,5%")
+            == "αποζημίωση 1200.50 ευρώ από 19/06/2021, ποσοστό 12.5%")
+        #expect(LegalVerificationPolicy.normalizeGreekNumerals("version 1.2 of 3,000 units") == "version 1.2 of 3,000 units")
+        #expect(LegalVerificationPolicy.isLegalQuery("Can a pregnant employee be dismissed?"))
+        #expect(LegalVerificationPolicy.isLegalQuery("Πότε δικαιούται άδεια μητρότητας η εργαζόμενη;"))
+        #expect(!LegalVerificationPolicy.isLegalQuery("Is illegal parking towed?"))
+        #expect(GreekLegalAnswerContext.applies(to: "Ποια είναι η αποζημίωση απόλυσης;"))
+        #expect(!GreekLegalAnswerContext.applies(to: "What is the severance for dismissal?"))
+    }
+
+    @Test func gateCReadsGreekNumbers() async {
+        let chunk = Self.retrieved("Severance is EUR 1.200,50 [αποζημίωση].", score: 0.9, greek: "Η αποζημίωση είναι 1.200,50 ευρώ.")
+        let result = await VerificationGateService().verify(
+            response: "The severance is 1200.50 euros [C1].", query: "What is the severance?",
+            retrievedChunks: [chunk], topScores: [0.9], enforceLegalChecks: true)
+        #expect(result.gateResults.first { $0.gate == .numericSanity }?.passed == true)
+    }
+}

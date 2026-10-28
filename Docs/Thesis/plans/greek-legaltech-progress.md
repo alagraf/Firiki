@@ -63,12 +63,12 @@ Baseline before any change: see "Baseline" below.
 - [x] Bilingual retrieval test
 
 ## Phase 5: gates, abstention, Greek output
-- [ ] Plain-text generation for legal mode; buffered output; assetID logging
-- [ ] Strict abstention (relevance gate, reliabilityMode fallbacks)
-- [ ] Gate A/source-only legal thresholds; Gate C Greek numerals; Gate F legal identifiers; Gate I statutory isolation; enforced in all modes
-- [ ] en→el answer translation; citation UI shows sourceTextEl
-- [ ] `LegalSLMEnricherProtocol.swift` hook
-- [ ] Gate/abstention tests; full suite
+- [x] Plain-text generation for legal mode; buffered output; assetID logging
+- [x] Strict abstention (relevance gate, reliabilityMode fallbacks)
+- [x] Gate A/source-only legal thresholds; Gate C Greek numerals; Gate F legal identifiers; Gate I statutory isolation; enforced in all modes
+- [x] en→el answer translation; citation UI shows sourceTextEl
+- [x] `LegalSLMEnricherProtocol.swift` hook
+- [x] Gate/abstention tests; full suite
 
 ## Baseline
 
@@ -97,3 +97,13 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   isLegalQuery, Gate C normalizeGreekNumerals (+ sourceTextEl evidence), Gate F legal identifiers
   (critical), new Gate I statutoryIsolation (critical); SourceOnlyAnswerService riskProfile legal → .high;
   citation UI shows sourceTextEl; LegalSLMEnricherProtocol; assetID logging.
+- 2026-10-28 P5 committed: all plan phases implemented. Full suite: 1363 XCTests, only the 3
+  Greek-region failures; 33 Greek Swift tests pass.
+
+## Next (outside the plan's checklist)
+- Device check (M3 Mac / iPhone): import a Greek PDF and a scan, ask Greek questions in each quality
+  mode, read `[OCRBenchmark]`, `[GreekLegal] Review`, `[ModelAsset]` logs; calibrate the 0.20/0.30 and
+  0.5 thresholds.
+- Show `RAGResponse.legalReview` (gate breakdown, English draft, asset id) in the Technical Details UI.
+- Hook Greek translation into `importLargePDFStreamed` (PDFs > 10 MB).
+- Decoder KV cache for faster ingestion translation.

@@ -58,7 +58,7 @@ struct GroundedAnswerView: View {
                 // anything else opens the document's details, as before.
                 if let page = CitationSourceDocument.page(of: chunk, in: document) {
                     SourcePageView(
-                        document: document, pageNumber: page, passage: chunk.chunk.content, chunk: chunk,
+                        document: document, pageNumber: page, passage: chunk.chunk.sourceTextEl ?? chunk.chunk.content, chunk: chunk,
                         lookup: libraryDocumentLookup)
                 } else {
                     NavigationStack {

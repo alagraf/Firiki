@@ -32,6 +32,8 @@ struct RAGResponse: Sendable {
     let confidenceScore: Float // 0.0-1.0 aggregate confidence
     let qualityWarnings: [String] // Warnings about result quality
     let structuredAnswer: StructuredAnswer? // AppleRAG §6 structured output
+    /// Thesis fork: the Greek legal review of this answer (English draft, gate summary, abstention).
+    let legalReview: LegalAnswerReview?
 
     init(id: UUID = UUID(),
          queryId: UUID,
@@ -40,8 +42,10 @@ struct RAGResponse: Sendable {
          metadata: ResponseMetadata,
          confidenceScore: Float = 1.0,
          qualityWarnings: [String] = [],
-         structuredAnswer: StructuredAnswer? = nil)
+         structuredAnswer: StructuredAnswer? = nil,
+         legalReview: LegalAnswerReview? = nil)
     {
+        self.legalReview = legalReview
         self.id = id
         self.queryId = queryId
         self.retrievedChunks = retrievedChunks

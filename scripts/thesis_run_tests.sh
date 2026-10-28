@@ -14,12 +14,24 @@ if ! grep -q "TEST BUILD SUCCEEDED" "$LOG.build"; then
   exit 1
 fi
 echo "** TEST BUILD SUCCEEDED **"
-xcodebuild test-without-building -scheme OpenIntelligence -destination "$DEST" -derivedDataPath "$DD" "$@" > "$LOG" 2>&1 &
-PID=$!
-for _ in $(seq 1 1800); do
-  if ! kill -0 $PID 2>/dev/null; then break; fi
-  if grep -qE "Test run with [0-9]+ tests? .*(passed|failed)" "$LOG"; then sleep 5; kill $PID 2>/dev/null; break; fi
-  sleep 1
-done
-kill $PID 2>/dev/null
+run_tests() {
+  # Stopping xcodebuild can leave the simulator unable to launch the next run ("Invalid
+  # connectionUUID"), so every run starts from a shut-down simulator.
+  xcrun simctl shutdown all >/dev/null 2>&1
+  xcodebuild test-without-building -scheme OpenIntelligence -destination "$DEST" -derivedDataPath "$DD" "$@" > "$LOG" 2>&1 &
+  PID=$!
+  for _ in $(seq 1 1800); do
+    if ! kill -0 $PID 2>/dev/null; then break; fi
+    if grep -qE "Test run with [0-9]+ tests? .*(passed|failed)" "$LOG"; then sleep 5; kill $PID 2>/dev/null; break; fi
+    sleep 1
+  done
+  kill $PID 2>/dev/null
+  wait $PID 2>/dev/null
+}
+run_tests "$@"
+if grep -q "Failed to prepare device" "$LOG"; then
+  echo "(simulator failed to launch; retrying once)"
+  sleep 5
+  run_tests "$@"
+fi
 grep -E "Executed [0-9]+ tests, with|Test Case .* failed|error: -\[|✘|Test run with" "$LOG" | cut -c1-400 | sort -u

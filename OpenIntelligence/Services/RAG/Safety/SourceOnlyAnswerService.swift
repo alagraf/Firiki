@@ -945,6 +945,12 @@ final class SourceOnlyAnswerService {
         return builder.build()
     }
 
+    nonisolated static let labourLawWords: Set<String> = [
+        "labor", "labour", "employment", "dismissal", "pregnant", "maternity", "severance",
+        "overtime", "worker", "employee", "statute", "article",
+    ]
+    nonisolated static let labourLawGreekStems = ["εργασ", "απόλυσ", "απολύ"]
+
     private func riskProfile(for query: String, claims: [SourceOnlyVerifiedClaim]) -> RiskProfile {
         let lower = query.lowercased()
         let highRiskTerms = [
@@ -952,6 +958,15 @@ final class SourceOnlyAnswerService {
             "pressure", "voltage", "medication", "drug", "legal", "financial", "compliance"
         ]
         if highRiskTerms.contains(where: { lower.contains($0) }) {
+            return .high
+        }
+        // Thesis fork: labour-law questions, and every question in Greek legal mode, need the 0.88
+        // fidelity bar. Whole words (English) and stems (Greek).
+        let words = Set(GreekLegalEntityMasker.normalizeGreekText(query).lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted))
+        if GreekLegalAnswerContext.isActive
+            || !words.isDisjoint(with: Self.labourLawWords)
+            || words.contains(where: { word in Self.labourLawGreekStems.contains { word.hasPrefix($0) } }) {
             return .high
         }
         if claims.contains(where: { !$0.isSupported && !$0.evidenceLabels.isEmpty }) {

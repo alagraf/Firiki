@@ -553,6 +553,63 @@ keeps `Άρθρο 66`, `Ν. 4808/2021`, `[C1]`, `[C2]`; the plan's `testBilingua
 the Greek question about Άρθρο 66 retrieves Article 66 at rank 1 (R@1 = 1.0) with its Greek source,
 content English with `[Ν. 4808/2021]`; article cross-references resolve. Full suite: `Executed 1363 tests, with 8 tests skipped and 3 failures` (the 3 Greek-region formatting tests); Swift Testing 27 passed.
 
+#### 2.11.5 Phase 5: buffered plain-text answers, strict abstention, legal gates, Greek output
+
+**What changed:**
+- Greek legal mode (`GreekLegalAnswerContext`, a task-local switch): on for a question with ≥30%
+  Greek letters unless `thesis.strictLegalAbstention` is false. `RAGService.query` sets it for the
+  whole query, so the Standard, Deep Think and Maximum paths all see it.
+- Buffered output: in this mode `query` withholds the stream handler, so no unverified token reaches
+  the screen; the answer appears once, after review.
+- Plain text at temperature ≤ 0.2: `generateWithFallback` skips the `@Generable` structured answer
+  and caps the temperature.
+- Strict abstention: the hard relevance gate also refuses (no model call) when the top passage scores
+  under 0.20, or under 0.30 with no word or identifier of the question in it; the reliability-mode
+  fallbacks (second generation attempt, raw passages as the answer) are off; a pipeline error becomes
+  the Greek abstention.
+- Review (`GreekLegalAnswerFinalizer`, `GreekLegalAnswerService.swift`): gates A–I run on the English
+  draft with legal checks on; a critical failure or composite confidence under 0.5 gives the fixed Greek
+  abstention message, otherwise the draft is translated to Greek (`LocalNeuralTranslator`, identifiers
+  and `[C#]` kept). `RAGResponse.legalReview` holds the English draft, gate summary and decision; the
+  structured answer is dropped for these responses.
+- Gates (`VerificationGateService`, new `LegalVerificationPolicy`): with legal checks on, gate A uses
+  the 0.55 threshold; gate C reads Greek numbers and dates (`1.200,50`, `19.06.2021`) and counts the
+  Greek source as evidence; gate F fails, critically, when a statutory or case-law identifier in the
+  answer is in none of the passages; new gate I (`statutoryIsolation`, critical) fails when the
+  question names a statute and every passage that cites a statute cites only others. Gate I is not run
+  outside legal mode, so English answers still average gates A–H. The touchy-topic check now matches
+  whole words ("illegal" no longer counts as "legal").
+- `SourceOnlyAnswerService`: labour-law words (and Greek stems) and Greek legal mode use the 0.88
+  fidelity bar.
+- Citation views (`ResponseDetailsView`, `GroundedAnswerView`): a translated passage shows its Greek
+  source text, with the English translation under "English translation (technical details)"; the page
+  highlight uses the Greek text.
+- `LLMService` logs `[ModelAsset] assetIDs=…` from the session transcript after each generation.
+- New `LegalSLMEnricherProtocol` and `LegalSLMEnricherRegistry`: an optional enricher's evidence brief
+  (≤300 tokens) is put in front of the context in `generateWithFallback`; none is registered by default.
+- Already in place, not changed: `ModelExecutionPlanner`/`FoundationModelTokenBudget` read
+  `SystemLanguageModel.default.contextSize`; PCC is guarded since 2.11.1.
+
+**Not done / limits:** the gate breakdown and asset id are logged and kept in
+`RAGResponse.legalReview`, not yet shown in the UI; thresholds (0.20/0.30, composite 0.5) need
+calibrating on a device, since the simulator can't generate answers; a model refusal is turned into
+the abstention, not retried.
+
+**Files:** `GreekLegalAnswerService.swift`, `LegalVerificationPolicy.swift`,
+`LegalSLMEnricherProtocol.swift` (new), `RAGService.swift`, `RAGQuery.swift`,
+`VerificationGateService.swift`, `SourceOnlyAnswerService.swift`, `LLMService.swift`,
+`ResponseDetailsView.swift`, `GroundedAnswerView.swift`, `GreekLegalPipelineTests.swift`,
+`scripts/thesis_run_tests.sh`
+
+**Verification:** `GreekLegalVerificationTests` (iPhone 18 Pro simulator): the plan's
+`testGateFHallucinatedArticleRejection` (a draft citing Article 99 when the passage has Article 38 fails
+gate F critically and is replaced by the Greek abstention, nothing translated),
+`testGateILegalConstitutionNoFalseBreach` (the Members-of-Parliament question in English and Greek
+passes gate I with no domain-isolation text; a Ν. 4808/2021 question over Ν. 3863/2010-only passages
+fails), `testStrictAbstentionBelowThreshold` (score 0.15 abstains without running the gates), a verified
+draft is translated, Greek numerals, gate C on Greek numbers. Full suite: `Executed 1363 tests, with 8
+tests skipped and 3 failures` (the 3 Greek-region formatting tests); Swift Testing 33 passed.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):
@@ -575,8 +632,9 @@ git diff upstream/main main -- OpenIntelligence
 
 ## 4. Open items and known limitations
 
-- **No legal-specific check on answers:** since 2.10, nothing flags evidence from another legal order,
-  a lower-authority court, or a provision that wasn't in force on the date of the facts.
+- **Legal checks on answers (2.11.5):** gate F checks statutory identifiers and gate I statutory
+  isolation in Greek legal mode; nothing yet flags a lower-authority court or a provision that wasn't
+  in force on the date of the facts.
 - **Device checks after the sync (2.7):** import freeze, Greek PDFs, and the Share and Lock Screen
   capture extensions with the fork's app group still need checking on an iPhone.
 - **Live Activities:** the fork setup (2.1) removed `NSSupportsLiveActivities` and
@@ -589,10 +647,8 @@ git diff upstream/main main -- OpenIntelligence
   region, or update the tests, to get a clean result.
 - **Not yet acted on:** the original author's guidance on Greek handling (sections 2–6 of the owner's
   to-do list):
-  - `validateAndCleanOCR` can drop correct Greek text;
-  - a page that starts in English can lose its Greek lines;
-  - the "legal"/"financial" stricter match bar applies even inside words;
-  - the Greek OCR model and translation placement.
+  - all four items were acted on in 2.11.3–2.11.5 (Greek validation, full-page Greek detection,
+    whole-word touchy check, PP-OCRv5 Greek OCR and translation after extraction).
 - **Observation, not a fork change:** for a Greek Cypriot labour-court document, the app's automatic
   document summary rendered "αποζημίωση απόλυσης" (severance pay) as "notice of termination". This
   is relevant to the thesis's Greek-language accuracy work.

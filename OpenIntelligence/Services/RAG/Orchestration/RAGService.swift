@@ -11518,21 +11518,83 @@ class RAGService: ObservableObject {
     ) async throws -> RAGResponse {
         resetThinkingTimeline()
         finishAnswerNowRequested = false
+        // Thesis fork (plan phases C–F): a Greek question is answered in Greek legal mode. Nothing
+        // is streamed (the stream handler is withheld), the English draft is verified by gates A–I
+        // in every quality mode, and only a verified answer, translated to Greek, or the Greek
+        // abstention message reaches the screen.
+        let greekLegal = GreekLegalAnswerContext.applies(to: question)
         // Apple's usage for every model call this answer makes is added up (`AnswerUsageTally`, 5.7) and put in
         // its metadata by `finalizeResponse`.
-        return try await AnswerUsageTally.$current.withValue(AnswerUsageTally()) {
-            try await LLMStreamingContext.$handler.withValue(streamHandler) {
-                try await self.queryInternal(
-                    question,
-                    topK: topK,
-                    config: config,
-                    containerId: containerId,
-                    qualityModeOverride: qualityModeOverride,
-                    externalEvidence: externalEvidence,
-                    trace: trace
-                )
+        let run = {
+            try await GreekLegalAnswerContext.$isActive.withValue(greekLegal) {
+                try await AnswerUsageTally.$current.withValue(AnswerUsageTally()) {
+                    try await LLMStreamingContext.$handler.withValue(greekLegal ? nil : streamHandler) {
+                        try await self.queryInternal(
+                            question,
+                            topK: topK,
+                            config: config,
+                            containerId: containerId,
+                            qualityModeOverride: qualityModeOverride,
+                            externalEvidence: externalEvidence,
+                            trace: trace
+                        )
+                    }
+                }
             }
         }
+        guard greekLegal else { return try await run() }
+        let response: RAGResponse
+        do {
+            response = try await run()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // A refusal by the planner or the model is an abstention, said in Greek.
+            Log.warning("[GreekLegal] Query failed, abstaining: \(error.localizedDescription)", category: .pipeline)
+            return Self.greekLegalAbstentionResponse(reason: error.localizedDescription)
+        }
+        return await reviewGreekLegalAnswer(question: question, response: response)
+    }
+
+    nonisolated static func greekLegalAbstentionResponse(reason: String) -> RAGResponse {
+        RAGResponse(
+            queryId: UUID(),
+            retrievedChunks: [],
+            generatedResponse: LegalVerificationPolicy.greekAbstentionMessage,
+            metadata: ResponseMetadata(
+                timeToFirstToken: nil, totalGenerationTime: 0, tokensGenerated: 0, tokensPerSecond: nil,
+                modelUsed: "none", retrievalTime: 0, retrievalConfigSummary: "Greek legal mode",
+                gatingDecision: "greek_legal_abstained", toolCallsMade: 0, embeddingProvider: nil
+            ),
+            confidenceScore: 0,
+            qualityWarnings: ["Greek legal mode: abstained (\(reason))"],
+            legalReview: LegalAnswerReview(
+                englishDraft: "", abstained: true, reason: reason, overallConfidence: 0, gateSummary: [], modelUsed: "none"
+            )
+        )
+    }
+
+    /// Thesis fork: gates A–I on the English draft, then the Greek translation or the Greek abstention.
+    private func reviewGreekLegalAnswer(question: String, response: RAGResponse) async -> RAGResponse {
+        let queryEn = await Self.greekQueryTranslation(question) ?? question
+        let intent = QueryEnhancementService().classifyAnswerIntent(question)
+        let reviewed = await GreekLegalAnswerFinalizer.review(
+            question: question,
+            queryEn: queryEn,
+            response: response,
+            verify: { draft, query, chunks in
+                let scores = chunks.map(\.similarityScore).sorted(by: >)
+                return await VerificationGateService.shared.verify(
+                    response: draft, query: query, retrievedChunks: chunks, topScores: scores,
+                    answerIntent: intent, enforceLegalChecks: true
+                )
+            },
+            translate: { draft, entities in
+                guard LocalNeuralTranslator.isAvailable(.englishToGreek) else { return draft }
+                return try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations(draft, entities: entities)
+            }
+        )
+        return reviewed.response
     }
 
     /// - Parameter trace: optional per-query stage recorder for the retrieval benchmark. Nil
@@ -11652,7 +11714,8 @@ class RAGService: ObservableObject {
         // (preserves existing variable names used downstream)
         var inferenceConfig = runtimeContext.inferenceConfig
         let networkAvailable = runtimeContext.networkAvailable
-        let reliabilityModeEnabled = runtimeContext.reliabilityModeEnabled
+        // Thesis fork: no second generation attempt and no raw passages as an answer in Greek legal mode.
+        let reliabilityModeEnabled = runtimeContext.reliabilityModeEnabled && !GreekLegalAnswerContext.isActive
         if reliabilityModeEnabled {
             Log.info("[RAG] Reliability-first fallbacks enabled", category: .pipeline)
         }
@@ -15417,7 +15480,11 @@ class RAGService: ObservableObject {
                 let lexicalRelevance = checkLexicalRelevance(query: effectiveQuery, chunks: includedRetrievedChunks)
                 let bestSimilarity = includedRetrievedChunks.first?.similarityScore ?? 0
 
-                if lexicalRelevance < 0.1 && bestSimilarity < 0.3 {
+                // Thesis fork: in Greek legal mode weak evidence is refused here, before any model call.
+                let greekLegalAbstention = GreekLegalAnswerContext.isActive
+                    ? GreekLegalAnswerFinalizer.preGenerationAbstentionReason(query: effectiveQuery, chunks: includedRetrievedChunks)
+                    : nil
+                if (lexicalRelevance < 0.1 && bestSimilarity < 0.3) || greekLegalAbstention != nil {
                     Log.warning(
                         "[RAG] Hard exit: Retrieved content is irrelevant (lexical=\(String(format: "%.0f%%", lexicalRelevance * 100)), similarity=\(String(format: "%.2f", bestSimilarity)))",
                         category: .retrieval)
@@ -17349,7 +17416,7 @@ class RAGService: ObservableObject {
                 || errorMessage.contains("Unsupported language") || errorMessage.contains("context window")  // Catch overflow here too
 
             // Trigger Reliability Mode if enabled OR if we hit a language/context error
-            if reliabilityModeEnabled || isLanguageError {
+            if (reliabilityModeEnabled || isLanguageError) && !GreekLegalAnswerContext.isActive {
                 await MainActor.run { lastError = nil }
 
                 let reason = isLanguageError ? "Language detection/Context limit triggered fallback" : errorMessage
@@ -18763,6 +18830,8 @@ class RAGService: ObservableObject {
         structuredRAGMode: StructuredRAGMode = .direct
     ) async throws -> LLMResponse {
         let upstreamHandler = LLMStreamingContext.handler
+        // Thesis fork: the optional SLM enricher's brief goes in front of the context (no-op by default).
+        let context = await LegalSLMEnricherRegistry.enrich(context: context, query: prompt, passages: sourceChunks)
 
         func attempt(
             service: LLMService,
@@ -18771,7 +18840,12 @@ class RAGService: ObservableObject {
             overrideSourceChunks: [DocumentChunk]? = nil
         ) async throws -> LLMResponse {
             let attemptStart = Date()
-            let attemptConfig = overrideConfig ?? config
+            var attemptConfig = overrideConfig ?? config
+            // Thesis fork: Greek legal answers are plain text (no @Generable schema, which made
+            // Apple's guardrails refuse labour-law topics) at a temperature of at most 0.2.
+            if GreekLegalAnswerContext.isActive {
+                attemptConfig.temperature = min(attemptConfig.temperature, GreekLegalAnswerContext.maxTemperature)
+            }
             let attemptContext = overrideContext ?? context
             let attemptSourceChunks = overrideSourceChunks ?? sourceChunks
 
@@ -18890,7 +18964,7 @@ class RAGService: ObservableObject {
                     )
 
                     let response: LLMResponse
-                    if allowStructuredRAG,
+                    if allowStructuredRAG, !GreekLegalAnswerContext.isActive,
                         #available(iOS 26.0, *),
                         let appleService = service as? AppleFoundationLLMService,
                         let attemptContext,

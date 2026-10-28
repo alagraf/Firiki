@@ -985,11 +985,24 @@ private struct SourceCard: View {
 
             if isExpanded {
                 ScrollView {
-                    Text(chunk.chunk.content)
+                    // Thesis fork: the original Greek text of a translated passage comes first; the
+                    // English translation the model read stays one tap away.
+                    Text(chunk.chunk.sourceTextEl ?? chunk.chunk.content)
                         .scaledFont(size: 13)
                         .foregroundStyle(DSColors.secondaryText)
                         .lineLimit(nil)
                         .textSelection(.enabled)
+                    if chunk.chunk.sourceTextEl != nil {
+                        DisclosureGroup("English translation (technical details)") {
+                            Text(chunk.chunk.content)
+                                .scaledFont(size: 12)
+                                .foregroundStyle(DSColors.secondaryText)
+                                .lineLimit(nil)
+                                .textSelection(.enabled)
+                        }
+                        .scaledFont(size: 12)
+                        .padding(.top, DSSpacing.sm)
+                    }
                 }
                 .frame(maxHeight: 250)
                 .transition(.asymmetric(
@@ -1007,7 +1020,7 @@ private struct SourceCard: View {
         // Outside the `if` that draws the Page button, so a redraw that finds no page cannot close an open one (5.7).
         .sheet(item: $shownPage) { shown in
             SourcePageView(
-                document: shown.document, pageNumber: shown.page, passage: chunk.chunk.content, chunk: chunk,
+                document: shown.document, pageNumber: shown.page, passage: chunk.chunk.sourceTextEl ?? chunk.chunk.content, chunk: chunk,
                 lookup: libraryDocumentLookup)
         }
     }

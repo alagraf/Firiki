@@ -68,6 +68,8 @@ enum VerificationGate: String, CaseIterable, Sendable {
     case quoteFaithfulness = "Gate F: Quote Faithfulness"
     case generationQuality = "Gate G: Generation Quality"
     case answerCompleteness = "Gate H: Answer Completeness"
+    /// Thesis fork: runs only with legal checks on (Greek legal mode).
+    case statutoryIsolation = "Gate I: Statutory Isolation"
 }
 
 // MARK: - Verification Configuration
@@ -164,12 +166,17 @@ actor VerificationGateService {
         queryEmbedding: [Float]? = nil,
         chunkEmbeddings: [[Float]]? = nil,
         structuredClaims: [StructuredRAGClaim]? = nil,
-        answerIntent: AnswerIntent? = nil
+        answerIntent: AnswerIntent? = nil,
+        enforceLegalChecks: Bool = false
     ) async -> RAGVerificationResult {
         let __spVerificationGates = PipelineSignposts.synthesis.beginInterval("VerificationGates")
         defer { PipelineSignposts.synthesis.endInterval("VerificationGates", __spVerificationGates) }
 
-        let isTouchy = detectTouchyQuery(query)
+        // Thesis fork: Greek legal mode (or an explicit request) turns on the legal checks: the
+        // stricter gate A threshold, Greek number formats in gate C, statutory identifiers in
+        // gate F and gate I.
+        let legal = enforceLegalChecks || GreekLegalAnswerContext.isActive
+        let isTouchy = legal || detectTouchyQuery(query)
         let tau = isTouchy ? config.tauTouchy : config.tauNormal
 
         var gateResults: [RAGVerificationResult.GateResult] = []
@@ -189,7 +196,7 @@ actor VerificationGateService {
 
         // Gate C: Numeric Sanity — uses ALL candidate chunks for wider verification scope
         let gateCChunks = allCandidateChunks ?? retrievedChunks
-        let gateC = await runGateC(response: response, chunks: gateCChunks)
+        let gateC = await runGateC(response: response, chunks: gateCChunks, greekNumerals: legal)
         gateResults.append(gateC)
 
         // Gate D: Contradiction Sweep
@@ -221,7 +228,24 @@ actor VerificationGateService {
         }
 
         // Gate F: Quote Faithfulness
-        let gateF = runGateF(response: response, chunks: retrievedChunks)
+        var gateF = runGateF(response: response, chunks: retrievedChunks)
+        // Thesis fork: every statutory and case-law identifier in the answer must be in the passages.
+        var legalIdentifierFailure = false
+        if legal {
+            let unsupported = LegalVerificationPolicy.unsupportedLegalIdentifiers(response: response, chunks: retrievedChunks)
+            if !unsupported.isEmpty {
+                legalIdentifierFailure = true
+                gateF = RAGVerificationResult.GateResult(
+                    gate: .quoteFaithfulness, passed: false, confidence: 0,
+                    details: "Legal identifiers not in the passages: \(unsupported.joined(separator: ", ")). \(gateF.details)"
+                )
+            } else {
+                gateF = RAGVerificationResult.GateResult(
+                    gate: .quoteFaithfulness, passed: gateF.passed, confidence: gateF.confidence,
+                    details: "All legal identifiers found in the passages. \(gateF.details)"
+                )
+            }
+        }
         gateResults.append(gateF)
 
         // Gate G: Generation Quality
@@ -237,11 +261,26 @@ actor VerificationGateService {
         )
         gateResults.append(gateH)
 
+        // Gate I (thesis fork): statutory isolation, in legal mode only.
+        if legal {
+            let violation = LegalVerificationPolicy.statutoryIsolationViolation(
+                query: query, chunks: retrievedChunks.map(\.chunk))
+            gateResults.append(RAGVerificationResult.GateResult(
+                gate: .statutoryIsolation,
+                passed: violation == nil,
+                confidence: violation == nil ? 1 : 0,
+                details: violation.map { "The question names \($0); every passage cites only other statutes" }
+                    ?? "Passages match the statute the question names (or it names none)"
+            ))
+        }
+
         let allPassed = gateResults.allSatisfy { $0.passed }
         let overallConfidence = gateResults.reduce(0.0) { $0 + $1.confidence } / Float(gateResults.count)
 
-        let criticalGates: Set<VerificationGate> = [.retrievalConfidence, .numericSanity, .semanticGrounding]
-        let criticalFailures = gateResults.filter { !$0.passed && criticalGates.contains($0.gate) }
+        let criticalGates: Set<VerificationGate> = [.retrievalConfidence, .numericSanity, .semanticGrounding, .statutoryIsolation]
+        let criticalFailures = gateResults.filter { gate in
+            !gate.passed && (criticalGates.contains(gate.gate) || (legalIdentifierFailure && gate.gate == .quoteFaithfulness))
+        }
         let shouldAbstain = !criticalFailures.isEmpty
 
         let abstainReason: String? = {
@@ -414,7 +453,15 @@ actor VerificationGateService {
     /// Gate C: Numeric Sanity
     /// If response contains numbers, verify they appear in source documents
     /// This gate catches HALLUCINATED numbers - keep it strict!
-    private func runGateC(response: String, chunks: [RetrievedChunk]) async -> RAGVerificationResult.GateResult {
+    private func runGateC(response rawResponse: String, chunks: [RetrievedChunk], greekNumerals: Bool = false) async -> RAGVerificationResult.GateResult {
+        // Thesis fork: in legal mode Greek formats ("1.200,50", "19.06.2021") are read as numbers,
+        // and the passages' Greek source text counts as evidence.
+        let response = greekNumerals ? LegalVerificationPolicy.normalizeGreekNumerals(rawResponse) : rawResponse
+        let evidenceTexts: [String] = chunks.flatMap { retrieved -> [String] in
+            guard greekNumerals else { return [retrieved.chunk.contextText] }
+            return [retrieved.chunk.contextText, retrieved.chunk.sourceTextEl].compactMap { $0 }
+                .map(LegalVerificationPolicy.normalizeGreekNumerals)
+        }
         // The numbers the answer states, read as values (NumericValueExtractor): "2.5 billion" is
         // compared as 2,500,000,000, and a number inside a name ("Qwen-2.5-3B") is matched as that
         // name. Through 5.6 a number passed when its digits appeared anywhere in the evidence.
@@ -429,7 +476,7 @@ actor VerificationGateService {
         }
 
         // Source passages, parent content included.
-        let evidence = Self.numericEvidence(from: chunks)
+        let evidence = NumericValueExtractor.evidence(from: evidenceTexts)
 
         // Check if response numbers appear in source
         var verifiedCount = 0
@@ -449,7 +496,7 @@ actor VerificationGateService {
         // "€1,200" against "$1,200", and "March 15" against any 15 in the passages.
         let detected = await DetectedValueCheck.contradictions(
             in: response,
-            evidence: await DetectedValueCheck.evidence(from: chunks.map { $0.chunk.contextText }))
+            evidence: await DetectedValueCheck.evidence(from: evidenceTexts))
 
         let verification = Float(verifiedCount) / Float(responseNumbers.count)
         let passed = verification >= 0.70 && detected.isEmpty
@@ -1063,8 +1110,9 @@ actor VerificationGateService {
 
     /// Detect if query is about a "touchy" topic requiring stricter thresholds
     private func detectTouchyQuery(_ query: String) -> Bool {
-        let queryLower = query.lowercased()
-        return config.touchyCategories.contains { queryLower.contains($0) }
+        // Thesis fork: whole words, so "illegal" or "legally" no longer count as "legal".
+        let words = Set(query.lowercased().components(separatedBy: CharacterSet.letters.inverted))
+        return !config.touchyCategories.isDisjoint(with: words)
     }
 
     private func formatFloat0(_ value: Float) -> String {

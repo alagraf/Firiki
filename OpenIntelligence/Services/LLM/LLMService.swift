@@ -610,6 +610,17 @@ struct LLMResponse {
         ///
         /// Call it immediately after generation finishes and before any other work reuses the
         /// session, since these counters describe the session's most recent generation.
+        /// Thesis fork: the model assets that wrote the last response (on device or the Private
+        /// Cloud Compute server model), from the session transcript, for the thesis evaluation.
+        private func logModelAssetIDs(from session: LanguageModelSession) {
+            for entry in session.transcript.reversed() {
+                if case let .response(response) = entry {
+                    Log.info("[ModelAsset] assetIDs=\(response.assetIDs.joined(separator: ","))", category: .llm)
+                    return
+                }
+            }
+        }
+
         private func readUsage(from session: LanguageModelSession) -> GenerationUsage? {
             #if compiler(>=6.4)
                 if #available(iOS 27.0, macOS 27.0, *) {
@@ -1199,6 +1210,7 @@ struct LLMResponse {
                 )
             }
             RouteLog.completed(actualTarget: actualTarget, receipt: executionReceipt)
+            logModelAssetIDs(from: session)
             let usage = readUsage(from: session)
             AnswerUsageTally.current?.add(usage)
             if let usage {
@@ -1336,6 +1348,7 @@ struct LLMResponse {
                 )
             }
             RouteLog.completed(actualTarget: actualTarget, receipt: executionReceipt)
+            logModelAssetIDs(from: session)
             let usage = readUsage(from: session)
             AnswerUsageTally.current?.add(usage)
             if let usage {

@@ -84,8 +84,8 @@ When merging `upstream/main`:
 - the fork's identity (table above) wins in the project file, entitlements and the three Swift
   files;
 - the fork's guardrail changes win: `DomainIsolationService` and the medical checks in
-  `SourceOnlyAnswerService` stay removed, and so does verification gate I (`FORK_CHANGES.md`
-  sections 2.5 and 2.10);
+  `SourceOnlyAnswerService` stay removed, and so does the old gate I (`FORK_CHANGES.md`
+  sections 2.5 and 2.10); the new gate I is the legal statutory-isolation gate (2.11.5);
 - the 5.7 section of `CHANGELOG.md` keeps only fork changes.
 
 ## Where things are (verified 2026-10-22; confirm line numbers before use)
@@ -96,6 +96,7 @@ When merging `upstream/main`:
 | OCR fallback | `performOCR` in `Services/Document/Processing/DocumentProcessor.swift` |
 | OCR quality filter (checks text against common English words, so it can drop correct Greek) | `validateAndCleanOCR` in `StructuredDocumentParser.swift` |
 | Page language decision (first 2,000 characters of a page) | page cleanup step in the ingestion pipeline (find with `codemap.py find language`) |
-| Stricter match bar for questions containing "legal" or "financial", even inside words such as "illegal" | the touchy-category list in `Services/RAG/Safety/VerificationGateService.swift` |
+| Stricter match bar for "touchy" questions (whole words since 2.11.5) and Greek legal mode | `detectTouchyQuery` in `Services/RAG/Safety/VerificationGateService.swift`; `LegalVerificationPolicy.swift` |
+| Greek pipeline (OCR router, masker, translator, legal answer review) | `Docs/Thesis/FORK_CHANGES.md` 2.11; resume point `Docs/Thesis/plans/greek-legaltech-progress.md` |
 | Record of all fork changes | `Docs/Thesis/FORK_CHANGES.md` |
 | Ready-made prompts | `Docs/Thesis/AGENT_PROMPTS.md` |
