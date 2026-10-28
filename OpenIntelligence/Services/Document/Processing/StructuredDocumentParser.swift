@@ -681,6 +681,13 @@ actor StructuredDocumentParser {
             }
         }
 
+        // Thesis fork: Vision reads no Greek. A page of a document known to be Greek (or every page,
+        // in `greekPaddleOCR` mode) is read by PaddleOCR's Greek model instead.
+        if OCRRouterService.shared.prefersGreekEngine(languageHint: recognitionLanguages),
+           let greek = await greekPageContent(fullResImageCG() ?? structureCG, pageNumber: pageNumber, force: false) {
+            return greek
+        }
+
         if preferFullResolution {
             Log.info("[StructuredDocumentParser] Page \(pageNumber): using full-resolution structure parsing for maximum fidelity", category: .ingestion)
         }
@@ -745,6 +752,13 @@ actor StructuredDocumentParser {
                 Log.warning("[StructuredDocumentParser] RecognizeTextRequest fallback also failed: \(error.localizedDescription)", category: .ingestion)
             }
             throw StructuredParsingError.noDocumentDetected
+        }
+
+        // Thesis fork: Vision text that looks like misread Greek is read again by the Greek model.
+        if OCRRouterService.visionTextNeedsGreekEngine(structuredSnapshot.rawText),
+           let greek = await greekPageContent(fullResImageCG() ?? structureCG, pageNumber: pageNumber, force: true),
+           OCRConfiguration.containsGreekText(greek.rawText) {
+            return greek
         }
 
         let elements = structuredSnapshot.elements
@@ -1443,7 +1457,34 @@ actor StructuredDocumentParser {
     /// - Images with poor lighting or contrast
     ///
     /// Available from iOS 18.0+ (not iOS 26 specific)
+    /// Thesis fork: the page read by `GreekPaddleOCRService`, one paragraph per block of lines.
+    /// Nil when the Greek engine can't run or found no text.
+    private func greekPageContent(_ image: CGImage, pageNumber: Int, force: Bool) async -> StructuredPageContent? {
+        guard let lines = await OCRRouterService.shared.greekLines(in: image, site: "parser.page", force: force),
+              !lines.isEmpty else { return nil }
+        let text = GreekLegalEntityMasker.repairGreekHomoglyphs(OCRRouterService.joinLines(lines))
+        let paragraphs = text.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !paragraphs.isEmpty else { return nil }
+        let confidence = Double(lines.map(\.confidence).reduce(0, +)) / Double(lines.count)
+        Log.info("[StructuredDocumentParser] Page \(pageNumber): Greek OCR read \(lines.count) lines, \(paragraphs.count) paragraphs", category: .ingestion)
+        return StructuredPageContent(
+            pageNumber: pageNumber,
+            elements: paragraphs.map { .paragraph(text: $0, pageNumber: pageNumber) },
+            rawText: paragraphs.joined(separator: "\n\n"),
+            qualityScore: max(0.5, min(1, confidence)),
+            figureReferences: []
+        )
+    }
+
     private func performTextRecognitionFallback(on image: CGImage, customWords: [String]) async throws -> String {
+        try await OCRRouterService.shared.recognizeText(in: image, site: "parser.textFallback") {
+            try await self.performVisionTextRecognitionFallback(on: image, customWords: customWords)
+        }
+    }
+
+    private func performVisionTextRecognitionFallback(on image: CGImage, customWords: [String]) async throws -> String {
         var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
@@ -1661,10 +1702,27 @@ actor StructuredDocumentParser {
         "power", "port", "address", "follow", "step", "refer", "manual", "note", "see", "check"
     ]
 
+    /// Share of Greek letters from which a text is validated as Greek.
+    nonisolated static let greekLetterThreshold = 0.15
+
+    /// Greek function words and labour-law terms, lowercased and accented as written, for the OCR
+    /// word-recognition check on Greek text.
+    nonisolated static let greekCommonWords: Set<String> = [
+        "και", "του", "της", "των", "το", "τα", "τη", "την", "τον", "τις", "τους", "η", "ο", "οι",
+        "σε", "στο", "στη", "στην", "στον", "στα", "στις", "στους", "με", "από", "για", "να", "ή",
+        "που", "δεν", "μη", "μην", "κατά", "μετά", "ως", "προς", "επί", "υπό", "είναι", "έχει",
+        "ένα", "μία", "μια", "ενός", "αυτό", "αυτή", "αυτού", "αυτής", "όπως", "εάν", "αν", "όταν",
+        "άρθρο", "άρθρου", "αρθρο", "νόμος", "νόμου", "ν", "παρ", "παράγραφος", "εδ", "εργασία",
+        "εργασίας", "εργαζόμενος", "εργαζόμενου", "εργαζομένων", "εργοδότης", "εργοδότη",
+        "σύμβαση", "σύμβασης", "απόλυση", "απόλυσης", "καταγγελία", "αποζημίωση", "αποζημίωσης",
+        "άδεια", "άδειας", "μισθός", "μισθού", "αποδοχές", "ημέρες", "ώρες", "διάταξη", "διατάξεις",
+        "ισχύ", "ισχύει", "περίπτωση", "περίπτωσης", "υπουργός", "απόφαση", "φεκ", "ορίζεται",
+    ]
+
     /// Validate OCR quality and clean text
     /// Returns (cleanedText, isLowQuality) - NEVER discards content, just flags it
     /// This ensures we don't lose information from low-quality scans
-    nonisolated private func validateAndCleanOCR(_ text: String) -> (String, Bool) {
+    nonisolated func validateAndCleanOCR(_ text: String) -> (String, Bool) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return ("", false) }
 
@@ -1713,9 +1771,13 @@ actor StructuredDocumentParser {
             isLowQuality = true
         }
 
-        // Low word recognition rate (but only for longer text)
+        // Low word recognition rate (but only for longer text). Thesis fork: Greek text (at least
+        // 15% Greek letters) is checked against Greek function words and legal terms instead of
+        // the English list, which flagged every correct Greek page as low quality.
         if words.count >= 8 {
-            let recognizedCount = words.filter { Self.commonWords.contains($0) }.count
+            let isGreek = GreekLegalEntityMasker.greekLetterRatio(cleaned) >= Self.greekLetterThreshold
+            let dictionary = isGreek ? Self.greekCommonWords : Self.commonWords
+            let recognizedCount = words.filter { dictionary.contains($0) }.count
             let recognitionRate = Double(recognizedCount) / Double(words.count)
             if recognitionRate < 0.15 {
                 isLowQuality = true

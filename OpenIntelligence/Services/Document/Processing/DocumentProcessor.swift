@@ -3455,7 +3455,7 @@ class DocumentProcessor {
     private func detectDocumentRecognitionLanguagesIfNeeded(pdfDocument: PDFDocument, pageCount: Int) async {
         guard currentDocumentRecognitionLanguages == nil else { return }
 
-        let roughText = (0..<min(pageCount, 50)).compactMap { pdfDocument.page(at: $0)?.string }
+        let roughText = (0..<min(pageCount, 50)).compactMap { pdfDocument.page(at: $0)?.normalizedString }
             .joined(separator: "\n")
         guard !roughText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             Log.info("[DocumentProcessor] OCR languages NOT narrowed, keeping all \(OCRConfiguration.recognitionLanguages.count) (no text layer to detect from)", category: .ingestion)
@@ -3516,7 +3516,7 @@ class DocumentProcessor {
 
             for idx in sampleIndices {
                 guard let page = pdfDocument.page(at: idx) else { continue }
-                let text = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let text = page.normalizedString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 if text.count > bestSampleText.count {
                     bestSampleText = text
                     bestSamplePage = page
@@ -3672,7 +3672,7 @@ class DocumentProcessor {
             Log.debug("[DocumentProcessor] Skipping dynamic vocabulary extraction (garbled text layer)", category: .ingestion)
         } else {
             roughDocumentText = (0..<min(pageCount, 50)).compactMap { i in
-                pdfDocument.page(at: i)?.string
+                pdfDocument.page(at: i)?.normalizedString
             }.joined(separator: "\n")
         }
 
@@ -3751,7 +3751,7 @@ class DocumentProcessor {
                         documentTextLayerGarbled: documentTextLayerGarbled
                     )
 
-                    let pageString = page.string
+                    let pageString = page.normalizedString
 
                     // Detect if this page has table/numeric content that REQUIRES Vision OCR
                     // even when PDFKit text quality looks acceptable.
@@ -4157,7 +4157,7 @@ class DocumentProcessor {
             // Sample pages spread across the document
             let pageIndex = i * pageCount / samplesToCheck
             guard let page = pdfDocument.page(at: pageIndex),
-                  let text = page.string else { continue }
+                  let text = page.normalizedString else { continue }
 
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             // Good text: at least 100 chars, mostly printable ASCII, not garbled
@@ -4211,7 +4211,7 @@ class DocumentProcessor {
 
             for idx in sampleIndices {
                 guard let page = pdfDocument.page(at: idx) else { continue }
-                let text = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let text = page.normalizedString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 // OCR can check a text layer only in a script it reads. Vision has no model for Greek, Hebrew and
                 // many other scripts, so on such a page it returns other letters, the two share no word, and through
                 // 5.6 a correct text layer was judged a cipher: every page went to OCR and the garbage filter emptied
@@ -4416,7 +4416,7 @@ class DocumentProcessor {
                 strategy: strategy,
                 documentTextLayerGarbled: documentTextLayerGarbled
             )) || Self.readsTextLayerVisionCannotRead(
-                pdfDocument.page(at: analysis.pageNumber - 1)?.string, complexity: analysis,
+                pdfDocument.page(at: analysis.pageNumber - 1)?.normalizedString, complexity: analysis,
                 documentTextLayerGarbled: documentTextLayerGarbled)
         }.count
         let visionRequired = pageCount - skipVisionCount
@@ -4527,7 +4527,7 @@ class DocumentProcessor {
                         strategy: strategy,
                         documentTextLayerGarbled: documentTextLayerGarbled
                     )
-                    let plainText = page.string
+                    let plainText = page.normalizedString
                     let textLayerUnreadableByVision = Self.readsTextLayerVisionCannotRead(
                         plainText, complexity: complexity, documentTextLayerGarbled: documentTextLayerGarbled)
                     if textLayerUnreadableByVision {
@@ -4574,7 +4574,7 @@ class DocumentProcessor {
                         if let image = pageImage {
                             let textQuality = documentTextLayerGarbled ? 0.0 : (complexity?.textQuality ?? 0.7)
                             let isScanned = documentTextLayerGarbled || strategy == .fullOCR
-                            let plainText = page.string
+                            let plainText = page.normalizedString
                             // Garbled text layer → tell preprocessor there's NO usable native text
                             let hasText = !documentTextLayerGarbled && (plainText?.trimmingCharacters(in: .whitespacesAndNewlines).count ?? 0) > 10
                             pageImage = preprocessImageForOCR(
@@ -7192,7 +7192,7 @@ class DocumentProcessor {
             let pageStartTime = Date()
 
             // Try standard text extraction first
-            let pageText = page.string
+            let pageText = page.normalizedString
             let trimmedText = pageText?.trimmingCharacters(in: .whitespacesAndNewlines)
             let hasText = trimmedText.map { !$0.isEmpty } ?? false
             let textQualityOK = hasText && isTextQualityAcceptable(pageText ?? "")
@@ -7595,7 +7595,7 @@ class DocumentProcessor {
         // (common in Asian-publisher PDFs like Kia, Hyundai) are NOT real text.
         // Check actual text quality so we don't skip visual content on pages
         // where the text layer is encrypted/garbled.
-        let rawPageText = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawPageText = page.normalizedString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasUsableText: Bool
         if rawPageText.isEmpty {
             hasUsableText = false
@@ -7698,7 +7698,7 @@ class DocumentProcessor {
             progressHandler?("analyzing page \(pageNumber)/\(pdfDocument.pageCount)")
 
             // Get text
-            if let pageText = page.string, !pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let pageText = page.normalizedString, !pageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 fullText += pageText + "\n\n"
                 perPageTextObservations.append([]) // No OCR observations for native text
             } else if let pageImage = renderPDFPageAsImage(page: page) {
@@ -8008,8 +8008,24 @@ class DocumentProcessor {
         return bestResult
     }
 
-    /// Perform a single OCR attempt on an image (no retry logic)
+    /// Perform a single OCR attempt on an image (no retry logic).
+    /// Thesis fork: routed through `OCRRouterService`, which reads Greek with PaddleOCR.
     private func performOCRSingleAttempt(on image: CIImage) async throws -> String {
+        guard OCRRouterService.shared.isGreekEngineAvailable,
+              let cgImage = Self.gpuContext.createCGImage(image, from: image.extent)
+        else {
+            return try await performVisionOCRSingleAttempt(on: image)
+        }
+        let text = try await OCRRouterService.shared.recognizeText(
+            in: cgImage, site: "processor.performOCR", languageHint: currentDocumentRecognitionLanguages
+        ) {
+            try await self.performVisionOCRSingleAttempt(on: image)
+        }
+        return GreekLegalEntityMasker.repairGreekHomoglyphs(text)
+    }
+
+    /// One Vision OCR attempt on an image (the original `performOCRSingleAttempt`).
+    private func performVisionOCRSingleAttempt(on image: CIImage) async throws -> String {
         // Convert CIImage to CGImage using GPU-accelerated context (CIContext is thread-safe)
         let cgImageResult = Self.gpuContext.createCGImage(image, from: image.extent)
         guard let cgImage = cgImageResult else {
@@ -8230,7 +8246,7 @@ class DocumentProcessor {
     private func extractTextWithSpatialOrdering(from page: PDFPage) -> String? {
         // Get all selections for lines on this page
         // We'll enumerate through the page character by character to find line boundaries
-        guard let pageString = page.string, !pageString.isEmpty else { return nil }
+        guard let pageString = page.normalizedString, !pageString.isEmpty else { return nil }
 
         // Use word-level selection to build spatial lines
         var spatialLines: [SpatialLine] = []

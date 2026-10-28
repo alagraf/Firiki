@@ -225,6 +225,22 @@ class ImageUnderstandingService {
             }
         }
 
+        // Thesis fork: routed through `OCRRouterService`, which reads Greek with PaddleOCR.
+        let visionImage = processedImage
+        guard OCRRouterService.shared.isGreekEngineAvailable,
+              let cgImage = Self.visionRenderContext.createCGImage(image, from: image.extent)
+        else {
+            return await extractVisionTextFromImage(visionImage)
+        }
+        let text = (try? await OCRRouterService.shared.recognizeText(in: cgImage, site: "imageUnderstanding") {
+            await self.extractVisionTextFromImage(visionImage) ?? ""
+        }) ?? ""
+        let repaired = GreekLegalEntityMasker.repairGreekHomoglyphs(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        return repaired.isEmpty ? nil : repaired
+    }
+
+    /// Vision OCR of a prepared image (the original body of `extractTextFromImage`).
+    private func extractVisionTextFromImage(_ processedImage: CIImage) async -> String? {
         let requestHandler = VNImageRequestHandler(ciImage: processedImage, options: [:])
 
         return await withCheckedContinuation { continuation in

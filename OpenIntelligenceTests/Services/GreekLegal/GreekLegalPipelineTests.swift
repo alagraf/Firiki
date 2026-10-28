@@ -6,6 +6,8 @@
 //  stage; each phase of the plan adds its suite here.
 //
 
+import CoreGraphics
+import CoreText
 import Foundation
 import Testing
 
@@ -173,5 +175,109 @@ struct BilingualChunkStorageTests {
         let decoded = try JSONDecoder().decode(DocumentChunk.self, from: data)
         #expect(decoded.legal == nil)
         #expect(decoded.sourceTextEl == nil)
+    }
+}
+
+// MARK: - Phase 3: Greek OCR and extraction fixes
+
+/// Word error rate: word-level Levenshtein distance over the reference length.
+func wordErrorRate(reference: String, hypothesis: String) -> Double {
+    let fold: (String) -> [String] = { text in
+        GreekLegalEntityMasker.normalizeGreekText(text).lowercased()
+            .components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+    }
+    let r = fold(reference), h = fold(hypothesis)
+    guard !r.isEmpty else { return h.isEmpty ? 0 : 1 }
+    var previous = Array(0...h.count)
+    for i in 1...r.count {
+        var current = [i] + Array(repeating: 0, count: h.count)
+        for j in 1...max(1, h.count) where h.count > 0 {
+            current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (r[i - 1] == h[j - 1] ? 0 : 1))
+        }
+        previous = current
+    }
+    return Double(previous[h.count]) / Double(r.count)
+}
+
+/// Black text on white, drawn with Core Text, top line first.
+func renderPage(_ lines: [String], width: Int = 1240, lineHeight: Int = 80, fontSize: CGFloat = 36) -> CGImage {
+    let height = lineHeight * (lines.count + 1)
+    let context = CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    )!
+    context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
+    for (index, line) in lines.enumerated() {
+        let attributed = NSAttributedString(string: line, attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(red: 0, green: 0, blue: 0, alpha: 1),
+        ])
+        let ctLine = CTLineCreateWithAttributedString(attributed)
+        context.textPosition = CGPoint(x: 60, y: CGFloat(height - lineHeight * (index + 1)))
+        CTLineDraw(ctLine, context)
+    }
+    return context.makeImage()!
+}
+
+@Suite("Greek OCR and extraction")
+struct GreekOCRTests {
+    static let page = [
+        "Άρθρο 66",
+        "Καταγγελία σύμβασης εργασίας αορίστου χρόνου",
+        "1. Η καταγγελία της σύμβασης εργασίας γίνεται εγγράφως.",
+        "Ν. 4808/2021 (ΦΕΚ Α' 101/19.06.2021)",
+    ]
+
+    @Test func testGreekOCRAndValidationBypass() async throws {
+        let engine = GreekPaddleOCRService.shared
+        try #require(engine.isAvailable, "ONNX Runtime and the Greek OCR models must be in the app")
+        let lines = try await engine.recognizeLines(in: renderPage(Self.page))
+        let text = GreekLegalEntityMasker.repairGreekHomoglyphs(OCRRouterService.joinLines(lines))
+        let wer = wordErrorRate(reference: Self.page.joined(separator: "\n"), hypothesis: text)
+        #expect(wer < 0.05, "WER \(wer): \(text)")
+        // The identifiers survive OCR.
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: text).isSuperset(of: ["ART:66", "LAW:4808/2021"]))
+
+        // validateAndCleanOCR keeps the Greek paragraph and doesn't flag it.
+        let paragraph = "Η καταγγελία της σύμβασης εργασίας αορίστου χρόνου γίνεται εγγράφως και ο εργοδότης καταβάλλει στον εργαζόμενο την αποζημίωση του άρθρου 66 του νόμου."
+        let (cleaned, lowQuality) = StructuredDocumentParser.shared.validateAndCleanOCR(paragraph)
+        #expect(cleaned == paragraph)
+        #expect(!lowQuality)
+    }
+
+    @Test func mixedEnglishGreekPageKeepsGreekLines() {
+        let english = String(repeating: "This agreement is governed by the terms set out below and by the law. ", count: 40)
+        let greek = "Ο εργοδότης υποχρεούται να καταβάλει αποζημίωση απόλυσης στον εργαζόμενο."
+        let page = english + "\n" + greek + "\n" + greek
+        #expect(page.prefix(2000).unicodeScalars.allSatisfy { $0.isASCII })
+        let (cleaned, removed) = OCRConfiguration.filterGarbageText(page)
+        #expect(removed == 0)
+        #expect(cleaned.components(separatedBy: greek).count == 3)
+    }
+
+    @Test func homoglyphsAreRepairedOnlyOnGreekLines() {
+        #expect(GreekLegalEntityMasker.repairGreekHomoglyphs("N. 4808/2021 (ΦΕK A' 101/19.06.2021) του νόμου") == "Ν. 4808/2021 (ΦΕΚ Α' 101/19.06.2021) του νόμου")
+        #expect(GreekLegalEntityMasker.repairGreekHomoglyphs("N. 5 and PDF") == "N. 5 and PDF")
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "N. 4808/2021 (ΦΕK A' 101/19.06.2021) του νόμου") == ["LAW:4808/2021", "FEK:Α:101:19.06.2021"])
+    }
+
+    @Test func routerReplacesMisreadVisionTextWithGreek() async throws {
+        struct FakeGreek: OCREngineProtocol {
+            let name = "fake"
+            var isAvailable: Bool { true }
+            func recognizeLines(in image: CGImage) async throws -> [OCRTextLine] {
+                [OCRTextLine(text: "Καταγγελία σύμβασης εργασίας", box: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.05), confidence: 0.9)]
+            }
+        }
+        let image = renderPage(["x"])
+        let router = OCRRouterService(greekEngine: FakeGreek(), mode: .autoBenchmark)
+        let misread = try await router.recognizeText(in: image, site: "test") { "Kataryeλia oupBaons epyaoias aopiorou xpovou ylvetal eyypadws" }
+        #expect(misread == "Καταγγελία σύμβασης εργασίας")
+        let english = try await router.recognizeText(in: image, site: "test") { "The employment contract is terminated in writing by the employer." }
+        #expect(english == "The employment contract is terminated in writing by the employer.")
+        let visionOnly = OCRRouterService(greekEngine: FakeGreek(), mode: .vision)
+        #expect(try await visionOnly.recognizeText(in: image, site: "test") { "Kataryeλia oupBaons" } == "Kataryeλia oupBaons")
     }
 }

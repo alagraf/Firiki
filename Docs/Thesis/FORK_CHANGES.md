@@ -441,6 +441,61 @@ restored as anchors and as Greek; mangled placeholders; 14 identifier forms; pla
 numbers gives no identifiers; primary statute) and `BilingualChunkStorageTests` (SQLite round trip
 and deletion; old chunk JSON decodes) pass on the iPhone 18 Pro simulator.
 
+#### 2.11.3 Phase 3: Greek OCR and extraction fixes
+
+**Why:** Vision recognizes no Greek, and three text filters silently dropped correct Greek text.
+
+**What changed:**
+- ONNX Runtime (`onnxruntime-swift-package-manager` 1.24.x, module `OnnxRuntimeBindings`) linked
+  to the app target (`project.pbxproj`, approved by the owner on 2026-10-28). The engine framework
+  target doesn't link it; its build compiles the `#if canImport(OnnxRuntimeBindings)` fallback.
+- Models in `Resources/MLModels/GreekOCR/`: `PP-OCRv5_mobile_det.onnx` (4.6 MB) and
+  `el_PP-OCRv5_mobile_rec.onnx` (7.4 MB) from Hugging Face `PaddlePaddle/*_onnx` (Apache-2.0) and
+  `el_dict.txt` (354 characters, from the recognizer's `inference.yml`). The project file excludes
+  them from the engine framework target so the app doesn't carry them twice.
+- New `GreekPaddleOCRService`: DB text detection (long side 960, multiple of 32, BGR ImageNet
+  normalization, threshold 0.3, box threshold 0.6, unclip 1.5, axis-aligned boxes), crops resized to
+  48 px high, CTC greedy decoding. Constants from the models' `inference.yml`. Checked first against
+  a Python version of the same steps on a rendered Greek page.
+- New `OCRRouterService` with `OCREngineProtocol` and `ocrEngineMode` (`vision`, `greekPaddleOCR`,
+  `autoBenchmark`, default `autoBenchmark`, UserDefaults `thesis.ocrEngineMode`). In auto mode Vision
+  runs first; when its text has Greek letters or is mostly non-English words, PaddleOCR reads the
+  image and wins if it finds Greek. Every engine run is logged as `[OCRBenchmark] site= engine=
+  chars= greekLetters= ms=` for the thesis comparison.
+- All five call sites routed: `StructuredDocumentParser.parsePageImage` (Greek-hinted pages go to
+  PaddleOCR first; misread Vision pages are re-read; the text fallback goes through the router),
+  `DocumentProcessor.performOCR`, `LayoutAwareExtractor`'s multi-column pass (lines become blocks
+  in Vision coordinates), `IntelligentDocumentProcessor.rescuePageRegions` (and a misread Vision
+  table falls back to the text path), `ImageUnderstandingService.extractTextFromImage`.
+- `validateAndCleanOCR`: text with at least 15% Greek letters is checked against a list of Greek
+  function words and labour-law terms instead of the English list.
+- Page cleanup (`OCRConfiguration.filterGarbageText`): the whole text is scanned for Greek (10 Greek
+  letters make it non-Latin) before the 2,000-character language sample, and a line that is mostly
+  Greek never goes through the Latin-only rules.
+- `PDFPage.normalizedString`: PDFKit text with Greek in it is NFKC-normalized (micro sign → mu);
+  used for every `page.string` read in `DocumentProcessor`, `LayoutAwareExtractor` and
+  `PageComplexityAnalyzer`. English pages are unchanged.
+- `GreekLegalEntityMasker.repairGreekHomoglyphs` (part of `normalizeGreekText`): on Greek lines,
+  Latin look-alikes in Greek words and short capital abbreviations become Greek ("N." → "Ν.",
+  "ΦΕK" → "ΦΕΚ", "A'" → "Α'"); OCR output is repaired the same way. PaddleOCR's Greek model returns
+  these Latin letters for Greek capitals. Also `collapseBilingualAnchors` (used in phase 4).
+
+**Files:** `GreekPaddleOCRService.swift`, `OCRRouterService.swift`, `PDFPage+Greek.swift` (new),
+`GreekLegalEntityMasker.swift`, `StructuredDocumentParser.swift`, `DocumentProcessor.swift`,
+`LayoutAwareExtractor.swift`, `IntelligentDocumentProcessor.swift`,
+`ImageUnderstandingService.swift`, `OCRConfiguration.swift`, `PageComplexityAnalyzer.swift`,
+`Resources/MLModels/GreekOCR/*`, `project.pbxproj`, `Package.resolved`,
+`GreekLegalPipelineTests.swift`
+
+**Verification:** `GreekOCRTests` on the iPhone 18 Pro simulator: the plan's
+`testGreekOCRAndValidationBypass` renders an Article 66 / Ν. 4808/2021 page with Core Text, reads it
+with the real models (word error rate under 5%, `ART:66` and `LAW:4808/2021` recognized) and checks
+that `validateAndCleanOCR` keeps a Greek paragraph whole and unflagged; a page whose first 2,000
+characters are English keeps its Greek lines; homoglyph repair; the router replaces misread Vision
+text with Greek and keeps English. Full suite: `Executed 1363 tests, with 8 tests skipped and 6
+failures`: the 3 Greek-region formatting tests plus the 3 web-download tests fixed in 2.11.1's
+follow-up; Swift Testing 20 passed.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

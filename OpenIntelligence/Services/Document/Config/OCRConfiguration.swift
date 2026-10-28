@@ -421,6 +421,12 @@ enum OCRConfiguration {
     /// Returns whether the document is primarily a Latin-script language.
     /// This prevents garbage filters from destroying legitimate non-Latin documents.
     private static func detectDocumentLanguage(_ text: String) -> (isLatinScript: Bool, dominantLanguage: NLLanguage?) {
+        // Thesis fork: the whole text is scanned for Greek before the 2,000-character sample is
+        // taken. A page that opens in English and continues in Greek was judged Latin from its
+        // first 2,000 characters, and rule 4 below then deleted every Greek line.
+        if containsGreekText(text) {
+            return (false, .greek)
+        }
         // Use a sample to avoid processing huge texts
         let sample = String(text.prefix(2000))
         // One recognizer, reset for each text. A recognizer builds its language model the first
@@ -466,9 +472,24 @@ enum OCRConfiguration {
     ///     Rules 1, 2, 4 only fire for Latin-script documents to avoid destroying
     ///     Russian, Arabic, Chinese, etc.
     /// - Returns: true if the line appears to be garbage OCR output
+    /// At least this many Greek letters (U+0370–U+03FF, U+1F00–U+1FFF) make a text Greek-bearing.
+    nonisolated static let greekLetterMinimum = 10
+
+    /// Whether `text` has enough Greek letters to be treated as (partly) Greek, scanning all of it.
+    nonisolated static func containsGreekText(_ text: String) -> Bool {
+        var count = 0
+        for scalar in text.unicodeScalars where GreekLegalEntityMasker.isGreekScalar(scalar) && scalar.properties.isAlphabetic {
+            count += 1
+            if count >= greekLetterMinimum { return true }
+        }
+        return false
+    }
+
     static func isGarbageText(_ line: String, isLatinDocument: Bool = true) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 4 else { return false } // Too short to judge
+        // Thesis fork: a line written mostly in Greek letters is never judged by the Latin rules.
+        let isLatinDocument = isLatinDocument && GreekLegalEntityMasker.greekLetterRatio(trimmed) < 0.5
 
         let scalars = trimmed.unicodeScalars
 

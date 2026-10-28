@@ -217,7 +217,7 @@ nonisolated final class PageComplexityAnalyzer: @unchecked Sendable {
         // ═══════════════════════════════════════════════════════════════════
         // PHASE 1: Native Text Layer Analysis (instant, ~0.5ms)
         // ═══════════════════════════════════════════════════════════════════
-        let pageString = page.string
+        let pageString = page.normalizedString
         let hasNativeTextLayer = pageString != nil && !pageString!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let textLength = pageString?.count ?? 0
 
@@ -1262,7 +1262,7 @@ extension PageComplexityAnalysis {
 
 /// Processing strategy for a page
 enum PageProcessingStrategy: Sendable {
-    case directText     // Use page.string directly (fastest)
+    case directText     // Use page.normalizedString directly (fastest)
     case spatialText    // Use spatial text extraction from PDFKit
     case basicOCR       // Simple Vision OCR
     case enhancedOCR    // Spatial OCR with layout analysis

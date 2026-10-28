@@ -29,7 +29,7 @@ Baseline before any change: see "Baseline" below.
   compiles some folders, so new files go in folders it already has: `Services/Infrastructure/
   Configuration/StrictLocalControlGuard.swift`, `Services/Document/Localization/`,
   `Services/Document/OCR/`. ONNX Runtime is linked to the app target only; engine-framework builds
-  compile the `#if canImport(onnxruntime_objc)` fallback (`isAvailable == false`).
+  compile the `#if canImport(OnnxRuntimeBindings)` fallback (`isAvailable == false`).
 - Plan's `document_chunks` ALTER TABLE: no such table (chunk text is the FTS5 table `chunks`, which
   can't be altered). The bilingual columns are a new table `chunk_legal` keyed by chunk id, and
   `DocumentChunk.legal: LegalChunkMetadata?` holds them in memory.
@@ -47,12 +47,12 @@ Baseline before any change: see "Baseline" below.
 - [x] `GreekLegalPipelineTests.swift` masking test
 
 ## Phase 3: Greek OCR + extraction fixes
-- [ ] `validateAndCleanOCR` Greek bypass
-- [ ] NFKC on PDFPage.string; full-page Greek detection (no 2,000-char drop)
-- [ ] onnxruntime package; models bundled
-- [ ] `GreekPaddleOCRService.swift`, `OCRRouterService.swift`
-- [ ] 5 call sites routed
-- [ ] OCR test
+- [x] `validateAndCleanOCR` Greek bypass
+- [x] NFKC on PDFPage.string; full-page Greek detection (no 2,000-char drop)
+- [x] onnxruntime package; models bundled
+- [x] `GreekPaddleOCRService.swift`, `OCRRouterService.swift`
+- [x] 5 call sites routed
+- [x] OCR test
 
 ## Phase 4: translation
 - [ ] Opus-MT ONNX conversion + `LocalNeuralTranslator.swift`
@@ -82,3 +82,4 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 ## Log
 - 2026-10-28 P1: strict local guard committed; 6 tests pass.
 - 2026-10-28 P2: masker + chunk_legal table committed; masker/storage tests pass.
+- 2026-10-28 P3: Greek OCR (ORT + PP-OCRv5), router at 5 sites, Greek-safe filters committed; full suite has only the 3 Greek-region failures left after the P1 fix.

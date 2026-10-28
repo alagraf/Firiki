@@ -710,7 +710,14 @@ actor IntelligentDocumentProcessor {
             Log.warning("[IntelligentProcessor] Failed to materialize region image for OCR", category: .ingestion)
             return ""
         }
+        // Thesis fork: routed through `OCRRouterService`, which reads Greek with PaddleOCR.
+        let text = (try? await OCRRouterService.shared.recognizeText(in: cgImage, site: "intelligent.rescueRegion") {
+            self.recognizeVisionText(in: cgImage)
+        }) ?? ""
+        return GreekLegalEntityMasker.repairGreekHomoglyphs(text).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
+    private func recognizeVisionText(in cgImage: CGImage) -> String {
         var extractedText = ""
 
         // Stays on `VNRecognizeTextRequest` (5.7). Scanned pages are read by `RecognizeDocumentsRequest`
@@ -833,7 +840,12 @@ actor IntelligentDocumentProcessor {
 
         // Use iOS 26 RecognizeDocumentsRequest for tables if available
         if #available(iOS 26.0, *) {
-            return await extractTableWithVision26(from: croppedImage)
+            let rows = await extractTableWithVision26(from: croppedImage)
+            // Thesis fork: a Greek table misread by Vision goes through the Greek OCR text path.
+            let visionText = rows.flatMap { $0 }.joined(separator: " ")
+            if !OCRRouterService.shared.isGreekEngineAvailable || !OCRRouterService.visionTextNeedsGreekEngine(visionText) {
+                return rows
+            }
         }
 
         // Fallback: Extract text and try to parse as table

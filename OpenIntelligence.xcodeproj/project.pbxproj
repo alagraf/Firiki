@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0E1A00012F30000100AA1001 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0E1A00022F30000100AA1001 /* onnxruntime */; };
 		B016E7B72F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */; };
 		E0A100022F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */; };
 		E0A100042F0F5F5F00AABA0D /* OpenIntelligenceEngine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0A100042F0F5F5F00AABA0C /* OpenIntelligenceEngine.framework */; };
@@ -178,6 +179,9 @@
 				Assets/Assets.xcassets,
 				StoreKit/StoreKitConfiguration.storekit,
 				StoreKit/StoreKitTestHarness.swift,
+				MLModels/GreekOCR/PP-OCRv5_mobile_det.onnx,
+				MLModels/GreekOCR/el_PP-OCRv5_mobile_rec.onnx,
+				MLModels/GreekOCR/el_dict.txt,
 			);
 			target = E0A100072F0F5F5F00AABA0C /* OpenIntelligenceEngine */;
 		};
@@ -324,6 +328,7 @@
 			files = (
 				B016E7B72F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */,
 				E0A100322F0F5F5F00AABA0C /* Tokenizers in Frameworks */,
+				0E1A00012F30000100AA1001 /* onnxruntime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -521,6 +526,7 @@
 			packageProductDependencies = (
 				B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */,
 				E0A100312F0F5F5F00AABA0C /* Tokenizers */,
+				0E1A00022F30000100AA1001 /* onnxruntime */,
 			);
 			productName = OpenIntelligence;
 			productReference = B0D565DE2E98AC50001274A2 /* OpenIntelligence.app */;
@@ -681,6 +687,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B016E7B32F0F5F5F00AABA0C /* XCLocalSwiftPackageReference "OpenIntelligence/swift-transformers" */,
+				0E1A00032F30000100AA1001 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B0D565DF2E98AC50001274A2 /* Products */;
@@ -1557,7 +1564,23 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		0E1A00032F30000100AA1001 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 1.24.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		0E1A00022F30000100AA1001 /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0E1A00032F30000100AA1001 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
+		};
 		B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B016E7B32F0F5F5F00AABA0C /* XCLocalSwiftPackageReference "OpenIntelligence/swift-transformers" */;

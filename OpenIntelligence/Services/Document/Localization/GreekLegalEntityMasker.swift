@@ -67,7 +67,39 @@ nonisolated enum GreekLegalEntityMasker {
         }
         s = s.precomposedStringWithCompatibilityMapping
         s = s.replacingOccurrences(of: "«", with: "\"").replacingOccurrences(of: "»", with: "\"")
-        return s
+        return repairGreekHomoglyphs(s)
+    }
+
+    private static let latinToGreek: [Character: Character] = [
+        "A": "Α", "B": "Β", "E": "Ε", "H": "Η", "I": "Ι", "K": "Κ", "M": "Μ", "N": "Ν", "O": "Ο",
+        "P": "Ρ", "T": "Τ", "X": "Χ", "Y": "Υ", "Z": "Ζ", "o": "ο", "v": "ν", "u": "υ", "k": "κ",
+    ]
+
+    /// OCR and some PDF fonts mix Latin look-alikes into Greek ("ΦΕK", "N. 4808/2021", "A'"). On a
+    /// Greek line (mostly Greek letters, or some Greek in a text that is mostly Greek), a word that
+    /// has Greek letters, or a short capital abbreviation ("N.", "A'"), gets its Latin look-alikes
+    /// replaced by the Greek letters. Other lines are left alone, so English text is never changed.
+    static func repairGreekHomoglyphs(_ text: String) -> String {
+        guard containsGreek(text) else { return text }
+        let textIsGreek = greekLetterRatio(text) >= 0.5
+        return text.components(separatedBy: "\n").map { line -> String in
+            let lineRatio = greekLetterRatio(line)
+            guard lineRatio >= 0.5 || (textIsGreek && lineRatio > 0) else { return line }
+            return line.split(separator: " ", omittingEmptySubsequences: false).map { token -> String in
+                let word = String(token)
+                let letters = word.filter(\.isLetter)
+                let hasGreek = letters.unicodeScalars.contains(where: isGreekScalar)
+                let isCapitalAbbreviation = !letters.isEmpty && letters.count <= 3
+                    && letters.allSatisfy { latinToGreek[$0] != nil || isGreekScalar($0.unicodeScalars.first!) }
+                    && word.count <= letters.count + 4
+                guard hasGreek || isCapitalAbbreviation else { return word }
+                return String(word.map { char -> Character in
+                    // Lower-case look-alikes only inside a word that is already Greek.
+                    if char.isLowercase && !hasGreek { return char }
+                    return latinToGreek[char] ?? char
+                })
+            }.joined(separator: " ")
+        }.joined(separator: "\n")
     }
 
     static func containsGreek(_ text: String) -> Bool {
@@ -315,6 +347,25 @@ nonisolated enum GreekLegalEntityMasker {
             case .englishCanonical: output += entity.canonicalEn
             }
             cursor = result.range.location + result.range.length
+        }
+        output += ns.substring(from: cursor)
+        return output
+    }
+
+    /// "Article 38 [Άρθρο 38]" → "Article 38": drops a bracket whose identifiers all repeat the
+    /// identifier just before it, so an anchored English text has each identifier once.
+    static func collapseBilingualAnchors(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"\s*\[([^\[\]\n]{1,80})\]"#) else { return text }
+        let ns = text as NSString
+        var output = ""
+        var cursor = 0
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let inside = canonicalKeys(in: ns.substring(with: match.range(at: 1)))
+            let beforeStart = max(cursor, match.range.location - 80)
+            let before = extractEntities(from: ns.substring(with: NSRange(location: beforeStart, length: match.range.location - beforeStart)))
+            guard !inside.isEmpty, let last = before.last, inside == [last.canonicalKey] else { continue }
+            output += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            cursor = match.range.location + match.range.length
         }
         output += ns.substring(from: cursor)
         return output

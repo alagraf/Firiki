@@ -180,7 +180,7 @@ actor LayoutAwareExtractor {
 
         guard !blocks.isEmpty else {
             // Fallback to simple string if no blocks detected
-            let simpleText = page.string ?? ""
+            let simpleText = page.normalizedString ?? ""
             return LayoutAnalysisResult(
                 pageNumber: pageNumber,
                 columns: [DetectedColumn(index: 0, xRange: 0...1, blocks: [])],
@@ -229,6 +229,30 @@ actor LayoutAwareExtractor {
             )
         }
 
+        let visionBlocks = try await recognizeVisionTextBlocks(in: cgImage, pageNumber: pageNumber, minConf: minConf)
+
+        // Thesis fork: Vision reads no Greek. When its blocks look like misread Greek, the page is
+        // read by PaddleOCR's Greek model and its lines become the blocks (Vision coordinates,
+        // bottom-left origin).
+        let visionText = visionBlocks.map(\.text).joined(separator: " ")
+        let force = OCRRouterService.visionTextNeedsGreekEngine(visionText)
+        guard force || OCRRouterService.shared.prefersGreekEngine(),
+              let lines = await OCRRouterService.shared.greekLines(in: cgImage, site: "layout.multiColumn", force: force),
+              OCRConfiguration.containsGreekText(lines.map(\.text).joined(separator: " "))
+        else {
+            return visionBlocks
+        }
+        return lines.map { line in
+            TextBlock(
+                text: GreekLegalEntityMasker.repairGreekHomoglyphs(line.text),
+                boundingBox: CGRect(x: line.box.minX, y: 1 - line.box.maxY, width: line.box.width, height: line.box.height),
+                confidence: line.confidence,
+                pageNumber: pageNumber
+            )
+        }
+    }
+
+    private func recognizeVisionTextBlocks(in cgImage: CGImage, pageNumber: Int, minConf: Float) async throws -> [TextBlock] {
         // Use actor-based async throttle to avoid priority inversion warnings
         // VisionOCRThrottle.perform uses AsyncSemaphore internally
         return try await VisionOCRThrottle.perform {
@@ -280,7 +304,7 @@ actor LayoutAwareExtractor {
     // MARK: - PDFKit Block Extraction
 
     private func extractBlocksFromPDFPage(_ page: PDFPage, pageNumber: Int) -> [TextBlock] {
-        guard let pageText = page.string, !pageText.isEmpty else {
+        guard let pageText = page.normalizedString, !pageText.isEmpty else {
             return []
         }
 
