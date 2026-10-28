@@ -23,6 +23,9 @@ nonisolated enum GreekLegalAnswerContext {
     /// True while a Greek legal question is being answered.
     @TaskLocal static var isActive = false
 
+    /// Collects the model asset ids `LLMService` reports while a Greek legal question is answered.
+    @TaskLocal static var assetRecorder: ModelAssetRecorder?
+
     static let maxTemperature: Float = 0.2
 
     /// UserDefaults key; absent means on.
@@ -39,14 +42,46 @@ nonisolated enum GreekLegalAnswerContext {
     }
 }
 
+/// The model asset ids of the generations in one answer (on device vs Private Cloud Compute).
+nonisolated final class ModelAssetRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: [String] = []
+
+    func record(_ assetIDs: [String]) {
+        lock.lock(); defer { lock.unlock() }
+        for id in assetIDs where !ids.contains(id) { ids.append(id) }
+    }
+
+    var assetIDs: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return ids
+    }
+}
+
 /// What the Greek legal review decided, for the response details and the thesis evaluation.
-nonisolated struct LegalAnswerReview: Sendable, Equatable {
+nonisolated struct LegalAnswerReview: Codable, Sendable, Equatable {
+    /// One gate's outcome, as shown under Response Details.
+    struct GateLine: Codable, Sendable, Equatable {
+        let gate: String
+        let passed: Bool
+        let confidence: Float
+        let details: String
+    }
+
     let englishDraft: String
     let abstained: Bool
     let reason: String?
     let overallConfidence: Float
-    let gateSummary: [String]
+    let gates: [GateLine]
     let modelUsed: String
+    /// The question as the gates read it (its English translation).
+    var queryEn: String = ""
+    var assetIDs: [String] = []
+
+    /// One line per gate, for the log.
+    var gateSummary: [String] {
+        gates.map { "\($0.passed ? "PASS" : "FAIL") \($0.gate): \($0.details)" }
+    }
 }
 
 nonisolated enum GreekLegalAnswerFinalizer {
@@ -90,13 +125,14 @@ nonisolated enum GreekLegalAnswerFinalizer {
         queryEn: String,
         response: RAGResponse,
         verify: (String, String, [RetrievedChunk]) async -> RAGVerificationResult,
-        translate: (String, [LegalEntityRecord]) async throws -> String
+        translate: (String, [LegalEntityRecord]) async throws -> String,
+        assetIDs: [String] = []
     ) async -> (response: RAGResponse, review: LegalAnswerReview) {
         let draft = response.generatedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
         let chunks = response.retrievedChunks
         var reason: String?
         var confidence: Float = 0
-        var summary: [String] = []
+        var gates: [LegalAnswerReview.GateLine] = []
 
         if response.metadata.modelUsed == "none" || response.metadata.tokensGenerated == 0 && chunks.isEmpty {
             reason = "the pipeline answered without generating (\(response.metadata.gatingDecision ?? "no evidence"))"
@@ -107,7 +143,9 @@ nonisolated enum GreekLegalAnswerFinalizer {
         } else {
             let result = await verify(draft, queryEn, chunks)
             confidence = result.overallConfidence
-            summary = result.gateResults.map { "\($0.passed ? "PASS" : "FAIL") \($0.gate.rawValue): \($0.details)" }
+            gates = result.gateResults.map {
+                LegalAnswerReview.GateLine(gate: $0.gate.rawValue, passed: $0.passed, confidence: $0.confidence, details: $0.details)
+            }
             if result.shouldAbstain {
                 reason = result.abstainReason ?? "critical gate failed"
             } else if result.overallConfidence < minimumCompositeConfidence {
@@ -132,8 +170,11 @@ nonisolated enum GreekLegalAnswerFinalizer {
 
         let review = LegalAnswerReview(
             englishDraft: draft, abstained: reason != nil, reason: reason,
-            overallConfidence: confidence, gateSummary: summary, modelUsed: response.metadata.modelUsed
+            overallConfidence: confidence, gates: gates, modelUsed: response.metadata.modelUsed,
+            queryEn: queryEn, assetIDs: assetIDs
         )
+        var metadata = response.metadata
+        metadata.legalReview = review
         Log.info(
             "[GreekLegal] Review: abstained=\(review.abstained) confidence=\(String(format: "%.2f", confidence)) model=\(review.modelUsed)",
             category: .retrieval
@@ -145,7 +186,7 @@ nonisolated enum GreekLegalAnswerFinalizer {
             queryId: response.queryId,
             retrievedChunks: chunks,
             generatedResponse: finalText,
-            metadata: response.metadata,
+            metadata: metadata,
             confidenceScore: reason == nil ? confidence : 0,
             qualityWarnings: warnings,
             structuredAnswer: nil,

@@ -11525,7 +11525,9 @@ class RAGService: ObservableObject {
         let greekLegal = GreekLegalAnswerContext.applies(to: question)
         // Apple's usage for every model call this answer makes is added up (`AnswerUsageTally`, 5.7) and put in
         // its metadata by `finalizeResponse`.
+        let assetRecorder = ModelAssetRecorder()
         let run = {
+            try await GreekLegalAnswerContext.$assetRecorder.withValue(greekLegal ? assetRecorder : nil) {
             try await GreekLegalAnswerContext.$isActive.withValue(greekLegal) {
                 try await AnswerUsageTally.$current.withValue(AnswerUsageTally()) {
                     try await LLMStreamingContext.$handler.withValue(greekLegal ? nil : streamHandler) {
@@ -11541,6 +11543,7 @@ class RAGService: ObservableObject {
                     }
                 }
             }
+            }
         }
         guard greekLegal else { return try await run() }
         let response: RAGResponse
@@ -11553,29 +11556,32 @@ class RAGService: ObservableObject {
             Log.warning("[GreekLegal] Query failed, abstaining: \(error.localizedDescription)", category: .pipeline)
             return Self.greekLegalAbstentionResponse(reason: error.localizedDescription)
         }
-        return await reviewGreekLegalAnswer(question: question, response: response)
+        return await reviewGreekLegalAnswer(question: question, response: response, assetIDs: assetRecorder.assetIDs)
     }
 
     nonisolated static func greekLegalAbstentionResponse(reason: String) -> RAGResponse {
-        RAGResponse(
+        let review = LegalAnswerReview(
+            englishDraft: "", abstained: true, reason: reason, overallConfidence: 0, gates: [], modelUsed: "none"
+        )
+        var metadata = ResponseMetadata(
+            timeToFirstToken: nil, totalGenerationTime: 0, tokensGenerated: 0, tokensPerSecond: nil,
+            modelUsed: "none", retrievalTime: 0, retrievalConfigSummary: "Greek legal mode",
+            gatingDecision: "greek_legal_abstained", toolCallsMade: 0, embeddingProvider: nil
+        )
+        metadata.legalReview = review
+        return RAGResponse(
             queryId: UUID(),
             retrievedChunks: [],
             generatedResponse: LegalVerificationPolicy.greekAbstentionMessage,
-            metadata: ResponseMetadata(
-                timeToFirstToken: nil, totalGenerationTime: 0, tokensGenerated: 0, tokensPerSecond: nil,
-                modelUsed: "none", retrievalTime: 0, retrievalConfigSummary: "Greek legal mode",
-                gatingDecision: "greek_legal_abstained", toolCallsMade: 0, embeddingProvider: nil
-            ),
+            metadata: metadata,
             confidenceScore: 0,
             qualityWarnings: ["Greek legal mode: abstained (\(reason))"],
-            legalReview: LegalAnswerReview(
-                englishDraft: "", abstained: true, reason: reason, overallConfidence: 0, gateSummary: [], modelUsed: "none"
-            )
+            legalReview: review
         )
     }
 
     /// Thesis fork: gates A–I on the English draft, then the Greek translation or the Greek abstention.
-    private func reviewGreekLegalAnswer(question: String, response: RAGResponse) async -> RAGResponse {
+    private func reviewGreekLegalAnswer(question: String, response: RAGResponse, assetIDs: [String]) async -> RAGResponse {
         let queryEn = await Self.greekQueryTranslation(question) ?? question
         let intent = QueryEnhancementService().classifyAnswerIntent(question)
         let reviewed = await GreekLegalAnswerFinalizer.review(
@@ -11592,7 +11598,8 @@ class RAGService: ObservableObject {
             translate: { draft, entities in
                 guard LocalNeuralTranslator.isAvailable(.englishToGreek) else { return draft }
                 return try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations(draft, entities: entities)
-            }
+            },
+            assetIDs: assetIDs
         )
         return reviewed.response
     }

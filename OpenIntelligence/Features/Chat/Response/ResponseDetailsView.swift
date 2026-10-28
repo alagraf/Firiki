@@ -32,6 +32,11 @@ struct ChatResponseDetailsView: View {
                     // 1. Verification Hero
                     verificationHero
 
+                    // Thesis fork: Greek legal review (gates, English draft, model assets)
+                    if let review = metadata.legalReview {
+                        GreekLegalReviewCard(review: review)
+                    }
+
                     // Source Fidelity Status Card
                     SourceFidelityStatus(
                         level: fidelityLevel,

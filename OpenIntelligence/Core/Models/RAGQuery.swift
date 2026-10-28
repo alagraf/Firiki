@@ -114,6 +114,9 @@ struct ResponseMetadata: Codable, Sendable {
     /// Apple's count for this answer (5.7): the input, cached input, output and reasoning tokens of every model
     /// call it made, added up (`AnswerUsageTally`). Nil before iOS and macOS 27 and on answers saved before 5.7.
     var appleUsage: GenerationUsage? = nil
+    /// Thesis fork: the Greek legal review (English draft, gates, model assets), shown under
+    /// Response Details. Nil outside Greek legal mode and in messages saved before it.
+    var legalReview: LegalAnswerReview? = nil
 
     struct ExecutionRoute: Codable, Sendable, Equatable {
         let path: String // "On-Device", "Private Cloud Compute", etc.

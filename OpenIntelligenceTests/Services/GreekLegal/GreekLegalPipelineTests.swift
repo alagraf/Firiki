@@ -545,3 +545,49 @@ struct GreekLegalVerificationTests {
         #expect(result.gateResults.first { $0.gate == .numericSanity }?.passed == true)
     }
 }
+
+@Suite("Greek legal review in Response Details")
+struct GreekLegalReviewDetailsTests {
+    @Test func reviewTravelsInTheMessageMetadata() async throws {
+        let chunk = GreekLegalVerificationTests.article38
+        let reviewed = await GreekLegalAnswerFinalizer.review(
+            question: "Πώς καταγράφεται ο χρόνος εργασίας;", queryEn: "How does the employer record working time?",
+            response: GreekLegalVerificationTests.response("Under Article 38 working time is recorded [C1].", chunks: [chunk]),
+            verify: { _, _, _ in
+                RAGVerificationResult(
+                    passed: true,
+                    gateResults: [.init(gate: .statutoryIsolation, passed: true, confidence: 1, details: "ok")],
+                    claimResults: [], overallConfidence: 0.9, shouldAbstain: false, abstainReason: nil)
+            },
+            translate: { text, _ in text },
+            assetIDs: ["instruct_3b"]
+        )
+        let review = try #require(reviewed.response.metadata.legalReview)
+        #expect(review.assetIDs == ["instruct_3b"])
+        #expect(review.queryEn == "How does the employer record working time?")
+        #expect(review.gates.map(\.gate) == [VerificationGate.statutoryIsolation.rawValue])
+        #expect(review.gateSummary == ["PASS Gate I: Statutory Isolation: ok"])
+
+        // Saved with the message and read back; messages saved before have no review.
+        let data = try JSONEncoder().encode(reviewed.response.metadata)
+        let decoded = try JSONDecoder().decode(ResponseMetadata.self, from: data)
+        #expect(decoded.legalReview == review)
+        var plain = reviewed.response.metadata
+        plain.legalReview = nil
+        let old = try JSONDecoder().decode(ResponseMetadata.self, from: JSONEncoder().encode(plain))
+        #expect(old.legalReview == nil)
+    }
+
+    @Test func abstentionResponseCarriesItsReview() {
+        let response = RAGService.greekLegalAbstentionResponse(reason: "planner abstained")
+        #expect(response.metadata.legalReview?.abstained == true)
+        #expect(response.metadata.legalReview?.reason == "planner abstained")
+    }
+
+    @Test func assetRecorderKeepsEachIdOnce() {
+        let recorder = ModelAssetRecorder()
+        recorder.record(["instruct_3b"])
+        recorder.record(["instruct_3b", "instruct_server_v2"])
+        #expect(recorder.assetIDs == ["instruct_3b", "instruct_server_v2"])
+    }
+}

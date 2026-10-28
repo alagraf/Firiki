@@ -616,6 +616,7 @@ struct LLMResponse {
             for entry in session.transcript.reversed() {
                 if case let .response(response) = entry {
                     Log.info("[ModelAsset] assetIDs=\(response.assetIDs.joined(separator: ","))", category: .llm)
+                    GreekLegalAnswerContext.assetRecorder?.record(response.assetIDs)
                     return
                 }
             }

@@ -104,6 +104,7 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 - Device check (M3 Mac / iPhone): import a Greek PDF and a scan, ask Greek questions in each quality
   mode, read `[OCRBenchmark]`, `[GreekLegal] Review`, `[ModelAsset]` logs; calibrate the 0.20/0.30 and
   0.5 thresholds.
-- Show `RAGResponse.legalReview` (gate breakdown, English draft, asset id) in the Technical Details UI.
 - Hook Greek translation into `importLargePDFStreamed` (PDFs > 10 MB).
 - Decoder KV cache for faster ingestion translation.
+- 2026-10-28 Review UI: GreekLegalReviewCard under Response Details (gates, English draft, asset ids); committed.
+- Owner reports the app partly works on device; improvements and bug fixes come next.

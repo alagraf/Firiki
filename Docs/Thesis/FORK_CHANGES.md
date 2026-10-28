@@ -590,8 +590,7 @@ content English with `[Ν. 4808/2021]`; article cross-references resolve. Full s
 - Already in place, not changed: `ModelExecutionPlanner`/`FoundationModelTokenBudget` read
   `SystemLanguageModel.default.contextSize`; PCC is guarded since 2.11.1.
 
-**Not done / limits:** the gate breakdown and asset id are logged and kept in
-`RAGResponse.legalReview`, not yet shown in the UI; thresholds (0.20/0.30, composite 0.5) need
+**Not done / limits:** thresholds (0.20/0.30, composite 0.5) need
 calibrating on a device, since the simulator can't generate answers; a model refusal is turned into
 the abstention, not retried.
 
@@ -609,6 +608,30 @@ passes gate I with no domain-isolation text; a Ν. 4808/2021 question over Ν. 3
 fails), `testStrictAbstentionBelowThreshold` (score 0.15 abstains without running the gates), a verified
 draft is translated, Greek numerals, gate C on Greek numbers. Full suite: `Executed 1363 tests, with 8
 tests skipped and 3 failures` (the 3 Greek-region formatting tests); Swift Testing 33 passed.
+
+#### 2.11.6 Greek legal review under Response Details
+
+**Why:** the review of a Greek answer (gates, English draft, model) was only in the log.
+
+**What changed:**
+- `LegalAnswerReview` is `Codable` and kept in `ResponseMetadata.legalReview`, so it is saved with the
+  chat message (messages saved before decode with no review). It holds each gate's result
+  (`GateLine`), the English draft, the question as the gates read it (its English translation) and
+  the model asset ids.
+- `ModelAssetRecorder`: `RAGService.query` hands one to the Greek legal query as a task-local value;
+  `LLMService` records the asset ids of each generation into it (and still logs them).
+- New `GreekLegalReviewCard` under Response Details, after the verification summary: verified and
+  translated, or abstained with the reason; gate confidence; one line per gate (pass/fail and detail);
+  model and model assets; the English draft and the question in a "technical details" disclosure.
+
+**Files:** `GreekLegalReviewCard.swift` (new), `ResponseDetailsView.swift`, `RAGQuery.swift`,
+`GreekLegalAnswerService.swift`, `RAGService.swift`, `LLMService.swift`, `GreekLegalPipelineTests.swift`
+
+**Verification:** `GreekLegalReviewDetailsTests` (review with gates, question and asset ids is in the
+response metadata and survives a JSON round trip; old metadata decodes with none; the abstention
+response carries its review; asset ids recorded once) and `GreekLegalVerificationTests` pass on the
+iPhone 18 Pro simulator (`Test run with 9 tests in 2 suites passed`). The card's layout was not
+checked on screen.
 
 ## 3. How to inspect the changes
 
