@@ -107,6 +107,8 @@ enum OpenIntelligenceRuntimePaths {
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = appSupport.appendingPathComponent(defaultFolderName, isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Thesis R1.1: the library's database and vectors stay on this device.
+        StrictLocalControlGuard.enforceLocalStorage(for: dir)
         return dir
     }
 
@@ -120,6 +122,7 @@ enum OpenIntelligenceRuntimePaths {
                 at: overrideBaseDirectory,
                 withIntermediateDirectories: true
             )
+            StrictLocalControlGuard.enforceLocalStorage(for: overrideBaseDirectory)
             return overrideBaseDirectory
         }
 
@@ -136,6 +139,7 @@ enum OpenIntelligenceRuntimePaths {
                 at: overrideLocalCacheDirectory,
                 withIntermediateDirectories: true
             )
+            StrictLocalControlGuard.enforceLocalStorage(for: overrideLocalCacheDirectory)
             return overrideLocalCacheDirectory
         }
 

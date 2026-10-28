@@ -86,7 +86,8 @@ struct FoundationModelSessionFactory {
         case .privateCloudCompute(_):
             #if compiler(>=6.4)
             if #available(iOS 27.0, macOS 27.0, *) {
-                guard EntitlementChecker.hasEntitlement(EntitlementChecker.privateCloudComputeKey) else {
+                // Thesis R1.4: entitlement present and cloud transmission not refused.
+                guard StrictLocalControlGuard.canUsePCC() else {
                     throw LLMError.modelUnavailable
                 }
                 let nativeModel = FoundationModels.PrivateCloudComputeLanguageModel()

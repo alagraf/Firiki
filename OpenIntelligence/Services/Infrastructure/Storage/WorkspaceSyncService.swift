@@ -4121,7 +4121,8 @@ final class WorkspaceSyncService: ObservableObject {
 
     nonisolated private static func resolveUbiquityContainerURL() async -> URL? {
         await Task.detached(priority: .utility) {
-            FileManager.default.url(forUbiquityContainerIdentifier: nil)
+            // Thesis R1.2: nil while strict local mode is on, so nothing syncs to iCloud Drive.
+            StrictLocalControlGuard.ubiquityContainerURL()
         }.value
     }
 

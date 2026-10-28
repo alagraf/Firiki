@@ -35,7 +35,8 @@ struct LiveFoundationModelCapabilityProvider: FoundationModelCapabilityProviding
         #else
         #if compiler(>=6.4)
         if #available(iOS 27.0, macOS 27.0, *) {
-            let entitlement = EntitlementChecker.hasEntitlement(EntitlementChecker.privateCloudComputeKey)
+            // Thesis R1.4: entitlement present and cloud transmission not refused.
+            let entitlement = StrictLocalControlGuard.canUsePCC()
             guard entitlement else {
                 return FoundationModelCapabilitySnapshot(
                     supportsOnDevice: true,

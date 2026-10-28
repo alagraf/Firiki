@@ -48,6 +48,7 @@ thesis change.
 | 2.8 | 2026-10-22 | `8f757eb5` | Agent workflow | Original author's agent rules, hooks and routing replaced by the thesis workflow |
 | 2.9 | 2026-10-22 | `97604145` | Documentation | Stale retrieval-pipeline note fixed; smoke build defaults to an installed simulator; this record updated |
 | 2.10 | 2026-10-23 | commit after `6b221e5d` | Answer verification | Jurisdiction caveat removed (2.5's caveat and 2.6); the medical check stays removed |
+| 2.11 | 2026-10-28 | branch `thesis/greek-legal-rag` | Greek pipeline | Greek labour-law RAG plan (`Docs/Thesis/plans/greek-legaltech.md`), one subsection per phase |
 
 Commits `2e2d9086` and `10da7226` added and updated this document. Before the history was rebuilt,
 2.1–2.6 had the commit IDs `e61cbb4`, `e61cbb4`, `1244d88`, `c73c6d5`, `61218d3` and `7b83c4a`.
@@ -363,6 +364,42 @@ carry any jurisdiction note.
 `CHANGELOG.md`
 
 **Verification:** see the commit message for the build and test results.
+
+### 2.11 Greek labour-law RAG pipeline (branch `thesis/greek-legal-rag`)
+
+**Why:** to carry out the owner's implementation plan `Docs/Thesis/plans/greek-legaltech.md`
+(Greek OCR, Greek legal identifier masking, on-device el↔en translation, bilingual storage and
+retrieval, legal verification gates and strict abstention). Progress and the resume point are in
+`Docs/Thesis/plans/greek-legaltech-progress.md`. Where the plan and the fork differ, the progress
+file says what was decided.
+
+#### 2.11.1 Phase 1: strict local control (thesis requirement R1.1–R1.4)
+
+**What changed:**
+- New `StrictLocalControlGuard` (`Services/Infrastructure/Configuration/`; the plan's
+  `Services/Security/` is not a folder the engine framework compiles). Strict local mode is on unless
+  the `thesis.strictLocalMode` default is set to false.
+- R1.1: `OpenIntelligenceRuntimePaths` marks the Application Support root (and any overridden base
+  or local-cache folder) `isExcludedFromBackup`, so the SQLite database and vector store under it
+  stay on the device.
+- R1.2: `WorkspaceSyncService` resolves the iCloud Drive container through the guard, which returns
+  nil in strict mode, so workspace sync never starts.
+- R1.3: `WebPageFetchService.fetch` throws `remoteIngestionBlocked` before any request in strict
+  mode. This covers every web-address import path (Save a Web Page, Add to Library's link field,
+  pasted addresses, the share sheet).
+- R1.4: `StrictLocalControlGuard.canUsePCC()` requires the signed PCC entitlement and that the user
+  hasn't chosen "Never Allow" for cloud transmission. `FoundationModelSessionFactory` checks it
+  before creating `PrivateCloudComputeLanguageModel`, and `FoundationModelCapabilityProvider` before
+  reporting PCC available, which is what `ModelExecutionPlanner` routes on.
+- Plan step 1.1 (quota, iCloud/PCC entitlements) was already done in 2.1/2.2.
+
+**Files:** `StrictLocalControlGuard.swift` (new), `OpenIntelligenceRuntimePaths.swift`,
+`WorkspaceSyncService.swift`, `WebPageFetchService.swift`, `FoundationModelSessionFactory.swift`,
+`FoundationModelCapabilityProvider.swift`, `GreekLegalPipelineTests.swift` (new)
+
+**Verification:** `StrictLocalControlGuardTests` (6 tests: default on, folder and Application
+Support root excluded from backup, iCloud and web import blocked, PCC needs entitlement and no
+refusal) pass on the iPhone 18 Pro simulator; full build succeeded.
 
 ## 3. How to inspect the changes
 

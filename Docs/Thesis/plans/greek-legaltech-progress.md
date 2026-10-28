@@ -25,12 +25,21 @@ Baseline before any change: see "Baseline" below.
 - Plan 1.1 (quota, iCloud/PCC entitlements): already done in FORK_CHANGES 2.1/2.2; not redone.
 - Plan's Gate I / `DomainIsolationService`: already deleted in the fork (2.5, 2.10). Gate I is
   re-added as a new legal statutory isolation gate, not by restoring the medical one.
-- New Swift files need no project edit (the target uses synchronized folders).
+- New Swift files need no project edit (synchronized folders), but the engine framework target only
+  compiles some folders, so new files go in folders it already has: `Services/Infrastructure/
+  Configuration/StrictLocalControlGuard.swift`, `Services/Document/Localization/`,
+  `Services/Document/OCR/`. ONNX Runtime is linked to the app target only; engine-framework builds
+  compile the `#if canImport(onnxruntime_objc)` fallback (`isAvailable == false`).
+- Plan's `document_chunks` ALTER TABLE: no such table (chunk text is the FTS5 table `chunks`, which
+  can't be altered). The bilingual columns are a new table `chunk_legal` keyed by chunk id, and
+  `DocumentChunk.legal: LegalChunkMetadata?` holds them in memory.
+- Run tests with `scripts/thesis_run_tests.sh <log> -only-testing:OpenIntelligenceTests/<Suite>`:
+  xcodebuild doesn't exit after the last result on this machine, the script stops it.
 
 ## Phase 1: strict local control
-- [ ] `StrictLocalControlGuard.swift` (exclude from backup, iCloud off, block web-page import, `canUsePCC`)
-- [ ] Hook: storage directories, ubiquity container lookup, web page import, PCC instantiation
-- [ ] Tests + FORK_CHANGES/CHANGELOG
+- [x] `StrictLocalControlGuard.swift` (exclude from backup, iCloud off, block web-page import, `canUsePCC`)
+- [x] Hook: storage directories, ubiquity container lookup, web page import, PCC instantiation
+- [x] Tests + FORK_CHANGES/CHANGELOG
 
 ## Phase 2: entity masker + bilingual schema
 - [ ] `GreekLegalEntityMasker.swift` (NFKC, mask, unmask bilingual/greekVerbatim)
@@ -63,6 +72,12 @@ Baseline before any change: see "Baseline" below.
 
 ## Baseline
 
-(pending)
+2026-10-28, `main` at `20d56a34`, iPhone 18 Pro simulator, Mac region Greece: XCTest `Executed 1363 tests,
+with 8 tests skipped and 4 failures`. The 4 failures are pre-existing: three number/date formatting
+tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
+`AppStoreRatingSnapshotTests.testLineShowsOneDecimalLikeTheStore`,
+`LaunchSaleTests.testDeadlineTextNamesTheLastFullDayRatherThanTheDayItExpires`) and
+`AtlasLabelingTests.testAnAdverbDoesNotNameAnAxisEnd`. Swift Testing: 2 tests passed.
 
 ## Log
+- 2026-10-28 P1: strict local guard committed; 6 tests pass.
