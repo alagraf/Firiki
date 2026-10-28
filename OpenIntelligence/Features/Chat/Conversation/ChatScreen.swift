@@ -1983,6 +1983,8 @@ struct ChatScreen: View {
     /// kept showing questions about the samples, and a sample library without one of those two
     /// guides got neither list.
     private var starterPrompts: [String] {
+        // Thesis fork: no suggested questions in the chat.
+        guard SuggestedQuestionsService.isEnabled else { return [] }
         if !dynamicSuggestedQuestions.isEmpty {
             return dynamicSuggestedQuestions
         }
@@ -2033,6 +2035,7 @@ struct ChatScreen: View {
     /// Generate suggested questions, optionally forcing a refresh (bypasses cache, avoids repeats)
     private func refreshSuggestedQuestions(force: Bool) {
         suggestedQuestionsTask?.cancel()
+        guard SuggestedQuestionsService.isEnabled else { return }
         if force {
             isRefreshingSuggestions = true
         }
@@ -2634,6 +2637,7 @@ struct ChatScreen: View {
                         && starterPrompts.allSatisfy(SuggestedQuestionsService.curatedQuestionTexts.contains),
                     libraryDocumentCount: activeDocCount,
                     isRefreshing: isRefreshingSuggestions,
+                    showsSuggestions: SuggestedQuestionsService.isEnabled,
                     onPromptSelected: sendSuggestedPrompt,
                     onRefresh: { refreshSuggestedQuestions(force: true) }
                 )
@@ -3495,7 +3499,9 @@ struct ChatScreen: View {
 
                 // Generate follow-up suggestions in the background. These should never
                 // keep the main chat in a "generating" state after the answer is visible.
-                let enableSmartReplies = await MainActor.run { self.settings.enableSmartReplies }
+                // Thesis fork: no follow-up suggestions either.
+                let smartRepliesSetting = await MainActor.run { self.settings.enableSmartReplies }
+                let enableSmartReplies = SuggestedQuestionsService.isEnabled && smartRepliesSetting
                 let smartReplyCount = await MainActor.run { self.settings.smartReplyCount }
                 if enableSmartReplies {
                     await MainActor.run {
@@ -4472,6 +4478,8 @@ private struct FirstQueryPromptView: View {
     var writtenForSamples: Bool = false
     let libraryDocumentCount: Int
     let isRefreshing: Bool
+    /// Thesis fork: false hides the suggestions' explanation and refresh button.
+    var showsSuggestions: Bool = true
     let onPromptSelected: (String) -> Void
     let onRefresh: () -> Void
 
@@ -4486,6 +4494,10 @@ private struct FirstQueryPromptView: View {
     private var supportingText: String {
         guard hasDocuments else {
             return "Import documents from the Documents tab, then ask about them here."
+        }
+
+        guard showsSuggestions else {
+            return "Ask a question about the documents in this library."
         }
 
         guard !prompts.isEmpty else {
@@ -4557,7 +4569,7 @@ private struct FirstQueryPromptView: View {
 
                 Spacer()
 
-                if hasDocuments {
+                if hasDocuments && showsSuggestions {
                     Button {
                         DSHaptics.selection()
                         onRefresh()

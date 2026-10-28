@@ -144,8 +144,9 @@ nonisolated final class OCRRouterService: @unchecked Sendable {
         if prefersGreekEngine(languageHint: languageHint) {
             let start = Date()
             let greek = Self.joinLines(try await greekEngine.recognizeLines(in: image))
-            log(site: site, engine: greekEngine.name, text: greek, start: start)
-            if !greek.isEmpty || ocrEngineMode == .greekPaddleOCR { return greek }
+            let keep = !greek.isEmpty || ocrEngineMode == .greekPaddleOCR
+            log(site: site, engine: greekEngine.name, text: greek, start: start, used: keep)
+            if keep { return greek }
             return try await visionText()
         }
 
@@ -162,9 +163,10 @@ nonisolated final class OCRRouterService: @unchecked Sendable {
             Log.warning("[OCRRouter] \(site): \(greekEngine.name) failed, keeping Vision: \(error.localizedDescription)", category: .ingestion)
             return vision
         }
-        log(site: site, engine: greekEngine.name, text: greek, start: greekStart)
         let greekLetters = greek.unicodeScalars.filter(GreekLegalEntityMasker.isGreekScalar).count
-        return greekLetters >= OCRConfiguration.greekLetterMinimum || vision.isEmpty ? greek : vision
+        let keep = greekLetters >= OCRConfiguration.greekLetterMinimum || vision.isEmpty
+        log(site: site, engine: greekEngine.name, text: greek, start: greekStart, used: keep)
+        return keep ? greek : vision
     }
 
     /// The Greek engine's lines for `image`, or nil when it cannot run, the mode is `.vision`, or
@@ -175,7 +177,7 @@ nonisolated final class OCRRouterService: @unchecked Sendable {
         let start = Date()
         do {
             let lines = try await greekEngine.recognizeLines(in: image)
-            log(site: site, engine: greekEngine.name, text: Self.joinLines(lines), start: start)
+            log(site: site, engine: greekEngine.name, text: Self.joinLines(lines), start: start, used: !lines.isEmpty)
             return lines
         } catch {
             Log.warning("[OCRRouter] \(site): \(greekEngine.name) failed: \(error.localizedDescription)", category: .ingestion)
@@ -183,11 +185,17 @@ nonisolated final class OCRRouterService: @unchecked Sendable {
         }
     }
 
-    private func log(site: String, engine: String, text: String, start: Date) {
+    private func log(site: String, engine: String, text: String, start: Date, used: Bool = true) {
         let greek = text.unicodeScalars.filter(GreekLegalEntityMasker.isGreekScalar).count
+        let milliseconds = Int(Date().timeIntervalSince(start) * 1000)
         Log.info(
-            "[OCRBenchmark] site=\(site) engine=\(engine) chars=\(text.count) greekLetters=\(greek) ms=\(Int(Date().timeIntervalSince(start) * 1000))",
+            "[OCRBenchmark] site=\(site) engine=\(engine) chars=\(text.count) greekLetters=\(greek) ms=\(milliseconds) used=\(used)",
             category: .ingestion
         )
+        // The import's Processing Log says when PaddleOCR read something.
+        if engine != "vision" {
+            IngestionLogRecorder.current?.recordGreekOCR(
+                engine: engine, site: site, characters: text.count, milliseconds: milliseconds, used: used)
+        }
     }
 }

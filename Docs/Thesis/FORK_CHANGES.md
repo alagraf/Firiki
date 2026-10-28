@@ -673,6 +673,36 @@ the document, gate A threshold for non-legal vs legal questions, failure text ab
 3 Greek-region formatting tests); Swift Testing 42 passed. Answer generation not checked (Simulator).
 Known limit: Opus-MT still mistranslates some rare words ("Εσπεράντο" → "Esperado", "σκυτάλη").
 
+#### 2.11.8 Suggested questions removed; Greek engines in the Processing Log
+
+**Why:** the owner asked for no suggested questions in the UI, and for the import's Processing Log
+to say when PaddleOCR reads a file and when Opus-MT translates it.
+
+**What changed:**
+- `SuggestedQuestionsService.isEnabled` (false): the empty chat shows no starter questions and no
+  refresh button ("Ask a question about the documents in this library."), no follow-up chips appear
+  after an answer, and no questions are generated at import or for the chat (which saves model
+  calls). The service and its code stay, so the switch can be turned back on.
+- New `IngestionLogRecorder`: the import passes it down as a task-local value; `OCRRouterService`
+  reports every PaddleOCR run to it (and whether its text was kept). The Processing Log gets
+  "Greek OCR: PaddleOCR PP-OCRv5 (Greek model, on device) is reading this file's images…" at the
+  first use and a summary after extraction ("PaddleOCR (paddle-el-v5) read N images, its text kept
+  for M, C characters, in S s"). Translation adds "Translation: Opus-MT (opus-mt-grk-en, on device)
+  is translating N Greek passages to English" and "Opus-MT translated X of N Greek passages in S s",
+  and the import's status reads "Translating Greek text with Opus-MT (on device)...".
+  `RAGService.appendIngestionEvent` adds a log line without changing the import's stage.
+  `[OCRBenchmark]` log lines now include `used=`.
+- Not covered: PDFs over 10 MB (streamed import path), as for translation.
+
+**Files:** `SuggestedQuestionsService.swift`, `ChatScreen.swift`, `IngestionLogRecorder.swift` (new),
+`OCRRouterService.swift`, `RAGService.swift`, `GreekProcessingLogTests.swift` (new)
+
+**Verification:** `GreekProcessingLogTests` (iPhone 18 Pro simulator): a scanned (image-only) Greek
+PDF imported through Add to Library gets the two PaddleOCR lines and the two Opus-MT lines in its
+Processing Log; suggested questions are off. Full suite: `Executed 1363 tests, with 8 tests skipped
+and 3 failures` (the 3 Greek-region formatting tests); Swift Testing 44 passed. The empty chat
+screen was not looked at on screen.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

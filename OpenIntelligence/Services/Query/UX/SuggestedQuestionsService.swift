@@ -47,6 +47,10 @@ actor SuggestedQuestionsService {
 
     static let shared = SuggestedQuestionsService()
 
+    /// Thesis fork: suggested questions are not shown (starter questions in an empty chat and
+    /// follow-up chips after an answer), so none are generated either.
+    nonisolated static let isEnabled = false
+
     // MARK: - Types
 
     /// Category of question for display diversity
@@ -325,6 +329,7 @@ actor SuggestedQuestionsService {
         chunks: [DocumentChunk],
         in containerId: UUID
     ) async {
+        guard Self.isEnabled else { return }
         let isSample = Self.sampleIdentity(for: document.filename) != nil
         if isSample {
             Log.info("[SuggestedQuestions] Skipping question generation for sample document '\(document.filename)' during ingestion.")

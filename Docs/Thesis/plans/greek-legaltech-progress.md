@@ -109,3 +109,4 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 - 2026-10-28 Review UI: GreekLegalReviewCard under Response Details (gates, English draft, asset ids); committed.
 - Owner reports the app partly works on device; improvements and bug fixes come next.
 - 2026-10-28 Fix (FORK_CHANGES 2.11.7): Greek name questions; names transliterated, reflow, fragments, gate A only for legal questions. Note: documents imported before this fix must be re-imported to get the new translations.
+- 2026-10-28 Suggested questions off (`SuggestedQuestionsService.isEnabled`); PaddleOCR and Opus-MT lines in the Processing Log (FORK_CHANGES 2.11.8).

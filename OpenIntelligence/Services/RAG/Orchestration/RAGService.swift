@@ -6722,6 +6722,15 @@ class RAGService: ObservableObject {
     }
 
     @MainActor
+    /// Thesis fork: adds a line to an import's Processing Log without changing its stage or detail.
+    func appendIngestionEvent(id: UUID?, stage: IngestionStage, title: String, detail: String) {
+        guard let id, let index = ingestionItems.firstIndex(where: { $0.id == id }) else { return }
+        ingestionItems[index].events.append(IngestionEvent(stage: stage, title: title, detail: detail))
+        if ingestionItems[index].events.count > 100 {
+            ingestionItems[index].events.removeFirst(ingestionItems[index].events.count - 100)
+        }
+    }
+
     func updateIngestionItem(
         id: UUID?,
         filename: String,
@@ -7378,12 +7387,24 @@ class RAGService: ObservableObject {
             }
 
             let extractionStartTime = Date()
-            let (document, extractedChunks) = try await documentProcessor.processDocument(
-                at: managedURL,
-                chunkOverride: activeChunkOverride,
-                containerId: activeContainerId  // FTS5 storage with container isolation
-            )
+            // Thesis fork: PaddleOCR runs report to this recorder, which writes them to the
+            // import's Processing Log.
+            let ingestionLog = IngestionLogRecorder { [weak self] stage, title, detail in
+                Task { @MainActor [weak self] in
+                    self?.appendIngestionEvent(id: trackingId, stage: stage, title: title, detail: detail)
+                }
+            }
+            let (document, extractedChunks) = try await IngestionLogRecorder.$current.withValue(ingestionLog) {
+                try await documentProcessor.processDocument(
+                    at: managedURL,
+                    chunkOverride: activeChunkOverride,
+                    containerId: activeContainerId  // FTS5 storage with container isolation
+                )
+            }
             try Task.checkCancellation()
+            if let ocrSummary = ingestionLog.greekOCRSummary {
+                ingestionLog.log(.extracting, title: "Greek OCR", detail: ocrSummary)
+            }
 
             // Thesis fork (plan stage 4): Greek chunks are translated to English with bilingual
             // legal anchors; the Greek text is kept in `chunkLegal` for the citation view.
@@ -7391,13 +7412,28 @@ class RAGService: ObservableObject {
             var chunkLegal: [LegalChunkMetadata?] = Array(repeating: nil, count: extractedChunks.count)
             if LocalNeuralTranslator.isAvailable(.greekToEnglish),
                extractedChunks.contains(where: { GreekLegalIngestion.isGreekChunk($0.text) }) {
+                let greekChunkCount = extractedChunks.filter { GreekLegalIngestion.isGreekChunk($0.text) }.count
                 await MainActor.run {
                     updateIngestionItem(
                         id: trackingId, filename: filename, stage: .analyzing,
-                        detail: "Translating Greek text on device...", progress: 0.35
+                        detail: "Translating Greek text with Opus-MT (on device)...", progress: 0.35
+                    )
+                    appendIngestionEvent(
+                        id: trackingId, stage: .analyzing, title: "Translation",
+                        detail: "Opus-MT (\(TranslationDirection.greekToEnglish.rawValue), on device) is translating \(greekChunkCount) Greek passage\(greekChunkCount == 1 ? "" : "s") to English"
                     )
                 }
+                let translationStart = Date()
                 let translated = await GreekLegalIngestion.translateChunks(extractedChunks.map(\.text))
+                let translatedCount = translated.filter { $0.legal?.sourceLanguage == "el" && !GreekLegalIngestion.isGreekChunk($0.text) }.count
+                let translationSeconds = Date().timeIntervalSince(translationStart)
+                await MainActor.run {
+                    appendIngestionEvent(
+                        id: trackingId, stage: .analyzing, title: "Translation",
+                        detail: "Opus-MT translated \(translatedCount) of \(greekChunkCount) Greek passages in \(String(format: "%.1f", translationSeconds)) s"
+                            + (translatedCount < greekChunkCount ? "; the rest kept in Greek" : "")
+                    )
+                }
                 processedChunks = zip(extractedChunks, translated).map { chunk, result in
                     DocumentProcessor.ProcessedChunk(
                         text: result.text, parentText: chunk.parentText,
