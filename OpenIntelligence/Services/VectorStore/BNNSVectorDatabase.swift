@@ -283,7 +283,7 @@ actor BNNSVectorDatabase: VectorDatabase {
                     id: chunk.id, documentId: chunk.documentId,
                     content: chunk.content, parentContent: chunk.parentContent,
                     contextualPrefix: chunk.contextualPrefix,
-                    embedding: [], metadata: chunk.metadata
+                    embedding: [], metadata: chunk.metadata, legal: chunk.legal
                 )
             }
 
@@ -1029,7 +1029,7 @@ actor BNNSVectorDatabase: VectorDatabase {
             id: chunk.id, documentId: chunk.documentId,
             content: chunk.content, parentContent: chunk.parentContent,
             contextualPrefix: chunk.contextualPrefix,
-            embedding: [], metadata: chunk.metadata
+            embedding: [], metadata: chunk.metadata, legal: chunk.legal  // thesis fork: Greek source text
         )
     }
 

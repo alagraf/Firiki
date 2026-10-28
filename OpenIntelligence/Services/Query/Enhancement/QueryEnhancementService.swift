@@ -349,6 +349,25 @@ final class QueryEnhancementService {
         return intent
     }
 
+    /// Comparison cues, English and Greek (stems, so inflected Greek forms match).
+    nonisolated static let legalCompareTerms: [String] = [
+        "compare", "comparison", "difference", "differ", " vs ", "versus",
+        "σύγκρι", "διαφορ", "διαφέρ",
+    ]
+
+    /// `.lookup` (or `.compare`) for a question that cites a law, decree or article; nil otherwise.
+    nonisolated static func legalAnswerIntent(_ query: String) -> AnswerIntent? {
+        let keys = GreekLegalEntityMasker.canonicalKeys(in: query)
+        let citesProvision = keys.contains { key in
+            key.hasPrefix("LAW:") || key.hasPrefix("PD:") || key.hasPrefix("ART:") || key.hasPrefix("MD:")
+                || key.hasPrefix("EU_DIR:") || key.hasPrefix("COURT:")
+        }
+        guard citesProvision else { return nil }
+        let lower = " " + GreekLegalEntityMasker.normalizeGreekText(query).lowercased() + " "
+        if legalCompareTerms.contains(where: { lower.contains($0) }) { return .compare }
+        return .lookup
+    }
+
     private nonisolated func classifyAnswerIntentUninstrumented(_ query: String) -> AnswerIntent {
         let lower = query.lowercased()
         let words = lower.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).map(String.init)
@@ -356,6 +375,14 @@ final class QueryEnhancementService {
         if isIndicatorStateLookupQuery(lower) {
             Log.debug("[QueryEnhancement] Indicator/state query → lookup", category: .retrieval)
             return .lookup
+        }
+
+        // Thesis fork: a question that names a statutory provision, in Greek or English, asks
+        // what that provision says: lookup, or compare when it asks for a comparison. Without this
+        // a long legal question fell through to investigate.
+        if let legalIntent = Self.legalAnswerIntent(query) {
+            Log.debug("[QueryEnhancement] Statutory query → \(legalIntent)", category: .retrieval)
+            return legalIntent
         }
 
         // Priority 0: FINDINGS - author/research discovery queries

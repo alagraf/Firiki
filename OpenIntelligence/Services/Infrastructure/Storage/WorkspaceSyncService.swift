@@ -1953,7 +1953,8 @@ final class WorkspaceSyncService: ObservableObject {
                 parentContent: chunk.parentContent,
                 contextualPrefix: chunk.contextualPrefix,
                 embedding: embedding,
-                metadata: chunk.metadata
+                metadata: chunk.metadata,
+                legal: chunk.legal
             )
         }
     }
@@ -2012,7 +2013,8 @@ final class WorkspaceSyncService: ObservableObject {
                 parentContent: chunk.parentContent,
                 contextualPrefix: chunk.contextualPrefix,
                 embedding: chunk.embedding,
-                metadata: chunk.metadata
+                metadata: chunk.metadata,
+                legal: chunk.legal
             )
         }
     }

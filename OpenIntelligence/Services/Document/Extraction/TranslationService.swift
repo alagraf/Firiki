@@ -107,6 +107,22 @@ final class TranslationService: ObservableObject {
             )
         }
 
+        // Thesis fork: Apple's Translation framework has no Greek and the availability check below
+        // would hand the Greek text back untranslated. Greek↔English goes to the on-device Opus-MT
+        // translator, with legal identifiers kept out of the model.
+        if let direction = Self.greekDirection(from: sourceLocale, to: targetLanguage),
+           LocalNeuralTranslator.isAvailable(direction) {
+            let translated = try await Self.translateGreekPair(trimmed, direction: direction)
+            Log.info("[Translation] Opus-MT \(direction.rawValue): '\(trimmed.prefix(50))...' → '\(translated.prefix(50))...'", category: .ingestion)
+            return TranslationResult(
+                originalText: text,
+                translatedText: translated,
+                sourceLanguage: sourceLocale,
+                targetLanguage: targetLanguage,
+                isTranslated: true
+            )
+        }
+
         // Check availability
         guard await isTranslationAvailable(from: sourceLocale, to: targetLanguage) else {
             Log.warning("[Translation] No translation available from \(detected.displayName) to \(targetLanguage.languageCode?.identifier ?? "?")", category: .ingestion)
@@ -142,6 +158,26 @@ final class TranslationService: ObservableObject {
             targetLanguage: targetLanguage,
             isTranslated: true
         )
+    }
+
+    // MARK: - Greek (thesis fork)
+
+    /// The Opus-MT direction for a Greek↔English pair, nil for any other pair.
+    nonisolated static func greekDirection(from source: Locale.Language, to target: Locale.Language) -> TranslationDirection? {
+        switch (source.languageCode?.identifier, target.languageCode?.identifier) {
+        case ("el", "en"): return .greekToEnglish
+        case ("en", "el"): return .englishToGreek
+        default: return nil
+        }
+    }
+
+    nonisolated static func translateGreekPair(_ text: String, direction: TranslationDirection) async throws -> String {
+        switch direction {
+        case .greekToEnglish:
+            return try await LocalNeuralTranslator.shared.translateGreekToEnglishPreservingLegalEntities(text).textEn
+        case .englishToGreek:
+            return try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations(text)
+        }
     }
 
     // MARK: - Batch Translation (for document chunks)
@@ -185,6 +221,22 @@ final class TranslationService: ObservableObject {
                     isTranslated: false
                 )
             }
+        }
+
+        // Thesis fork: Greek↔English batches go to the on-device Opus-MT translator.
+        if let direction = Self.greekDirection(from: effectiveSource, to: targetLanguage),
+           LocalNeuralTranslator.isAvailable(direction) {
+            var results: [TranslationResult] = []
+            results.reserveCapacity(texts.count)
+            for text in texts {
+                let translated = try await Self.translateGreekPair(text, direction: direction)
+                results.append(TranslationResult(
+                    originalText: text, translatedText: translated,
+                    sourceLanguage: effectiveSource, targetLanguage: targetLanguage, isTranslated: true
+                ))
+            }
+            Log.info("[Translation] Opus-MT batch \(direction.rawValue): \(texts.count) texts", category: .ingestion)
+            return results
         }
 
         // Check availability

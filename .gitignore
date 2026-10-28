@@ -290,3 +290,6 @@ default.profraw
 # Release screenshot masters live outside git
 5.1 Screenshots/
 .git.nosync
+
+# Thesis fork: Opus-MT ONNX models (~225 MB), made by scripts/thesis_fetch_translation_models.sh
+OpenIntelligence/Resources/MLModels/Translation/

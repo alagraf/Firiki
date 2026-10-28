@@ -45,6 +45,9 @@ struct CrossReference: Sendable, Hashable {
         case appendix
         case step
         case item
+        case article    // thesis fork: "Article 38", "Άρθρο 38"
+        case statute    // thesis fork: "Law 4808/2021", "Ν. 4808/2021", "Π.Δ. 80/2022"
+        case gazette    // thesis fork: "ΦΕΚ Α' 101"
         case unknown
     }
 
@@ -133,6 +136,11 @@ actor GraphIndexService {
         // Step references (for procedures)
         (#"[Ss]ee\s+[Ss]tep\s+(\d+)"#, .step, 1),
         (#"[Ss]tep\s+(\d+)"#, .step, 1),
+
+        // Thesis fork: legal references, Greek and English
+        (#"(?i)(?:Article|Art\.|Άρθρο|Άρθρου|Άρθρ\.|Αρ\.)\s*(\d+[Α-ΩA-Zα-ωa-z]?)(?![\p{L}\p{N}])"#, .article, 1),
+        (#"(?:Law|Ν\.|Νόμος|Νόμου|Π\.?Δ\.?)\s*(\d+\/\d{4})"#, .statute, 1),
+        (#"ΦΕΚ\s*([ΑΒΓΔA-Z]'\s*\d+)"#, .gazette, 1),
     ]
 
     // Compiled regex cache
@@ -284,8 +292,12 @@ actor GraphIndexService {
         var tableToChunks: [String: [UUID]] = [:]
         var figureToChunks: [String: [UUID]] = [:]
         var sectionToChunks: [String: [UUID]] = [:]
+        var articleToChunks: [String: [UUID]] = [:]  // thesis fork: "ART:38" → the passage holding it
 
         for chunk in chunks {
+            if let article = LegalCrossReferences.definedArticle(of: chunk) {
+                articleToChunks[article, default: []].append(chunk.id)
+            }
             // Page lookup
             if let page = chunk.metadata.pageNumber {
                 pageToChunks[page, default: []].append(chunk.id)
@@ -342,6 +354,11 @@ actor GraphIndexService {
                 case .section:
                     if let chunkIds = sectionToChunks[target] {
                         resolvedIds.append(contentsOf: chunkIds)
+                    }
+                case .article:
+                    let keys = GreekLegalEntityMasker.canonicalKeys(in: "Article " + target)
+                    for key in keys {
+                        resolvedIds.append(contentsOf: articleToChunks[key] ?? [])
                     }
                 default:
                     break

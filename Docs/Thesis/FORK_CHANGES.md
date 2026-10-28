@@ -496,6 +496,63 @@ text with Greek and keeps English. Full suite: `Executed 1363 tests, with 8 test
 failures`: the 3 Greek-region formatting tests plus the 3 web-download tests fixed in 2.11.1's
 follow-up; Swift Testing 20 passed.
 
+#### 2.11.4 Phase 4: on-device Greek↔English translation, bilingual ingestion and retrieval
+
+**What changed:**
+- Models: Helsinki-NLP `opus-mt-grk-en` and `opus-mt-en-el` exported to ONNX (encoder; decoder with
+  LM head and final-logits bias, last position only) and quantized to INT8 (≈80 MB and ≈145 MB), plus a
+  JSON tokenizer file each (source SentencePiece pieces and scores, Marian vocabulary, special ids).
+  They are made by `scripts/thesis_fetch_translation_models.sh` (`scripts/thesis/convert_opus_mt.py`)
+  into `Resources/MLModels/Translation/`, which git ignores (too large to commit). The project file
+  excludes them from the engine framework target. A build without them has no Greek translation
+  (`LocalNeuralTranslator.isAvailable == false`) and behaves as before.
+- New `LocalNeuralTranslator` (actor): SentencePiece unigram tokenizer in Swift (Viterbi over the
+  piece scores; ids match `transformers`' `MarianTokenizer` on the tested sentences), greedy decoding
+  with ONNX Runtime (padding token never generated), line- and sentence-wise segmentation, an LRU
+  cache of 4,096 segments, `[C#]` markers the model drops put back. `translateGreekToEnglishPreservingLegalEntities`
+  masks identifiers, translates, restores them as bilingual anchors;
+  `translateEnglishToGreekPreservingCitations` collapses anchors, masks identifiers, translates and
+  restores them in Greek. Placeholders survive translation (the model sometimes drops one trailing
+  underscore, which unmasking tolerates).
+- `TranslationService`: Greek↔English (single and batch) goes to `LocalNeuralTranslator` instead of
+  Apple's Translation framework, which has no Greek and returned the text untranslated.
+- Ingestion (`RAGService`, right after `DocumentProcessor.processDocument`, so native PDF text and
+  OCR text alike): a chunk with ≥30% Greek letters keeps its NFKC-normalized Greek text as
+  `legal.sourceTextEl` and its content becomes the English translation with anchors; identifiers and
+  the primary statute are recorded for every chunk; `chunk_legal` rows are written next to the FTS5
+  rows. The plan put this in `DocumentProcessor`; the `RAGService` call site is the first point where
+  both extraction paths have produced chunks. Large PDFs (>10 MB) go through
+  `importLargePDFStreamed`, which is not hooked yet.
+- The BNNS vector store and the chunk copies in `RAGService` and `WorkspaceSyncService` keep
+  `DocumentChunk.legal`, so retrieved passages carry their Greek source.
+- Query: `translatedQueryForEmbedding` translates a Greek question (≥30% Greek letters) with
+  `LocalNeuralTranslator` whatever the library's translation setting.
+- FTS5 fix (`HybridSearchService.searchWithFTS5`): for a Greek question with an English translation,
+  the keyword query is the translation plus the English form of each identifier in the Greek
+  question (`greekAwareLexicalQuery`), not the Greek original. The field weights the plan asks for
+  (10× title, 5× section path, 1× body) were already in place.
+- Intent (`QueryEnhancementService.classifyAnswerIntent`): a question citing a law, decree, article,
+  ministerial decision, directive or court decision is `lookup`, or `compare` with a comparison cue
+  (English or Greek).
+- Cross-references: `GraphIndexService` gains `article`, `statute` and `gazette` reference types with
+  the plan's patterns and resolves article references at ingestion; new `LegalCrossReferences`
+  (passage holding an article = text or section title starting with its heading) is used by
+  `RAGService.resolveCrossReferencesStandard` at query time.
+
+**Files:** `LocalNeuralTranslator.swift`, `GreekLegalIngestion.swift`, `LegalCrossReferences.swift`
+(new), `TranslationService.swift`, `RAGService.swift`, `HybridSearchService.swift`,
+`QueryEnhancementService.swift`, `GraphIndexService.swift`, `BNNSVectorDatabase.swift`,
+`WorkspaceSyncService.swift`, `project.pbxproj` (resource exceptions), `.gitignore`,
+`scripts/thesis_fetch_translation_models.sh`, `scripts/thesis/convert_opus_mt.py`,
+`GreekLegalPipelineTests.swift`
+
+**Verification:** `GreekTranslationRetrievalTests` (iPhone 18 Pro simulator, real models): tokenizer
+ids equal Marian's; el→en keeps `Article 66 [Άρθρο 66]` and `Law 4808/2021 [Ν. 4808/2021]`; en→el
+keeps `Άρθρο 66`, `Ν. 4808/2021`, `[C1]`, `[C2]`; the plan's `testBilingualIngestionAndHybridRetrieval`
+(three Greek articles written for the test, Core ML MiniLM embeddings, SQLite FTS5): intent `lookup`,
+the Greek question about Άρθρο 66 retrieves Article 66 at rank 1 (R@1 = 1.0) with its Greek source,
+content English with `[Ν. 4808/2021]`; article cross-references resolve. Full suite: `Executed 1363 tests, with 8 tests skipped and 3 failures` (the 3 Greek-region formatting tests); Swift Testing 27 passed.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

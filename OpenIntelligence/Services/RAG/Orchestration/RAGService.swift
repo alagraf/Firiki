@@ -3018,7 +3018,20 @@ class RAGService: ObservableObject {
             }
         }
 
-        guard !referencedSections.isEmpty || !referencedPages.isEmpty else { return [] }
+        // Thesis fork: "Article X" / "Άρθρο X" citations resolve to the passage that holds the article.
+        let legalAdditions = LegalCrossReferences.resolve(
+            top: chunks.prefix(10).map(\.chunk), query: query, pool: allChunks
+        ).map { chunk in
+            RetrievedChunk(
+                chunk: chunk, similarityScore: 0.5, rank: 1,
+                sourceDocument: getDocumentName(for: chunk.documentId), pageNumber: chunk.metadata.pageNumber
+            )
+        }
+        if !legalAdditions.isEmpty {
+            Log.info("[CrossRef-Std] Legal article references resolved: \(legalAdditions.count) passages", category: .retrieval)
+        }
+
+        guard !referencedSections.isEmpty || !referencedPages.isEmpty else { return legalAdditions }
 
         Log.info(
             "[CrossRef-Std] Found \(referencedSections.count) section refs: [\(referencedSections.joined(separator: ", "))], \(referencedPages.count) page refs: \(referencedPages.sorted())",
@@ -3115,7 +3128,8 @@ class RAGService: ObservableObject {
                 category: .retrieval)
         }
 
-        return additionalChunks
+        let additionalIds = Set(additionalChunks.map(\.chunk.id))
+        return additionalChunks + legalAdditions.filter { !additionalIds.contains($0.chunk.id) }
     }
 
     // MARK: - Spec Table Sniper
@@ -5384,7 +5398,8 @@ class RAGService: ObservableObject {
                             parentContent: chunk.parentContent,
                             contextualPrefix: chunk.contextualPrefix,
                             embedding: embeddings[i],
-                            metadata: chunk.metadata
+                            metadata: chunk.metadata,
+                            legal: chunk.legal
                         )
                     )
                 }
@@ -6026,6 +6041,12 @@ class RAGService: ObservableObject {
         container: KnowledgeContainer?
     ) async -> (text: String, wasTranslated: Bool) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Thesis fork: a Greek question is translated to English on device (Opus-MT), legal
+        // identifiers kept as bilingual anchors, whatever the library's translation setting: the
+        // Greek legal libraries are indexed in English.
+        if let translated = await Self.greekQueryTranslation(trimmed) {
+            return (translated, true)
+        }
         guard !trimmed.isEmpty,
             let targetLanguage = translationTargetLanguage(for: container)
         else {
@@ -6043,6 +6064,23 @@ class RAGService: ObservableObject {
         } catch {
             Log.warning("[Translation] Query translation failed, using original query: \(error)", category: .retrieval)
             return (trimmed, false)
+        }
+    }
+
+    /// The English translation of a Greek query (at least 30% Greek letters), or nil when the query
+    /// isn't Greek, the translator isn't bundled, or translation failed.
+    nonisolated static func greekQueryTranslation(_ query: String) async -> String? {
+        guard GreekLegalEntityMasker.greekLetterRatio(query) >= 0.3,
+              LocalNeuralTranslator.isAvailable(.greekToEnglish)
+        else { return nil }
+        do {
+            let translated = try await LocalNeuralTranslator.shared
+                .translateGreekToEnglishPreservingLegalEntities(query).textEn
+            Log.info("[Translation] Greek query → English (Opus-MT): '\(translated.prefix(80))'", category: .retrieval)
+            return translated.isEmpty ? nil : translated
+        } catch {
+            Log.warning("[Translation] Greek query translation failed: \(error.localizedDescription)", category: .retrieval)
+            return nil
         }
     }
 
@@ -7340,11 +7378,36 @@ class RAGService: ObservableObject {
             }
 
             let extractionStartTime = Date()
-            let (document, processedChunks) = try await documentProcessor.processDocument(
+            let (document, extractedChunks) = try await documentProcessor.processDocument(
                 at: managedURL,
                 chunkOverride: activeChunkOverride,
                 containerId: activeContainerId  // FTS5 storage with container isolation
             )
+            try Task.checkCancellation()
+
+            // Thesis fork (plan stage 4): Greek chunks are translated to English with bilingual
+            // legal anchors; the Greek text is kept in `chunkLegal` for the citation view.
+            var processedChunks = extractedChunks
+            var chunkLegal: [LegalChunkMetadata?] = Array(repeating: nil, count: extractedChunks.count)
+            if LocalNeuralTranslator.isAvailable(.greekToEnglish),
+               extractedChunks.contains(where: { GreekLegalIngestion.isGreekChunk($0.text) }) {
+                await MainActor.run {
+                    updateIngestionItem(
+                        id: trackingId, filename: filename, stage: .analyzing,
+                        detail: "Translating Greek text on device...", progress: 0.35
+                    )
+                }
+                let translated = await GreekLegalIngestion.translateChunks(extractedChunks.map(\.text))
+                processedChunks = zip(extractedChunks, translated).map { chunk, result in
+                    DocumentProcessor.ProcessedChunk(
+                        text: result.text, parentText: chunk.parentText,
+                        metadata: chunk.metadata, structuredTable: chunk.structuredTable
+                    )
+                }
+                chunkLegal = translated.map(\.legal)
+            } else {
+                chunkLegal = extractedChunks.map { GreekLegalIngestion.untranslatedMetadata(for: $0.text) }
+            }
             try Task.checkCancellation()
             let extractionTime = Date().timeIntervalSince(extractionStartTime)
             // The document's own counts, of its text as it was read (5.7). Summing the passages counted
@@ -7902,7 +7965,8 @@ class RAGService: ObservableObject {
                     parentContent: chunk.parentText,
                     contextualPrefix: prefix,
                     embedding: embedding,
-                    metadata: enrichedMetadata
+                    metadata: enrichedMetadata,
+                    legal: index < chunkLegal.count ? chunkLegal[index] : nil
                 )
             }
             let chunkingTime = Date().timeIntervalSince(chunkingStartTime)
@@ -8031,6 +8095,14 @@ class RAGService: ObservableObject {
                 chunks: fts5ChunkData
             )
             Log.info("[RAGService] Stored \(documentChunks.count) chunks in FTS5 chunk index", category: .ingestion)
+            // Thesis fork: Greek source text and legal identifiers, keyed like the FTS5 rows.
+            for chunk in documentChunks {
+                guard let legal = chunk.legal else { continue }
+                await SQLiteFullTextService.shared.storeLegalChunkMetadata(
+                    chunkId: "\(document.id.uuidString)_\(chunk.metadata.chunkIndex)",
+                    documentId: document.id, containerId: activeContainerId, metadata: legal
+                )
+            }
 
             // Step 4.1: Learn vocabulary from chunks for per-container domain adaptation
             // Extracts domain terms, spec codes, and technical phrases to improve future retrieval
@@ -10082,7 +10154,8 @@ class RAGService: ObservableObject {
                         parentContent: chunk.parentContent,
                         contextualPrefix: contextualPrefix,
                         embedding: [],
-                        metadata: chunk.metadata
+                        metadata: chunk.metadata,
+                        legal: chunk.legal
                     )
                     updatedChunks.append(updatedChunk)
                 }
@@ -10125,7 +10198,8 @@ class RAGService: ObservableObject {
                         parentContent: chunk.parentContent,
                         contextualPrefix: chunk.contextualPrefix,
                         embedding: embedding,
-                        metadata: chunk.metadata
+                        metadata: chunk.metadata,
+                        legal: chunk.legal
                     )
                 }
 

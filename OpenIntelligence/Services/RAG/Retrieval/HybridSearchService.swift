@@ -1206,6 +1206,21 @@ class HybridSearchService {
     /// - BM25-only matches are no longer invisible (catches vocabulary mismatch gaps)
     /// - Native SQLite `bm25()` replaces in-memory `BM25Scorer.snapshot(from:)` — no local IDF bias
     /// - `async let` parallelism: vector and FTS5 run concurrently, ~40% faster than sequential
+    /// The FTS5 query: `originalQuery`, unless it is Greek and `query` is its English translation;
+    /// then the translation plus the English form of every legal identifier in the Greek original
+    /// ("Law 4808/2021", "Article 66") that the translation doesn't already contain.
+    nonisolated static func greekAwareLexicalQuery(query: String, originalQuery: String) -> String {
+        guard GreekLegalEntityMasker.greekLetterRatio(originalQuery) >= 0.3,
+              GreekLegalEntityMasker.greekLetterRatio(query) < 0.3,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return originalQuery }
+        var parts = [query]
+        for entity in GreekLegalEntityMasker.extractEntities(from: originalQuery) where !query.contains(entity.canonicalEn) {
+            parts.append(entity.canonicalEn)
+        }
+        return parts.joined(separator: " ")
+    }
+
     func searchWithFTS5(
         query: String,
         originalQuery: String,
@@ -1231,15 +1246,20 @@ class HybridSearchService {
         let vectorCandidateMultiplier = topK > 50 ? 2 : 3
         let fts5Limit = min(topK * 3, 60)  // FTS5 is fast; retrieve a generous pool
 
+        // Thesis fork: a Greek question's English translation (with its legal identifiers) is the
+        // keyword query, not the Greek original. The Greek original used to run first, and a
+        // number in it ("38", "4808/2021") could match some passage, so the translation never ran.
+        let lexicalQuery = Self.greekAwareLexicalQuery(query: query, originalQuery: originalQuery)
+
         async let vectorTask = vectorDatabase.search(embedding: embedding, topK: topK * vectorCandidateMultiplier)
         async let fts5Task = SQLiteFullTextService.shared.searchChunks(
-            query: originalQuery,
+            query: lexicalQuery,
             containerId: containerId,
             limit: fts5Limit
         )
         async let structuredRowTask: [SQLiteFullTextService.ChunkSearchResult] = useStructuredRowSearch
             ? SQLiteFullTextService.shared.searchStructuredRows(
-                query: originalQuery,
+                query: lexicalQuery,
                 containerId: containerId,
                 limit: min(topK * 3, 36)
             )
@@ -1251,7 +1271,7 @@ class HybridSearchService {
         let structuredRowResults = await structuredRowTask
 
         if fts5ChunkResults.isEmpty,
-           query.caseInsensitiveCompare(originalQuery) != .orderedSame
+           query.caseInsensitiveCompare(lexicalQuery) != .orderedSame
         {
             let expandedFTSResults = await SQLiteFullTextService.shared.searchChunks(
                 query: query,

@@ -55,12 +55,12 @@ Baseline before any change: see "Baseline" below.
 - [x] OCR test
 
 ## Phase 4: translation
-- [ ] Opus-MT ONNX conversion + `LocalNeuralTranslator.swift`
-- [ ] `TranslationService` Greek fast path; `translatedQueryForEmbedding`
-- [ ] Ingestion translation (sourceTextEl/content/entities)
-- [ ] FTS5 Greek-query fix (HybridSearchService)
-- [ ] Intent keywords; GraphIndexService + resolveCrossReferencesStandard legal refs
-- [ ] Bilingual retrieval test
+- [x] Opus-MT ONNX conversion + `LocalNeuralTranslator.swift`
+- [x] `TranslationService` Greek fast path; `translatedQueryForEmbedding`
+- [x] Ingestion translation (sourceTextEl/content/entities)
+- [x] FTS5 Greek-query fix (HybridSearchService)
+- [x] Intent keywords; GraphIndexService + resolveCrossReferencesStandard legal refs
+- [x] Bilingual retrieval test
 
 ## Phase 5: gates, abstention, Greek output
 - [ ] Plain-text generation for legal mode; buffered output; assetID logging
@@ -83,3 +83,17 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 - 2026-10-28 P1: strict local guard committed; 6 tests pass.
 - 2026-10-28 P2: masker + chunk_legal table committed; masker/storage tests pass.
 - 2026-10-28 P3: Greek OCR (ORT + PP-OCRv5), router at 5 sites, Greek-safe filters committed; full suite has only the 3 Greek-region failures left after the P1 fix.
+- 2026-10-28 P4 committed (full suite: only the 3 Greek-region failures): LocalNeuralTranslator + SentencePiece tokenizer,
+  TranslationService Greek fast path, RAGService.greekQueryTranslation in translatedQueryForEmbedding,
+  GreekLegalIngestion at the main ingestion path (after processDocument), chunk_legal storage,
+  HybridSearch greekAwareLexicalQuery, QueryEnhancement legalAnswerIntent, LegalCrossReferences +
+  GraphIndexService legal patterns, BNNS store keeps `legal`. Models: run
+  `scripts/thesis_fetch_translation_models.sh` (git-ignored, ~225 MB) before building.
+- P5 plan in progress: LegalVerificationPolicy.swift (written), GreekLegalAnswerService.swift
+  (written; needs `RAGResponse.legalReview`). Remaining wiring: RAGService.query sets
+  GreekLegalAnswerContext.isActive, withholds the stream handler, calls GreekLegalAnswerFinalizer.review;
+  relevance gate hard-abstains via preGenerationAbstentionReason; reliabilityModeEnabled off when active;
+  allowStructuredRAG off + temperature ≤ 0.2 when active; VerificationGateService: touchy word-boundary +
+  isLegalQuery, Gate C normalizeGreekNumerals (+ sourceTextEl evidence), Gate F legal identifiers
+  (critical), new Gate I statutoryIsolation (critical); SourceOnlyAnswerService riskProfile legal → .high;
+  citation UI shows sourceTextEl; LegalSLMEnricherProtocol; assetID logging.

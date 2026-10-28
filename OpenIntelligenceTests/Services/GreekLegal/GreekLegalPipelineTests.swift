@@ -281,3 +281,128 @@ struct GreekOCRTests {
         #expect(try await visionOnly.recognizeText(in: image, site: "test") { "Kataryeλia oupBaons" } == "Kataryeλia oupBaons")
     }
 }
+
+// MARK: - Phase 4: on-device translation, bilingual ingestion and retrieval
+
+@Suite("Greek translation and bilingual retrieval")
+struct GreekTranslationRetrievalTests {
+    /// Short Greek articles written for this test in the style of Ν. 4808/2021 (not its text).
+    static let articles = [
+        "Άρθρο 64\nΕτήσια άδεια\nΚάθε εργαζόμενος δικαιούται ετήσια άδεια με αποδοχές σύμφωνα με το Ν. 4808/2021. Η άδεια χορηγείται από τον εργοδότη μέσα στο ημερολογιακό έτος.",
+        "Άρθρο 65\nΥπερωριακή απασχόληση\nΗ υπερωριακή εργασία αμείβεται με προσαύξηση του ωρομισθίου σύμφωνα με το Ν. 4808/2021. Ο εργοδότης καταγράφει τις υπερωρίες στο ψηφιακό σύστημα.",
+        "Άρθρο 66\nΚαταγγελία σύμβασης εργασίας αορίστου χρόνου\nΗ καταγγελία της σύμβασης εργασίας αορίστου χρόνου από τον εργοδότη γίνεται εγγράφως και είναι έγκυρη μόνο αν καταβληθεί στον εργαζόμενο η νόμιμη αποζημίωση σύμφωνα με το Ν. 4808/2021.",
+    ]
+    static let query = "Ποιες είναι οι προϋποθέσεις απόλυσης σύμφωνα με το Άρθρο 66 του Ν. 4808/2021;"
+
+    @Test func tokenizerMatchesMarianReferenceIds() throws {
+        let url = try #require(LocalNeuralTranslator.resourceURL("opus-mt-grk-en_tokenizer", "json"))
+        let grk = try SentencePieceUnigramTokenizer(jsonData: Data(contentsOf: url))
+        // Reference ids from transformers' MarianTokenizer (opus-mt-grk-en / opus-mt-en-el).
+        #expect(grk.encode("Η καταγγελία της σύμβασης εργασίας γίνεται εγγράφως.") == [77, 12348, 14, 5193, 1061, 1396, 1078, 2752, 2471, 2, 0])
+        #expect(grk.encode("Ποιες είναι οι προϋποθέσεις απόλυσης σύμφωνα με το __LEX_ENT_001__;") == [288, 512, 201, 39, 72, 4037, 35, 7729, 7, 386, 24, 16, 2254, 1733, 505, 8263, 1733, 1011, 342, 1733, 469, 400, 1733, 1733, 29, 0])
+        let enURL = try #require(LocalNeuralTranslator.resourceURL("opus-mt-en-el_tokenizer", "json"))
+        let en = try SentencePieceUnigramTokenizer(jsonData: Data(contentsOf: enURL))
+        #expect(en.encode("The employer must pay severance [C1].") == [58, 15509, 338, 1619, 51513, 429, 383, 28634, 2, 0])
+    }
+
+    @Test func greekToEnglishKeepsLegalIdentifiers() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        let (english, entities) = try await LocalNeuralTranslator.shared
+            .translateGreekToEnglishPreservingLegalEntities(Self.query)
+        #expect(entities.map(\.canonicalKey) == ["ART:66", "LAW:4808/2021"])
+        #expect(english.contains("Article 66 [Άρθρο 66]"), "\(english)")
+        #expect(english.contains("Law 4808/2021 [Ν. 4808/2021]"), "\(english)")
+        #expect(english.lowercased().contains("dismissal") || english.lowercased().contains("termination"), "\(english)")
+    }
+
+    @Test func englishToGreekKeepsCitationsAndGreekIdentifiers() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.englishToGreek))
+        let answer = "According to Article 66 [Άρθρο 66] of Law 4808/2021 [Ν. 4808/2021], the employer must pay severance [C1]. The notice must be in writing [C2]."
+        let greek = try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations(answer)
+        #expect(greek.contains("Άρθρο 66"), "\(greek)")
+        #expect(greek.contains("Ν. 4808/2021"), "\(greek)")
+        #expect(greek.contains("[C1]") && greek.contains("[C2]"), "\(greek)")
+        #expect(!greek.contains("Article") && !greek.contains("LEX_ENT"), "\(greek)")
+        #expect(GreekLegalEntityMasker.greekLetterRatio(greek) > 0.8, "\(greek)")
+    }
+
+    @Test func bilingualAnchorsCollapse() {
+        #expect(GreekLegalEntityMasker.collapseBilingualAnchors("Article 38 [Άρθρο 38] of Law 4808/2021 [Ν. 4808/2021] [C1]")
+            == "Article 38 of Law 4808/2021 [C1]")
+    }
+
+    @Test func greekQueryUsesTranslatedKeywordQuery() {
+        let english = "What are the conditions for dismissal under Article 66 [Άρθρο 66]?"
+        let lexical = HybridSearchService.greekAwareLexicalQuery(query: english, originalQuery: Self.query)
+        #expect(lexical == english + " Law 4808/2021")
+        // English questions are left alone.
+        #expect(HybridSearchService.greekAwareLexicalQuery(query: "x", originalQuery: "What is overtime?") == "What is overtime?")
+    }
+
+    @Test func testBilingualIngestionAndHybridRetrieval() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        // 1. Ingestion: Greek source kept, English content with bilingual anchors.
+        let translated = await GreekLegalIngestion.translateChunks(Self.articles)
+        for (result, greek) in zip(translated, Self.articles) {
+            #expect(result.legal?.sourceTextEl == GreekLegalEntityMasker.normalizeGreekText(greek))
+            #expect(result.legal?.sourceLanguage == "el")
+            #expect(result.text.contains("[Ν. 4808/2021]"), "\(result.text)")
+            #expect(GreekLegalEntityMasker.greekLetterRatio(result.text) < 0.3, "\(result.text)")
+            #expect(result.legal?.primaryStatuteKey == "LAW:4808/2021")
+        }
+
+        // 2. Intent: a question naming an article is a lookup.
+        #expect(QueryEnhancementService().classifyAnswerIntent(Self.query) == .lookup)
+
+        // 3. Hybrid retrieval over the English index, Greek question.
+        let provider = CoreMLSentenceEmbeddingProvider()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("greek-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = BNNSVectorDatabase(dimension: 384, storageURL: directory.appendingPathComponent("vector_database.json"))
+        let library = UUID(), document = UUID()
+        var chunks: [DocumentChunk] = []
+        for (index, result) in translated.enumerated() {
+            chunks.append(DocumentChunk(
+                documentId: document, content: result.text,
+                embedding: try await provider.embed(text: result.text),
+                metadata: ChunkMetadata(chunkIndex: index), legal: result.legal
+            ))
+        }
+        try await store.storeBatch(chunks: chunks)
+        let rows = chunks.map { chunk in
+            (
+                chunkIndex: chunk.metadata.chunkIndex, pageNumber: Int?.none, sectionTitle: String?.none,
+                sectionPath: String?.none, structureType: String?.none, chunkType: String?.none,
+                tableTitle: String?.none, content: chunk.content,
+                structuredMetadata: SQLiteFullTextService.StructuredChunkMetadata?.none
+            )
+        }
+        await SQLiteFullTextService.shared.storeChunks(documentId: document, containerId: library, chunks: rows)
+        defer { Task { await SQLiteFullTextService.shared.deleteChunks(for: document) } }
+
+        let queryEn = try #require(await RAGService.greekQueryTranslation(Self.query))
+        let search = HybridSearchService(vectorDatabase: store)
+        let results = try await search.search(
+            query: queryEn, originalQuery: Self.query,
+            embedding: try await provider.embed(text: queryEn), topK: 3, containerId: library
+        )
+        #expect(results.first?.chunk.metadata.chunkIndex == 2, "R@1: \(results.map { $0.chunk.content.prefix(40) })")
+        #expect(results.first?.chunk.sourceTextEl?.hasPrefix("Άρθρο 66") == true)
+    }
+
+    @Test func articleReferencesResolveToTheArticle() {
+        let document = UUID()
+        func chunk(_ index: Int, _ text: String) -> DocumentChunk {
+            DocumentChunk(documentId: document, content: text, embedding: [], metadata: ChunkMetadata(chunkIndex: index))
+        }
+        let holder = chunk(0, "Article 22 [Άρθρο 22]\nThe employer keeps a register of working time.")
+        let citing = chunk(1, "Article 30 [Άρθρο 30]\nThe register of Article 22 [Άρθρο 22] paragraph 1 is kept digitally.")
+        let other = chunk(2, "Article 31 [Άρθρο 31]\nOvertime pay.")
+        #expect(LegalCrossReferences.definedArticle(of: holder) == "ART:22")
+        let resolved = LegalCrossReferences.resolve(top: [citing], query: "register", pool: [holder, citing, other])
+        #expect(resolved.map(\.id) == [holder.id])
+        let targets = GraphIndexService.extractReferenceTargets(from: "Βλ. Άρθρο 22 παρ. 1 του Ν. 4808/2021 και Article 5")
+        #expect(targets.contains("article:22") && targets.contains("article:5") && targets.contains("statute:4808/2021"), "\(targets)")
+    }
+}
