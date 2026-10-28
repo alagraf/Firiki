@@ -224,7 +224,7 @@ actor LocalNeuralTranslator {
     /// Translates `text` line by line and sentence by sentence, keeping line breaks.
     func translate(_ text: String, direction: TranslationDirection) async throws -> String {
         var lines: [String] = []
-        for line in text.components(separatedBy: "\n") {
+        for line in Self.reflow(text).components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty, trimmed.contains(where: \.isLetter) else {
                 lines.append(line)
@@ -237,6 +237,50 @@ actor LocalNeuralTranslator {
             lines.append(translated.joined(separator: " "))
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// Whether a segment starts in mid-sentence: its first letter is lower-case.
+    static func isSentenceFragment(_ segment: String) -> Bool {
+        guard let first = segment.first(where: { $0.isLetter }) else { return false }
+        return first.isLowercase && !segment.hasPrefix("__")
+    }
+
+    /// Rejoins lines a PDF wrapped in mid-sentence, so the model sees whole sentences: a fragment
+    /// such as "προκλήσεις και προοπτικές" translated alone came back as an invented sentence about
+    /// the European Commission. A line is joined to the next unless it ends a sentence (. ; ! ? :
+    /// or the Greek question mark), is blank or a "[Part N]" label, or the next line is blank, a
+    /// list item or a label.
+    static func reflow(_ text: String) -> String {
+        let lines = text.components(separatedBy: "\n")
+        guard lines.count > 1 else { return text }
+        func isBreak(_ line: String) -> Bool {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.isEmpty || (trimmed.hasPrefix("[") && trimmed.hasSuffix("]"))
+        }
+        func startsItem(_ line: String) -> Bool {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.range(of: #"^(?:[-•*–]\s|\d{1,3}[.)]\s|\(?[α-ωa-z]\)\s)"#, options: .regularExpression) != nil
+        }
+        var output: [String] = []
+        var current = ""
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if current.isEmpty {
+                current = trimmed
+            } else if isBreak(current) || isBreak(trimmed) || startsItem(trimmed)
+                        || current.range(of: #"[.;;!?:·]["»)\]]?$"#, options: .regularExpression) != nil {
+                output.append(current)
+                current = trimmed
+            } else {
+                current += (current.hasSuffix("-") ? "" : " ") + trimmed
+            }
+            if trimmed.isEmpty {
+                output.append(current)
+                current = ""
+            }
+        }
+        if !current.isEmpty { output.append(current) }
+        return output.joined(separator: "\n")
     }
 
     /// Sentences of a line: split after ".", ";", "!", "?" (the Greek question mark is ";") when
@@ -255,11 +299,24 @@ actor LocalNeuralTranslator {
         return result.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
+    /// Whether a segment has no Greek to translate (placeholders aside): an English question with
+    /// a Greek name in it ("Who is __LEX_ENT_001__") came out of the Greek model as nonsense.
+    static func isWithoutGreek(_ segment: String) -> Bool {
+        let unmasked = segment.replacingOccurrences(
+            of: #"(?:_+\s*)?LEX\s*_?\s*ENT\s*_?\s*\d{1,3}(?:\s*_+)?"#, with: " ", options: [.regularExpression, .caseInsensitive])
+        return GreekLegalEntityMasker.greekLetterRatio(unmasked) < 0.3
+    }
+
     private func translateSegment(_ segment: String, direction: TranslationDirection) throws -> String {
+        if direction == .greekToEnglish, Self.isWithoutGreek(segment) { return segment }
         let key = "\(direction.rawValue)\u{1}\(segment)"
         if let cached = cache[key] { return cached }
         let model = try model(direction)
-        var ids = model.tokenizer.encode(segment)
+        // A chunk can start in mid-sentence. Opus-MT, trained largely on EU proceedings, turns such
+        // a fragment into an invented sentence ("The Commission has been able to…"); marked as a
+        // continuation with "… " it translates the fragment, and the ellipsis is dropped again.
+        let fragment = Self.isSentenceFragment(segment)
+        var ids = model.tokenizer.encode(fragment ? "… " + segment : segment)
         var output: String
         if ids.count > Self.maxSegmentTokens, segment.contains(", ") {
             // A very long sentence: translate its comma-separated parts.
@@ -271,6 +328,9 @@ actor LocalNeuralTranslator {
                 ids = Array(ids.prefix(Self.maxSegmentTokens - 1)) + [model.tokenizer.eosId]
             }
             output = model.tokenizer.decode(try generate(ids: ids, model: model))
+            if fragment {
+                output = output.replacingOccurrences(of: #"^\s*(?:\.\.\.|…)\s*"#, with: "", options: .regularExpression)
+            }
             output = Self.restoreCitationMarkers(source: segment, translation: output)
         }
         cache[key] = output

@@ -104,6 +104,18 @@ nonisolated enum GreekLegalAnswerFinalizer {
         return nil
     }
 
+    /// The pipeline's own failure and not-found texts, which must never be translated and shown
+    /// as an answer.
+    static let pipelineFailureMarkers = [
+        "unable to synthesize answer", "couldn't find relevant information", "could not find relevant information",
+        "i couldn't find", "i could not find", "no relevant information",
+    ]
+
+    static func isPipelineFailureText(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return pipelineFailureMarkers.contains { lower.contains($0) }
+    }
+
     /// A content word (4+ letters) or a legal identifier of the query appears in the passage.
     static func hasOverlap(query: String, chunk: DocumentChunk) -> Bool {
         let queryKeys = GreekLegalEntityMasker.canonicalKeys(in: query)
@@ -138,6 +150,8 @@ nonisolated enum GreekLegalAnswerFinalizer {
             reason = "the pipeline answered without generating (\(response.metadata.gatingDecision ?? "no evidence"))"
         } else if draft.isEmpty {
             reason = "empty draft"
+        } else if response.structuredAnswer?.refuse == true || isPipelineFailureText(draft) {
+            reason = "the pipeline returned a refusal or failure text instead of an answer"
         } else if let preReason = preGenerationAbstentionReason(query: queryEn, chunks: chunks) {
             reason = preReason
         } else {

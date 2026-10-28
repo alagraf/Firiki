@@ -591,3 +591,90 @@ struct GreekLegalReviewDetailsTests {
         #expect(recorder.assetIDs == ["instruct_3b", "instruct_server_v2"])
     }
 }
+
+// MARK: - Names and non-legal Greek questions (owner's report, 2026-10-28)
+
+@Suite("Greek names and non-legal Greek questions")
+struct GreekNameQuestionTests {
+    @Test func namesAreTransliteratedTheSameWay() {
+        #expect(GreekLegalEntityMasker.transliterate("Ανδρέας Ζέρβας") == "Andreas Zervas")
+        #expect(GreekLegalEntityMasker.transliterate("Θεσσαλονίκη") == "Thessaloniki")
+        #expect(GreekLegalEntityMasker.transliterate("Ευάγγελος Μπακογιάννης") == "Evangelos Bakogiannis")
+        #expect(GreekLegalEntityMasker.transliterate("Ευθύμιος Ντόκος") == "Efthymios Dokos")
+
+        let names = GreekLegalEntityMasker.extractEntities(from: "Είμαι ο Ανδρέας Ζέρβας, γεννημένος στην Πάτρα το 1959.")
+        #expect(names.map(\.canonicalKey) == ["NAME:andreas zervas"])
+        #expect(names.first?.bilingualAnchor == "Andreas Zervas [Ανδρέας Ζέρβας]")
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "Ποιός είναι ο Ανδρέας Ζέρβας") == ["NAME:andreas zervas"])
+        // Sentence-initial function words, headings in capitals and Latin names are not names.
+        #expect(GreekLegalEntityMasker.extractEntities(from: "Στην Ελλάδα η Εσπεράντο. Η Εσπεράντο σήμερα.").isEmpty)
+        #expect(GreekLegalEntityMasker.extractEntities(from: "Η ΕΣΠΕΡΑΝΤΟ ΣΤΗΝ ΕΛΛΑΔΑ").isEmpty)
+        #expect(GreekLegalEntityMasker.extractEntities(from: "MBA από το Kingston University").isEmpty)
+    }
+
+    @Test func greekAndMixedQuestionsNameThePersonLikeTheDocument() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        let translator = LocalNeuralTranslator.shared
+        let document = try await translator.translateGreekToEnglishPreservingLegalEntities(
+            "Είμαι ο Ανδρέας Ζέρβας, γεννημένος στην Πάτρα το 1959.").textEn
+        let greek = try await translator.translateGreekToEnglishPreservingLegalEntities("Ποιός είναι ο Ανδρέας Ζέρβας").textEn
+        let mixed = try await translator.translateGreekToEnglishPreservingLegalEntities("Who is Ανδρέας Ζέρβας").textEn
+        for text in [document, greek, mixed] {
+            #expect(text.contains("Andreas Zervas [Ανδρέας Ζέρβας]"), "\(text)")
+        }
+        #expect(mixed == "Who is Andreas Zervas [Ανδρέας Ζέρβας]")
+    }
+
+    @Test func nonLegalGreekQuestionKeepsTheNormalGateAThreshold() async {
+        let chunk = GreekLegalVerificationTests.retrieved(
+            "I am Andreas Zervas [Ανδρέας Ζέρβας], born in Patras in 1959.", score: 0.45,
+            greek: "Είμαι ο Ανδρέας Ζέρβας, γεννημένος στην Πάτρα το 1959.")
+        let result = await GreekLegalAnswerContext.$isActive.withValue(true) {
+            await VerificationGateService().verify(
+                response: "Andreas Zervas was born in Patras in 1959 [C1].", query: "Who is Andreas Zervas [Ανδρέας Ζέρβας]",
+                retrievedChunks: [chunk], topScores: [0.45], enforceLegalChecks: true)
+        }
+        #expect(result.gateResults.first { $0.gate == .retrievalConfidence }?.passed == true)
+        // A legal question in the same mode still needs 0.55.
+        let legal = await VerificationGateService().verify(
+            response: "Severance is due [C1].", query: "What severance is due on dismissal?",
+            retrievedChunks: [chunk], topScores: [0.45], enforceLegalChecks: true)
+        #expect(legal.gateResults.first { $0.gate == .retrievalConfidence }?.passed == false)
+    }
+
+    @Test func pipelineFailureTextIsAnAbstention() async {
+        let chunk = GreekLegalVerificationTests.article38
+        var translated = false
+        let reviewed = await GreekLegalAnswerFinalizer.review(
+            question: "Ποιός είναι ο Ανδρέας Ζέρβας", queryEn: "Who is Andreas Zervas",
+            response: GreekLegalVerificationTests.response("Unable to synthesize answer from reasoning chain.", chunks: [chunk]),
+            verify: { _, _, _ in
+                RAGVerificationResult(passed: true, gateResults: [], claimResults: [], overallConfidence: 1, shouldAbstain: false, abstainReason: nil)
+            },
+            translate: { text, _ in translated = true; return text }
+        )
+        #expect(reviewed.response.generatedResponse == LegalVerificationPolicy.greekAbstentionMessage)
+        #expect(!translated)
+    }
+}
+
+@Suite("Wrapped PDF lines")
+struct ReflowTests {
+    @Test func wrappedLinesAreJoinedBeforeTranslation() {
+        let pdf = "[Part 1]\nΗ Εσπεράντο στην Ελλάδα το 2026: αναζωογόνηση,\nπροκλήσεις και προοπτικές\nΣτο κείμενο αυτό επιχειρώ να\nμεταφέρω τη μαρτυρία μου.\nΑνδρέας Ζέρβας\n\n- πρώτο\n- δεύτερο"
+        #expect(LocalNeuralTranslator.reflow(pdf) == "[Part 1]\nΗ Εσπεράντο στην Ελλάδα το 2026: αναζωογόνηση, προκλήσεις και προοπτικές Στο κείμενο αυτό επιχειρώ να μεταφέρω τη μαρτυρία μου.\nΑνδρέας Ζέρβας\n\n- πρώτο\n- δεύτερο")
+    }
+}
+
+@Suite("Sentence fragments")
+struct FragmentTranslationTests {
+    @Test func aChunkStartingInMidSentenceIsNotInvented() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        let english = try await LocalNeuralTranslator.shared.translate(
+            "στις προκλήσεις του μέλλοντος και ανοίγουν νέες προοπτικές για την επικοινωνία μεταξύ των ανθρώπων.",
+            direction: .greekToEnglish)
+        #expect(!english.contains("Commission") && !english.contains("European Union"), "\(english)")
+        #expect(english.contains("communication between people"), "\(english)")
+        #expect(!english.hasPrefix("..."), "\(english)")
+    }
+}

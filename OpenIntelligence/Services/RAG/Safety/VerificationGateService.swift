@@ -176,7 +176,9 @@ actor VerificationGateService {
         // stricter gate A threshold, Greek number formats in gate C, statutory identifiers in
         // gate F and gate I.
         let legal = enforceLegalChecks || GreekLegalAnswerContext.isActive
-        let isTouchy = legal || detectTouchyQuery(query)
+        // The stricter gate A threshold is for legal questions; a Greek question about anything
+        // else ("Who is Andreas Zervas?") keeps the normal one.
+        let isTouchy = (legal && LegalVerificationPolicy.isLegalQuery(query)) || detectTouchyQuery(query)
         let tau = isTouchy ? config.tauTouchy : config.tauNormal
 
         var gateResults: [RAGVerificationResult.GateResult] = []

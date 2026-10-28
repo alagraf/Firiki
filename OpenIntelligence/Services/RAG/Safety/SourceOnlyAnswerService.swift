@@ -964,7 +964,7 @@ final class SourceOnlyAnswerService {
         // fidelity bar. Whole words (English) and stems (Greek).
         let words = Set(GreekLegalEntityMasker.normalizeGreekText(query).lowercased()
             .components(separatedBy: CharacterSet.letters.inverted))
-        if GreekLegalAnswerContext.isActive
+        if (GreekLegalAnswerContext.isActive && LegalVerificationPolicy.isLegalQuery(query))
             || !words.isDisjoint(with: Self.labourLawWords)
             || words.contains(where: { word in Self.labourLawGreekStems.contains { word.hasPrefix($0) } }) {
             return .high

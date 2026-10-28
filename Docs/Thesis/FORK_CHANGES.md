@@ -633,6 +633,46 @@ response carries its review; asset ids recorded once) and `GreekLegalVerificatio
 iPhone 18 Pro simulator (`Test run with 9 tests in 2 suites passed`). The card's layout was not
 checked on screen.
 
+#### 2.11.7 Fix: Greek questions about a person failed (owner's report, 2026-10-28)
+
+**Why:** with the owner's document "Η Εσπεράντο στην Ελλάδα του 2026" (a first-person essay by
+Ανδρέας Ζέρβας), "Ποιός είναι ο Ανδρέας Ζέρβας" and "Who is Ανδρέας Ζέρβας" got a failure, "Who is
+Andreas Zervas" an answer. Reproduced on the iPhone 18 Pro simulator by importing the document:
+1. Opus-MT rendered the name differently in the question ("Andrew Zervas"; the mixed question became
+   "Who is Men Zerva") than in the indexed document ("Andreas Zervas"), so the best passage scored
+   0.37 instead of 0.62.
+2. Greek legal mode applied the legal gate A threshold (0.55) to every Greek question, so 0.37 failed
+   gate A and the answer was replaced by the abstention.
+3. The PDF's text has a line break inside most sentences; translated line by line, fragments came
+   back as invented text ("προκλήσεις και προοπτικές" → "The Commission will continue its efforts…"),
+   and so did chunks that start in mid-sentence.
+4. A pipeline failure text ("Unable to synthesize answer from reasoning chain.") passed the review and
+   was translated and shown as an answer.
+
+**What changed:**
+- `GreekLegalEntityMasker`: new entity type `properName`: two or more consecutive capitalized Greek
+  words (leading function words such as "Στην", "Η" dropped; all-caps headings and Latin words not
+  names), transliterated by ELOT 743 (`transliterate`: "Ανδρέας Ζέρβας" → "Andreas Zervas") and kept
+  out of the translation model like the legal identifiers, so the document and every question read
+  "Andreas Zervas [Ανδρέας Ζέρβας]". Names are not legal identifiers for the legal-question check or
+  gate F.
+- `LocalNeuralTranslator`: segments with no Greek (placeholders aside) skip the Greek→English model
+  ("Who is __LEX_ENT_001__" stays as it is); `reflow` rejoins lines wrapped in mid-sentence before
+  translation; a segment starting in lower case is translated as "… segment" and the ellipsis dropped.
+- Gate A's 0.55 threshold and the source-only 0.88 bar apply in Greek legal mode only when the
+  question is a legal one (`LegalVerificationPolicy.isLegalQuery`).
+- `GreekLegalAnswerFinalizer`: a refusal (`structuredAnswer.refuse`) or a pipeline failure/not-found
+  text is an abstention, never translated.
+
+**Verification:** with the owner's PDF imported in the simulator, all three questions now translate
+to "Who is Andreas Zervas [Ανδρέας Ζέρβας]", retrieve the author's passage at 0.62 and pass gate A at
+τ = 0.40 (diagnostic test, not kept: it reads the PDF from outside the repository). New tests:
+`GreekNameQuestionTests` (transliteration, names found and not found, Greek and mixed questions match
+the document, gate A threshold for non-legal vs legal questions, failure text abstains), `ReflowTests`,
+`FragmentTranslationTests`. Full suite: `Executed 1363 tests, with 8 tests skipped and 3 failures` (the
+3 Greek-region formatting tests); Swift Testing 42 passed. Answer generation not checked (Simulator).
+Known limit: Opus-MT still mistranslates some rare words ("Εσπεράντο" → "Esperado", "σκυτάλη").
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

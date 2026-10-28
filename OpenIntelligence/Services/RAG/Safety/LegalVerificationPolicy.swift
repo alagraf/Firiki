@@ -35,7 +35,8 @@ nonisolated enum LegalVerificationPolicy {
     /// Whether a question is about (labour) law: a statutory identifier, or a legal term as a
     /// whole English word ("illegal" doesn't count) or as a Greek stem.
     static func isLegalQuery(_ query: String) -> Bool {
-        if !GreekLegalEntityMasker.extractEntities(from: query).isEmpty { return true }
+        // A person's name is not a legal identifier.
+        if GreekLegalEntityMasker.extractEntities(from: query).contains(where: { $0.type != .properName }) { return true }
         let lower = GreekLegalEntityMasker.normalizeGreekText(query).lowercased()
         let words = Set(lower.components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty })
         for term in labourLawTerms {
@@ -94,7 +95,7 @@ nonisolated enum LegalVerificationPolicy {
     /// numbers alone are not checked (too generic: "paragraph 1" is in most articles).
     static func unsupportedLegalIdentifiers(response: String, chunks: [RetrievedChunk]) -> [String] {
         let answerKeys = GreekLegalEntityMasker.extractEntities(from: response)
-            .filter { $0.type != .paragraph }
+            .filter { $0.type != .paragraph && $0.type != .properName }
             .map(\.canonicalKey)
         guard !answerKeys.isEmpty else { return [] }
         let evidence = evidenceKeys(chunks)

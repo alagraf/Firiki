@@ -21,6 +21,7 @@ nonisolated enum GreekLegalEntityType: String, Codable, Sendable, CaseIterable {
     case governmentGazette = "FEK"      // ΦΕΚ Α' 101/19.06.2021
     case supremeCourtDecision = "AP"    // ΑΠ 123/2023, ΟλΑΠ 1/2022, ΣτΕ 456/2021
     case euDirective = "EU_DIR"         // Οδηγία (ΕΕ) 2019/1152
+    case properName = "NAME"            // Ανδρέας Ζέρβας (two or more capitalized Greek words)
 }
 
 nonisolated struct LegalEntityRecord: Codable, Hashable, Sendable {
@@ -282,7 +283,89 @@ nonisolated enum GreekLegalEntityMasker {
                 ))
             }
         }
+        // Proper names last, so a legal identifier always wins an overlap.
+        let wholeNS = text as NSString
+        for result in properNameRegex.matches(in: text, range: whole) {
+            let words = wholeNS.substring(with: result.range).components(separatedBy: " ")
+            // Leading function words ("Στην Ελλάδα", "Η Εσπεράντο") are not part of a name.
+            var start = 0
+            var location = result.range.location
+            while start < words.count, nameStopWords.contains(words[start].lowercased()) {
+                location += (words[start] as NSString).length + 1
+                start += 1
+            }
+            let nameWords = Array(words[start...])
+            guard nameWords.count >= 2 else { continue }
+            let verbatim = nameWords.joined(separator: " ")
+            let range = NSRange(location: location, length: (verbatim as NSString).length)
+            guard !taken.intersects(integersIn: range.location..<(range.location + range.length)) else { continue }
+            taken.insert(integersIn: range.location..<(range.location + range.length))
+            let latin = transliterate(verbatim)
+            found.append(Match(
+                range: range, type: .properName, verbatim: verbatim,
+                key: "NAME:" + latin.lowercased(), en: latin, el: verbatim
+            ))
+        }
         return found.sorted { $0.range.location < $1.range.location }
+    }
+
+    /// Two or more consecutive capitalized Greek words on one line ("Ανδρέας Ζέρβας"). A word
+    /// in capitals throughout (a heading) is not a name word.
+    nonisolated(unsafe) private static let properNameRegex = NSRegularExpression.unsafe(
+        start + #"[\p{Lu}&&\p{Greek}][\p{Ll}\p{M}&&[\p{Greek}\p{M}]]+(?:[ ][\p{Lu}&&\p{Greek}][\p{Ll}\p{M}&&[\p{Greek}\p{M}]]+)+"# + end, options: []
+    )
+
+    /// Capitalized Greek words that start sentences but are never part of a name.
+    private static let nameStopWords: Set<String> = [
+        "ο", "η", "το", "οι", "τα", "τον", "την", "τη", "του", "της", "των", "τους", "τις", "στο",
+        "στη", "στην", "στον", "στα", "στις", "στους", "σε", "από", "για", "με", "και", "ή", "να",
+        "θα", "δεν", "μη", "μην", "ως", "κατά", "μετά", "πριν", "όταν", "εάν", "αν", "ένας", "μια",
+        "μία", "ένα", "αυτό", "αυτή", "αυτός", "αυτά", "ποιος", "ποιός", "ποια", "ποιά", "ποιο",
+        "ποιες", "ποιοι", "τι", "πώς", "πού", "πότε", "γιατί", "είναι", "είμαι", "ήταν", "επίσης",
+        "όμως", "ενώ", "αλλά", "ότι", "όπως", "κάθε", "όλοι", "όλα", "πολλοί", "σύμφωνα",
+    ]
+
+    /// ELOT 743 Greek-to-Latin transliteration ("Ανδρέας Ζέρβας" → "Andreas Zervas"), so a name
+    /// reads the same in every English text, whatever the translation model would have made of it.
+    static func transliterate(_ text: String) -> String {
+        let plain = text.folding(options: .diacriticInsensitive, locale: Locale(identifier: "el"))
+        let lower = Array(plain.lowercased())
+        let upper = Array(plain)
+        let single: [Character: String] = [
+            "α": "a", "β": "v", "γ": "g", "δ": "d", "ε": "e", "ζ": "z", "η": "i", "θ": "th", "ι": "i",
+            "κ": "k", "λ": "l", "μ": "m", "ν": "n", "ξ": "x", "ο": "o", "π": "p", "ρ": "r", "σ": "s",
+            "ς": "s", "τ": "t", "υ": "y", "φ": "f", "χ": "ch", "ψ": "ps", "ω": "o",
+        ]
+        let voiceless: Set<Character> = ["θ", "κ", "ξ", "π", "σ", "ς", "τ", "φ", "χ", "ψ"]
+        var output = ""
+        var i = 0
+        while i < lower.count {
+            let c = lower[i]
+            let next: Character? = i + 1 < lower.count ? lower[i + 1] : nil
+            let after: Character? = i + 2 < lower.count ? lower[i + 2] : nil
+            let wordStart = i == 0 || !lower[i - 1].isLetter
+            var piece: String
+            var consumed = 1
+            switch (c, next) {
+            case ("ο", "υ"): piece = "ou"; consumed = 2
+            case ("α", "υ"), ("ε", "υ"), ("η", "υ"):
+                let vowel = c == "α" ? "a" : (c == "ε" ? "e" : "i")
+                piece = vowel + ((after.map { voiceless.contains($0) || !$0.isLetter } ?? true) ? "f" : "v"); consumed = 2
+            case ("μ", "π"): piece = wordStart ? "b" : "mp"; consumed = 2
+            case ("ν", "τ"): piece = wordStart ? "d" : "nt"; consumed = 2
+            case ("γ", "γ"): piece = "ng"; consumed = 2
+            case ("γ", "κ"): piece = wordStart ? "g" : "gk"; consumed = 2
+            case ("γ", "ξ"): piece = "nx"; consumed = 2
+            case ("γ", "χ"): piece = "nch"; consumed = 2
+            default: piece = single[c] ?? String(upper[i])
+            }
+            if upper[i].isUppercase, let first = piece.first {
+                piece = first.uppercased() + piece.dropFirst()
+            }
+            output += piece
+            i += consumed
+        }
+        return output
     }
 
     static func placeholder(_ index: Int) -> String {
