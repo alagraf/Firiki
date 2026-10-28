@@ -1,0 +1,353 @@
+//
+//  GreekLegalEntityMasker.swift
+//  OpenIntelligence
+//
+//  Thesis fork, plan stage 4a: a deterministic lexer for Greek and English statutory identifiers
+//  (laws, presidential decrees, ministerial decisions, articles, paragraphs, Government Gazette
+//  issues, court decisions, EU directives). Before neural translation each identifier is replaced
+//  by a placeholder the translator copies through; afterwards the placeholder becomes a canonical
+//  bilingual anchor ("Article 38 [Άρθρο 38]"), so English retrieval sees the English form, the
+//  lawyer sees the Greek one, and the verification gates compare canonical keys ("ART:38").
+//
+
+import Foundation
+
+nonisolated enum GreekLegalEntityType: String, Codable, Sendable, CaseIterable {
+    case law = "LAW"                    // Ν. 4808/2021, Νόμος 4093/2012
+    case presidentialDecree = "PD"      // Π.Δ. 80/2022
+    case ministerialDecision = "MD"     // Υ.Α. 40331/Δ1.13521
+    case article = "ARTICLE"            // Άρθρο 38
+    case paragraph = "PARAGRAPH"        // παρ. 1, § 2, εδ. α'
+    case governmentGazette = "FEK"      // ΦΕΚ Α' 101/19.06.2021
+    case supremeCourtDecision = "AP"    // ΑΠ 123/2023, ΟλΑΠ 1/2022, ΣτΕ 456/2021
+    case euDirective = "EU_DIR"         // Οδηγία (ΕΕ) 2019/1152
+}
+
+nonisolated struct LegalEntityRecord: Codable, Hashable, Sendable {
+    /// The placeholder that stood for this occurrence in the masked text ("__LEX_ENT_001__").
+    let id: String
+    let type: GreekLegalEntityType
+    /// The identifier exactly as written in the source ("Άρθρου 38").
+    let verbatimEl: String
+    /// English canonical form ("Article 38").
+    let canonicalEn: String
+    /// Greek canonical form ("Άρθρο 38").
+    let canonicalEl: String
+    /// Language-independent key used by the gates and FTS5 ("ART:38").
+    let canonicalKey: String
+
+    /// Injected into the English text after translation.
+    var bilingualAnchor: String { "\(canonicalEn) [\(canonicalEl)]" }
+
+    /// The Greek form shown to the lawyer: the source wording when it was Greek, else canonical.
+    var greekDisplay: String {
+        GreekLegalEntityMasker.containsGreek(verbatimEl) ? verbatimEl : canonicalEl
+    }
+}
+
+nonisolated enum GreekLegalEntityMasker {
+    enum UnmaskMode: Sendable {
+        /// "Article 38 [Άρθρο 38]": for the indexed English text.
+        case bilingualAnchor
+        /// "Άρθρο 38": for the Greek answer shown in the UI.
+        case greekVerbatim
+        /// "Article 38".
+        case englishCanonical
+    }
+
+    // MARK: - Normalization
+
+    /// NFKC (so the micro sign U+00B5 becomes Greek mu U+03BC), Greek guillemets to plain quotes,
+    /// and the prime-like marks used after Greek numerals and gazette series to an apostrophe.
+    static func normalizeGreekText(_ text: String) -> String {
+        var s = text
+        // Done before NFKC: NFKC turns the tonos U+0384 into a space and a combining accent.
+        for mark in ["\u{0384}", "\u{0374}", "\u{02B9}", "\u{2032}", "\u{2019}", "\u{02BC}", "\u{00B4}"] {
+            s = s.replacingOccurrences(of: mark, with: "'")
+        }
+        s = s.precomposedStringWithCompatibilityMapping
+        s = s.replacingOccurrences(of: "«", with: "\"").replacingOccurrences(of: "»", with: "\"")
+        return s
+    }
+
+    static func containsGreek(_ text: String) -> Bool {
+        text.unicodeScalars.contains(where: isGreekScalar)
+    }
+
+    static func isGreekScalar(_ scalar: Unicode.Scalar) -> Bool {
+        (0x0370...0x03FF).contains(scalar.value) || (0x1F00...0x1FFF).contains(scalar.value)
+    }
+
+    /// Share of letters that are Greek, 0...1.
+    static func greekLetterRatio(_ text: String) -> Double {
+        var letters = 0
+        var greek = 0
+        for scalar in text.unicodeScalars where scalar.properties.isAlphabetic {
+            letters += 1
+            if isGreekScalar(scalar) { greek += 1 }
+        }
+        return letters == 0 ? 0 : Double(greek) / Double(letters)
+    }
+
+    // MARK: - Patterns
+
+    private struct Rule {
+        let type: GreekLegalEntityType
+        let regex: NSRegularExpression
+        /// Builds (canonicalKey, canonicalEn, canonicalEl) from the capture groups.
+        let canonicalize: ([String]) -> (key: String, en: String, el: String)?
+    }
+
+    private static let start = #"(?<![\p{L}\p{N}])"#
+    private static let end = #"(?![\p{L}\p{N}])"#
+
+    private static func regex(_ body: String) -> NSRegularExpression {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: start + body, options: [.caseInsensitive])
+    }
+
+    /// Order matters: earlier rules win when matches overlap.
+    nonisolated(unsafe) private static let rules: [Rule] = [
+        Rule(
+            type: .governmentGazette,
+            regex: regex(#"(?:Φ\.?\s*Ε\.?\s*Κ\.?|FEK|Government\s+Gazette)\s*([ΑΒΓΔABCDG])\s*'?\s*(?:τ\.?\s*|No\.?\s*)?(\d{1,5})\s*\/\s*(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4})"# + end),
+            canonicalize: { g in
+                let series = gazetteSeries(g[1])
+                let date = g[3].replacingOccurrences(of: "/", with: ".").replacingOccurrences(of: "-", with: ".")
+                let latin = latinSeries(series)
+                return ("FEK:\(series):\(g[2]):\(date)", "FEK \(latin) \(g[2])/\(date)", "ΦΕΚ \(series)' \(g[2])/\(date)")
+            }
+        ),
+        Rule(
+            type: .supremeCourtDecision,
+            regex: regex(#"(Ολ\.?\s*Α\.?\s*Π\.?|Α\.?\s*Π\.?|Σ\.?\s*τ\.?\s*Ε\.?|Εφ\.?\s*Αθ\.?|Plenary\s+of\s+(?:the\s+)?Areios\s+Pagos|Areios\s+Pagos|Council\s+of\s+State|Athens\s+Court\s+of\s+Appeal)\s*(?:No\.?\s*|αριθ\.?\s*)?(\d{1,5})\s*\/\s*(\d{4})"# + end),
+            canonicalize: { g in
+                guard let court = courtCode(g[1]) else { return nil }
+                return ("COURT:\(court.code):\(g[2])/\(g[3])", "\(court.en) \(g[2])/\(g[3])", "\(court.code) \(g[2])/\(g[3])")
+            }
+        ),
+        Rule(
+            type: .euDirective,
+            regex: regex(#"(?:Οδηγί(?:α|ας)|Directive)\s*(?:\((?:ΕΕ|ΕΚ|ΕΟΚ|EU|EC|EEC)\)\s*)?(?:(?:αριθ\.?|No\.?)\s*)?(\d{2,4})\/(\d{1,4})(?:\/(?:ΕΕ|ΕΚ|ΕΟΚ|EU|EC|EEC))?"# + end),
+            canonicalize: { g in
+                ("EU_DIR:\(g[1])/\(g[2])", "Directive \(g[1])/\(g[2])", "Οδηγία \(g[1])/\(g[2])")
+            }
+        ),
+        Rule(
+            type: .presidentialDecree,
+            regex: regex(#"(?:Π\.?\s*Δ\.?|Προεδρικ(?:ό|ού)\s+Διατάγματ(?:ος|α)?|Presidential\s+Decree|P\.?\s*D\.?)\s*(?:(?:αριθ\.?|No\.?)\s*)?(\d{1,4})\s*\/\s*(\d{4})"# + end),
+            canonicalize: { g in
+                ("PD:\(g[1])/\(g[2])", "Presidential Decree \(g[1])/\(g[2])", "Π.Δ. \(g[1])/\(g[2])")
+            }
+        ),
+        Rule(
+            type: .law,
+            regex: regex(#"(?:Ν\.?|Νόμο[ςυ]?|Νομου|Law|Act)\s*(?:(?:αριθ\.?|No\.?)\s*)?(\d{1,5})\s*\/\s*(\d{4})"# + end),
+            canonicalize: { g in
+                ("LAW:\(g[1])/\(g[2])", "Law \(g[1])/\(g[2])", "Ν. \(g[1])/\(g[2])")
+            }
+        ),
+        Rule(
+            type: .ministerialDecision,
+            regex: regex(#"(?:Κ\.?\s*Υ\.?\s*Α\.?|Υ\.?\s*Α\.?|Υπουργικ(?:ή|ής)\s+Απόφασ(?:η|ης)|Ministerial\s+Decision)\s*(?:(?:αριθ\.?|No\.?)\s*)?(\d{1,6}(?:\/[0-9\p{L}]+(?:\.[0-9\p{L}]+)*)+)"#),
+            canonicalize: { g in
+                ("MD:\(g[1].uppercased())", "Ministerial Decision \(g[1])", "Υ.Α. \(g[1])")
+            }
+        ),
+        Rule(
+            type: .article,
+            regex: regex(#"(?:Άρθρ(?:ο|ου|α|ων)|Αρθρ(?:ο|ου|α|ων)|Άρθρ\.|Αρθρ\.|Αρ\.|Articles?|Art\.)\s*(\d{1,4}[\p{L}]?)"# + end),
+            canonicalize: { g in
+                let number = articleNumber(g[1])
+                return ("ART:\(number)", "Article \(number)", "Άρθρο \(number)")
+            }
+        ),
+        Rule(
+            type: .paragraph,
+            regex: NSRegularExpression.unsafe(start + #"(?:παρ\.|παράγραφ(?:ος|ου|ο)|paragraph|para\.|§)\s*(\d{1,3}[α-ωa-z]?)"# + end),
+            canonicalize: { g in
+                ("PAR:\(g[1].lowercased())", "paragraph \(g[1].lowercased())", "παρ. \(g[1].lowercased())")
+            }
+        ),
+        Rule(
+            type: .paragraph,
+            regex: regex(#"(?:εδ\.|εδάφιο|εδαφίου)\s*([α-ω]{1,2})\s*'"#),
+            canonicalize: { g in
+                let letter = g[1].lowercased()
+                return ("SUBPAR:\(letter)", "subparagraph \(letter)'", "εδ. \(letter)'")
+            }
+        ),
+    ]
+
+    private static func gazetteSeries(_ raw: String) -> String {
+        switch raw.uppercased() {
+        case "A", "Α": return "Α"
+        case "B", "Β": return "Β"
+        case "C", "G", "Γ": return "Γ"
+        case "D", "Δ": return "Δ"
+        default: return raw.uppercased()
+        }
+    }
+
+    private static func latinSeries(_ greek: String) -> String {
+        ["Α": "A", "Β": "B", "Γ": "C", "Δ": "D"][greek] ?? greek
+    }
+
+    private static func courtCode(_ raw: String) -> (code: String, en: String)? {
+        let compact = raw.replacingOccurrences(of: ".", with: "")
+            .components(separatedBy: .whitespaces).joined()
+            .lowercased()
+        switch compact {
+        case "ολαπ", "plenaryofareiospagos", "plenaryoftheareiospagos":
+            return ("ΟλΑΠ", "Plenary of Areios Pagos")
+        case "απ", "areiospagos":
+            return ("ΑΠ", "Areios Pagos")
+        case "στε", "councilofstate":
+            return ("ΣτΕ", "Council of State")
+        case "εφαθ", "athenscourtofappeal":
+            return ("ΕφΑθ", "Athens Court of Appeal")
+        default:
+            return nil
+        }
+    }
+
+    /// "38Α" and "38A" are the same article; the suffix letter is kept in Latin capitals.
+    private static func articleNumber(_ raw: String) -> String {
+        let map: [Character: Character] = ["Α": "A", "Β": "B", "Γ": "C", "Δ": "D", "Ε": "E", "Ζ": "Z"]
+        return String(raw.uppercased().map { map[$0] ?? $0 })
+    }
+
+    // MARK: - Matching
+
+    private struct Match {
+        let range: NSRange
+        let type: GreekLegalEntityType
+        let verbatim: String
+        let key: String
+        let en: String
+        let el: String
+    }
+
+    private static func matches(in text: String) -> [Match] {
+        let ns = text as NSString
+        let whole = NSRange(location: 0, length: ns.length)
+        var found: [Match] = []
+        var taken = IndexSet()
+        for rule in rules {
+            for result in rule.regex.matches(in: text, range: whole) {
+                let range = result.range
+                guard !taken.intersects(integersIn: range.location..<(range.location + range.length)) else { continue }
+                var groups: [String] = []
+                for index in 0..<result.numberOfRanges {
+                    let r = result.range(at: index)
+                    groups.append(r.location == NSNotFound ? "" : ns.substring(with: r))
+                }
+                guard let canonical = rule.canonicalize(groups) else { continue }
+                taken.insert(integersIn: range.location..<(range.location + range.length))
+                found.append(Match(
+                    range: range, type: rule.type, verbatim: groups[0],
+                    key: canonical.key, en: canonical.en, el: canonical.el
+                ))
+            }
+        }
+        return found.sorted { $0.range.location < $1.range.location }
+    }
+
+    static func placeholder(_ index: Int) -> String {
+        String(format: "__LEX_ENT_%03d__", index)
+    }
+
+    /// Replaces every identifier with a numbered placeholder. The text is normalized first.
+    static func maskEntities(in text: String) -> (maskedText: String, entities: [LegalEntityRecord]) {
+        let normalized = normalizeGreekText(text)
+        let found = matches(in: normalized)
+        guard !found.isEmpty else { return (normalized, []) }
+        let ns = normalized as NSString
+        var output = ""
+        var cursor = 0
+        var entities: [LegalEntityRecord] = []
+        for (offset, match) in found.enumerated() {
+            let id = placeholder(offset + 1)
+            output += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            output += id
+            cursor = match.range.location + match.range.length
+            entities.append(LegalEntityRecord(
+                id: id, type: match.type, verbatimEl: match.verbatim,
+                canonicalEn: match.en, canonicalEl: match.el, canonicalKey: match.key
+            ))
+        }
+        output += ns.substring(from: cursor)
+        return (output, entities)
+    }
+
+    /// The identifiers in `text`, in order, without masking.
+    static func extractEntities(from text: String) -> [LegalEntityRecord] {
+        maskEntities(in: text).entities
+    }
+
+    /// The distinct canonical keys in `text`.
+    static func canonicalKeys(in text: String) -> Set<String> {
+        Set(extractEntities(from: text).map(\.canonicalKey))
+    }
+
+    /// Placeholders as a translator may return them: case changed, underscores dropped or spaced.
+    nonisolated(unsafe) private static let placeholderPattern = NSRegularExpression.unsafe(
+        #"(?:_+\s*)?LEX\s*_?\s*ENT\s*_?\s*(\d{1,3})(?:\s*_+)?"#, options: [.caseInsensitive]
+    )
+
+    /// Puts the identifiers back in place of their placeholders.
+    static func unmaskEntities(in translatedText: String, entities: [LegalEntityRecord], mode: UnmaskMode) -> String {
+        guard !entities.isEmpty else { return translatedText }
+        var byNumber: [Int: LegalEntityRecord] = [:]
+        for entity in entities {
+            if let number = Int(entity.id.filter(\.isNumber)) { byNumber[number] = entity }
+        }
+        let ns = translatedText as NSString
+        var output = ""
+        var cursor = 0
+        for result in placeholderPattern.matches(in: translatedText, range: NSRange(location: 0, length: ns.length)) {
+            let number = Int(ns.substring(with: result.range(at: 1))) ?? -1
+            guard let entity = byNumber[number] else { continue }
+            output += ns.substring(with: NSRange(location: cursor, length: result.range.location - cursor))
+            switch mode {
+            case .bilingualAnchor: output += entity.bilingualAnchor
+            case .greekVerbatim: output += entity.greekDisplay
+            case .englishCanonical: output += entity.canonicalEn
+            }
+            cursor = result.range.location + result.range.length
+        }
+        output += ns.substring(from: cursor)
+        return output
+    }
+
+    /// The statute (law or presidential decree) cited most often; ties go to the first cited.
+    static func primaryStatuteKey(for entities: [LegalEntityRecord]) -> String? {
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        for entity in entities where entity.type == .law || entity.type == .presidentialDecree {
+            if counts[entity.canonicalKey] == nil { order.append(entity.canonicalKey) }
+            counts[entity.canonicalKey, default: 0] += 1
+        }
+        // `max(by:)` keeps the first of equal elements.
+        return order.max { (counts[$0] ?? 0) < (counts[$1] ?? 0) }
+    }
+
+    // MARK: - JSON
+
+    static func encode(_ entities: [LegalEntityRecord]) -> String {
+        guard let data = try? JSONEncoder().encode(entities) else { return "[]" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func decode(_ json: String?) -> [LegalEntityRecord] {
+        guard let json, let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([LegalEntityRecord].self, from: data)) ?? []
+    }
+}
+
+private extension NSRegularExpression {
+    nonisolated static func unsafe(_ pattern: String, options: NSRegularExpression.Options = [.caseInsensitive]) -> NSRegularExpression {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: pattern, options: options)
+    }
+}

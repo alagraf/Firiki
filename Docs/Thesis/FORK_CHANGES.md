@@ -401,6 +401,39 @@ file says what was decided.
 Support root excluded from backup, iCloud and web import blocked, PCC needs entitlement and no
 refusal) pass on the iPhone 18 Pro simulator; full build succeeded.
 
+#### 2.11.2 Phase 2: Greek legal entity masker and bilingual chunk storage
+
+**What changed:**
+- New `GreekLegalEntityMasker` (`Services/Document/Localization/`): NFKC normalization (the micro
+  sign U+00B5 becomes Greek mu U+03BC), Greek guillemets to quotes and prime-like marks to `'`
+  (before NFKC, which would turn the tonos U+0384 into a space and an accent); a deterministic
+  lexer for laws (`Ν. 4808/2021`), presidential decrees, ministerial decisions, articles,
+  paragraphs and `εδ.`, Government Gazette issues (`ΦΕΚ Α' 101/19.06.2021`), court decisions (ΑΠ,
+  ΟλΑΠ, ΣτΕ, ΕφΑθ) and EU directives, in Greek and in English, each with a canonical key
+  (`ART:38`, `LAW:4808/2021`, `FEK:Α:101:19.06.2021`). `maskEntities` replaces each occurrence with
+  `__LEX_ENT_001__`…; `unmaskEntities` restores them as bilingual anchors
+  (`Article 38 [Άρθρο 38]`), as the Greek wording, or in English, and tolerates placeholders a
+  translator has re-cased or re-spaced. Overlapping matches go to the earlier rule (gazette before
+  law, so `ΦΕΚ Α' 101/2021` isn't read as a law).
+- Deviation from the plan: `LegalEntityRecord` also has `canonicalEl` ("Άρθρο 38"), so an anchor
+  reads `Article 38 [Άρθρο 38]` even when the source said `Άρθρου 38`; `verbatimEl` keeps the source
+  wording.
+- Storage: the plan's `ALTER TABLE document_chunks` has no target (chunk text lives in the FTS5
+  table `chunks`, which can't be altered), so the four columns (`source_text_el`, `source_language`,
+  `legal_entities_json`, `primary_statute_key`) are a new table `chunk_legal` keyed by chunk id,
+  with an index on `primary_statute_key`, created with `IF NOT EXISTS` and deleted together with a
+  document's or library's chunks. `DocumentChunk` gains `legal: LegalChunkMetadata?` (decoded as
+  absent from chunks saved before) and `sourceTextEl`.
+
+**Files:** `GreekLegalEntityMasker.swift` (new), `DocumentChunk.swift`,
+`SQLiteFullTextService.swift`, `GreekLegalPipelineTests.swift`
+
+**Verification:** `GreekLegalEntityMaskerTests` (the plan's
+`testGreekEntityMaskingAndNFKC` sentence: mu normalized, 4 entities masked deterministically and
+restored as anchors and as Greek; mangled placeholders; 14 identifier forms; plain Greek prose with
+numbers gives no identifiers; primary statute) and `BilingualChunkStorageTests` (SQLite round trip
+and deletion; old chunk JSON decodes) pass on the iPhone 18 Pro simulator.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

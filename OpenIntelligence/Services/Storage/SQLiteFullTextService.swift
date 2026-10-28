@@ -313,6 +313,25 @@ actor SQLiteFullTextService {
             ensureColumnExists(migration)
         }
 
+        // MARK: Bilingual Legal Chunk Table (thesis fork)
+        // One row per chunk of a Greek legal document: the original Greek text the lawyer reads,
+        // the identifiers it cites, and its main statute. The `chunks` FTS5 row keeps the English
+        // translation (with bilingual anchors) as `content`, so retrieval is unchanged.
+        let createChunkLegalSQL = """
+            CREATE TABLE IF NOT EXISTS chunk_legal (
+                chunk_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                container_id TEXT NOT NULL,
+                source_text_el TEXT DEFAULT NULL,
+                source_language TEXT DEFAULT 'en',
+                legal_entities_json TEXT DEFAULT '[]',
+                primary_statute_key TEXT DEFAULT NULL
+            )
+        """
+        _ = execute(sql: createChunkLegalSQL)
+        _ = execute(sql: "CREATE INDEX IF NOT EXISTS idx_chunk_legal_document ON chunk_legal(document_id)")
+        _ = execute(sql: "CREATE INDEX IF NOT EXISTS idx_chunks_primary_statute ON chunk_legal(primary_statute_key)")
+
         // MARK: Page-Level FTS5 Table
         // Stores each PDF page as a separate row for page-level search and context isolation.
         // This enables: (1) page-scoped BM25 search, (2) page-level context retrieval,
@@ -1006,6 +1025,80 @@ actor SQLiteFullTextService {
         checkpoint()
     }
 
+    // MARK: - Bilingual Legal Metadata (thesis fork)
+
+    /// Stores the Greek source text and legal identifiers of one chunk. `chunkId` is the id used in
+    /// the `chunks` table (`"<documentId>_<chunkIndex>"` for `storeChunks`).
+    func storeLegalChunkMetadata(
+        chunkId: String,
+        documentId: UUID,
+        containerId: UUID,
+        metadata: LegalChunkMetadata
+    ) async {
+        ensureInitialized()
+        guard let db = database else { return }
+        let sql = """
+            INSERT OR REPLACE INTO chunk_legal (
+                chunk_id, document_id, container_id, source_text_el, source_language,
+                legal_entities_json, primary_statute_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            Log.error("[SQLiteFTS5] Failed to prepare legal chunk insert", category: .vectorDB)
+            return
+        }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, chunkId, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, documentId.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 3, containerId.uuidString, -1, SQLITE_TRANSIENT)
+        if let source = metadata.sourceTextEl {
+            sqlite3_bind_text(statement, 4, source, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(statement, 4)
+        }
+        sqlite3_bind_text(statement, 5, metadata.sourceLanguage, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 6, GreekLegalEntityMasker.encode(metadata.legalEntities), -1, SQLITE_TRANSIENT)
+        if let key = metadata.primaryStatuteKey {
+            sqlite3_bind_text(statement, 7, key, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(statement, 7)
+        }
+        if sqlite3_step(statement) != SQLITE_DONE {
+            let error = String(cString: sqlite3_errmsg(db))
+            Log.error("[SQLiteFTS5] Legal chunk insert failed: \(error)", category: .vectorDB)
+        }
+    }
+
+    /// The legal metadata stored for a document's chunks, keyed by chunk id.
+    func legalChunkMetadata(for documentId: UUID) async -> [String: LegalChunkMetadata] {
+        ensureInitialized()
+        guard let db = database else { return [:] }
+        let sql = """
+            SELECT chunk_id, source_text_el, source_language, legal_entities_json, primary_statute_key
+            FROM chunk_legal WHERE document_id = ?
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [:] }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, documentId.uuidString, -1, SQLITE_TRANSIENT)
+        func column(_ index: Int32) -> String? {
+            guard let text = sqlite3_column_text(statement, index) else { return nil }
+            return String(cString: text)
+        }
+        var result: [String: LegalChunkMetadata] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let chunkId = column(0) else { continue }
+            result[chunkId] = LegalChunkMetadata(
+                sourceTextEl: column(1),
+                sourceLanguage: column(2) ?? "en",
+                legalEntities: GreekLegalEntityMasker.decode(column(3)),
+                primaryStatuteKey: column(4)
+            )
+        }
+        return result
+    }
+
     private func persistStructuredChunkMetadata(
         chunkId: String,
         documentId: UUID,
@@ -1117,7 +1210,8 @@ actor SQLiteFullTextService {
         guard let db else { return }
         let deletes = [
             "DELETE FROM chunk_structured WHERE document_id = ?",
-            "DELETE FROM chunk_table_rows WHERE document_id = ?"
+            "DELETE FROM chunk_table_rows WHERE document_id = ?",
+            "DELETE FROM chunk_legal WHERE document_id = ?"
         ]
 
         for sql in deletes {
@@ -1134,7 +1228,8 @@ actor SQLiteFullTextService {
         guard let db else { return }
         let deletes = [
             "DELETE FROM chunk_structured WHERE container_id = ?",
-            "DELETE FROM chunk_table_rows WHERE container_id = ?"
+            "DELETE FROM chunk_table_rows WHERE container_id = ?",
+            "DELETE FROM chunk_legal WHERE container_id = ?"
         ]
 
         for sql in deletes {

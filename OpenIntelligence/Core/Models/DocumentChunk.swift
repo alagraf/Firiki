@@ -24,6 +24,13 @@ struct DocumentChunk: Identifiable, Codable, Sendable {
     let contextualPrefix: String?
     let embedding: [Float]
     let metadata: ChunkMetadata
+    /// Thesis fork: bilingual provenance for Greek legal documents. Nil for an English document;
+    /// for a Greek one `content` holds the English translation with bilingual anchors and
+    /// `legal.sourceTextEl` the original Greek text shown to the lawyer.
+    var legal: LegalChunkMetadata?
+
+    /// The original Greek text of the chunk, when it was translated.
+    nonisolated var sourceTextEl: String? { legal?.sourceTextEl }
 
     /// Alias for `content` - provides semantic clarity when working with text processing
     var text: String {
@@ -69,7 +76,8 @@ struct DocumentChunk: Identifiable, Codable, Sendable {
         parentContent: String? = nil,
         contextualPrefix: String? = nil,
         embedding: [Float],
-        metadata: ChunkMetadata
+        metadata: ChunkMetadata,
+        legal: LegalChunkMetadata? = nil
     ) {
         self.id = id
         self.documentId = documentId
@@ -78,7 +86,38 @@ struct DocumentChunk: Identifiable, Codable, Sendable {
         self.contextualPrefix = contextualPrefix
         self.embedding = embedding
         self.metadata = metadata
+        self.legal = legal
     }
+}
+
+// MARK: - Bilingual Legal Metadata (thesis fork)
+
+/// What the Greek legal pipeline records for a chunk, persisted in SQLite's `chunk_legal` table.
+nonisolated struct LegalChunkMetadata: Codable, Hashable, Sendable {
+    /// The chunk's Greek text after NFKC normalization, unmodified otherwise. Nil when the source
+    /// was not Greek.
+    var sourceTextEl: String?
+    /// ISO 639-1 code of the source text ("el", "en").
+    var sourceLanguage: String
+    /// Identifiers cited in the chunk, from `GreekLegalEntityMasker`.
+    var legalEntities: [LegalEntityRecord]
+    /// The statute the chunk cites most ("LAW:4808/2021"), for gate I.
+    var primaryStatuteKey: String?
+
+    init(
+        sourceTextEl: String? = nil,
+        sourceLanguage: String = "en",
+        legalEntities: [LegalEntityRecord] = [],
+        primaryStatuteKey: String? = nil
+    ) {
+        self.sourceTextEl = sourceTextEl
+        self.sourceLanguage = sourceLanguage
+        self.legalEntities = legalEntities
+        self.primaryStatuteKey = primaryStatuteKey
+    }
+
+    /// The canonical keys of the cited identifiers ("ART:38", "LAW:4808/2021").
+    var canonicalKeys: Set<String> { Set(legalEntities.map(\.canonicalKey)) }
 }
 
 // MARK: - Chunk Abstraction Levels (RAPTOR-lite)

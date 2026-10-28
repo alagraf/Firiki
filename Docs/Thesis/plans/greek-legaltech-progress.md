@@ -42,9 +42,9 @@ Baseline before any change: see "Baseline" below.
 - [x] Tests + FORK_CHANGES/CHANGELOG
 
 ## Phase 2: entity masker + bilingual schema
-- [ ] `GreekLegalEntityMasker.swift` (NFKC, mask, unmask bilingual/greekVerbatim)
-- [ ] SQLite columns + `DocumentChunk` fields (sourceTextEl, sourceLanguage, legalEntities, primaryStatuteKey)
-- [ ] `GreekLegalPipelineTests.swift` masking test
+- [x] `GreekLegalEntityMasker.swift` (NFKC, mask, unmask bilingual/greekVerbatim)
+- [x] SQLite columns + `DocumentChunk` fields (sourceTextEl, sourceLanguage, legalEntities, primaryStatuteKey)
+- [x] `GreekLegalPipelineTests.swift` masking test
 
 ## Phase 3: Greek OCR + extraction fixes
 - [ ] `validateAndCleanOCR` Greek bypass
@@ -81,3 +81,4 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 
 ## Log
 - 2026-10-28 P1: strict local guard committed; 6 tests pass.
+- 2026-10-28 P2: masker + chunk_legal table committed; masker/storage tests pass.
