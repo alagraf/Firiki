@@ -401,6 +401,13 @@ file says what was decided.
 Support root excluded from backup, iCloud and web import blocked, PCC needs entitlement and no
 refusal) pass on the iPhone 18 Pro simulator; full build succeeded.
 
+Follow-up: the full suite then showed three tests that download a web page
+(`ShortcutsActionTests.testAddToLibraryTakesAFileALinkAndTextInOneRun`,
+`testSaveAWebPageImportsTheArticlesText`) or check a non-web address
+(`WebPageFetchServiceTests.testOnlyWebAddressesAreFetched`) failing. The address is now checked
+before the strict-mode refusal (a non-web address is still `unsupportedAddress`), and the two
+download tests switch strict mode off for their own run.
+
 #### 2.11.2 Phase 2: Greek legal entity masker and bilingual chunk storage
 
 **What changed:**

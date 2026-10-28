@@ -366,6 +366,10 @@ final class ShortcutsActionTests: XCTestCase {
     func testAddToLibraryTakesAFileALinkAndTextInOneRun() async throws {
         guard #available(iOS 26.0, macOS 26.0, *) else { throw XCTSkip("needs iOS 26") }
         onAPaidPlan()
+        // Thesis fork: strict local mode (on by default) refuses web downloads; this test is about
+        // the link path itself, so it runs with the mode off.
+        UserDefaults.standard.set(false, forKey: StrictLocalControlGuard.strictLocalModeDefaultsKey)
+        addTeardownBlock { UserDefaults.standard.removeObject(forKey: StrictLocalControlGuard.strictLocalModeDefaultsKey) }
         let engine = IntentSupport.engine()
         let library = try engine.containerService.createContainer(name: "Add three \(UUID().uuidString.prefix(8))")
         addTeardownBlock { @MainActor in
@@ -398,6 +402,10 @@ final class ShortcutsActionTests: XCTestCase {
     func testSaveAWebPageImportsTheArticlesText() async throws {
         guard #available(iOS 26.0, macOS 26.0, *) else { throw XCTSkip("needs iOS 26") }
         onAPaidPlan()
+        // Thesis fork: strict local mode (on by default) refuses web downloads; this test is about
+        // saving a page itself, so it runs with the mode off.
+        UserDefaults.standard.set(false, forKey: StrictLocalControlGuard.strictLocalModeDefaultsKey)
+        addTeardownBlock { UserDefaults.standard.removeObject(forKey: StrictLocalControlGuard.strictLocalModeDefaultsKey) }
         let engine = IntentSupport.engine()
         let active = try XCTUnwrap(engine.containerService.activeContainerId)
         let save = IngestURLIntent()

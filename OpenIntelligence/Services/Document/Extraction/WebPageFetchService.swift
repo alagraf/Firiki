@@ -70,9 +70,9 @@ nonisolated enum WebPageFetchService {
     }
 
     static func fetch(_ url: URL, now: Date = Date()) async throws -> Fetched {
+        guard let target = requestURL(for: url) else { throw FetchError.unsupportedAddress }
         // Thesis R1.3: no download into a library while strict local mode is on.
         try StrictLocalControlGuard.checkRemoteURLIngestion()
-        guard let target = requestURL(for: url) else { throw FetchError.unsupportedAddress }
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .never
