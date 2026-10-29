@@ -199,6 +199,61 @@ nonisolated enum GreekLegalAnswerFinalizer {
         return words.contains { text.contains($0) }
     }
 
+    /// Words of a labour-law question that don't tell its topic apart (every passage of the library
+    /// is about work, employees and the Code).
+    private static let genericQuestionWords: Set<String> = [
+        "what", "which", "when", "where", "does", "about", "under", "with", "from", "that", "this", "there", "have",
+        "must", "shall", "according", "work", "works", "working", "worker", "workers", "employee", "employees",
+        "employer", "employers", "employment", "code", "article", "articles", "paragraph", "law", "laws", "provision",
+        "provisions", "month", "months", "year", "years", "days", "much", "many", "long", "case", "cases",
+    ]
+
+    /// The draft without its sentences that state a figure and share no topic word with the
+    /// question, or nil when there is none. The model sometimes ends a correct answer with an
+    /// unrelated passage's figure ("Six (6) months after childbirth … the working father is protected
+    /// from dismissal" under a question about harassment, labour dev case 46): gate C then refused
+    /// the whole answer. A figure on the question's own topic is never dropped here.
+    static func droppingOffTopicFigures(from draft: String, query: String) -> String? {
+        let topic = Set(query.lowercased().components(separatedBy: CharacterSet.letters.inverted)
+            .filter { $0.count >= 4 && !genericQuestionWords.contains($0) })
+        guard !topic.isEmpty else { return nil }
+        func isOffTopicFigure(_ sentence: String) -> Bool {
+            guard !NumericValueExtractor.mentions(inAnswer: sentence).filter(NumericValueExtractor.isCountedByGate).isEmpty else { return false }
+            let words = sentence.lowercased().components(separatedBy: CharacterSet.letters.inverted)
+            // A topic word or a longer form of it ("harass" in "harassment") ties the sentence to the question.
+            return !words.contains { word in word.count >= 4 && topic.contains { word.hasPrefix($0) || $0.hasPrefix(word) } }
+        }
+        var dropped = false
+        var lines: [String] = []
+        for line in draft.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") || trimmed.isEmpty {
+                lines.append(line)
+                continue
+            }
+            let sentences = LocalNeuralTranslator.segments(trimmed)
+            let kept = sentences.filter { !isOffTopicFigure($0) }
+            if kept.count == sentences.count {
+                lines.append(line)
+                continue
+            }
+            dropped = true
+            // A list item that loses every sentence goes; otherwise it keeps its marker.
+            let marker = trimmed.range(of: #"^(?:[-•*]\s+|\d{1,2}[.)]\s+)"#, options: .regularExpression).map { String(trimmed[$0]) } ?? ""
+            let rest = kept.joined(separator: " ")
+            guard !rest.isEmpty else { continue }
+            lines.append(kept.first?.hasPrefix(marker) == true ? rest : marker + rest)
+        }
+        guard dropped else { return nil }
+        let result = lines.joined(separator: "\n")
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // What remains must still answer: a cited sentence that isn't a heading.
+        let body = result.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }.joined(separator: " ")
+        guard body.contains("[S"), body.split(whereSeparator: \.isWhitespace).count >= 12 else { return nil }
+        return result
+    }
+
     /// The reviewed response: the Greek translation of a verified draft, or the Greek abstention.
     /// - Parameters:
     ///   - question: the Greek question.
@@ -213,7 +268,7 @@ nonisolated enum GreekLegalAnswerFinalizer {
         translate: (String, [LegalEntityRecord]) async throws -> String,
         assetIDs: [String] = []
     ) async -> (response: RAGResponse, review: LegalAnswerReview) {
-        let draft = response.generatedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+        var draft = response.generatedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
         let chunks = response.retrievedChunks
         var reason: String?
         var confidence: Float = 0
@@ -230,7 +285,19 @@ nonisolated enum GreekLegalAnswerFinalizer {
         } else if let preReason = preGenerationAbstentionReason(query: queryEn, chunks: chunks) {
             reason = preReason
         } else {
-            let result = await verify(draft, queryEn, chunks)
+            var result = await verify(draft, queryEn, chunks)
+            // Gate C alone failed: drop off-topic sentences with figures and check the rest again.
+            let critical: Set<VerificationGate> = [.retrievalConfidence, .numericSanity, .semanticGrounding, .statutoryIsolation, .quoteFaithfulness]
+            let failed = Set(result.gateResults.filter { !$0.passed && critical.contains($0.gate) }.map(\.gate))
+            if result.shouldAbstain, failed == [.numericSanity],
+               let trimmed = droppingOffTopicFigures(from: draft, query: queryEn) {
+                let retried = await verify(trimmed, queryEn, chunks)
+                if !retried.shouldAbstain, retried.overallConfidence >= minimumCompositeConfidence {
+                    Log.info("[GreekLegal] Dropped off-topic sentences with unsupported figures; the rest passes the gates", category: .retrieval)
+                    draft = trimmed
+                    result = retried
+                }
+            }
             confidence = result.overallConfidence
             gates = result.gateResults.map {
                 LegalAnswerReview.GateLine(gate: $0.gate.rawValue, passed: $0.passed, confidence: $0.confidence, details: $0.details)

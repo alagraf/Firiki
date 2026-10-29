@@ -43,9 +43,9 @@ grep -a "\[GreekEval\] \(imported\|summary\|answer pass\)" /private/tmp/oi-logs/
 - New Swift files need no project-file edit: the project uses synchronized folders (objectVersion 77).
   Never stage `project.pbxproj`.
 
-## 1. Wrong-case figures, dev cases 34 and 46 (code written, not committed)
+## 1. Wrong-case figures, dev cases 34 and 46 (done: FORK_CHANGES 2.11.23, 2.11.24)
 
-Uncommitted at the time of writing (`git diff` shows them):
+Committed with the records below (first written uncommitted):
 
 - **Case 34, table rows mixed and mistranslated** (the severance-pay table: "more than 12 months"
   rows merged into one sentence).

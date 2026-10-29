@@ -41,6 +41,9 @@ fix that stage in a general way; run again and compare.
   article, each starting with its article heading, long paragraphs split at sentence ends.
   Generic size-based chunking had cut provisions in half and separated paragraphs from their
   article.
+- Tables keep one row a line through chunking and translation, with a row the PDF reader splits
+  in two put back together; joined into prose, a severance table was translated as "16 years and
+  more than 12 months" and the model mixed its rows.
 
 ## 3. Translation as a bridge to an English-centred model
 - **Translate, answer, translate back.** Apple's on-device model works best in English. A Greek
@@ -80,7 +83,9 @@ fix that stage in a general way; run again and compare.
 - **Verification gates** check each English draft before it is shown: the evidence supports its
   claims; its numbers (also when the source writes them as words) and its legal citations appear
   in the retrieved passages; it relies on the law the question names. A source reference by file
-  name and page is not counted as a number the answer states.
+  name and page is not counted as a number the answer states. When the number check is the only
+  failure, sentences with a figure that share no topic word with the question are dropped and the
+  rest is checked again, so an unrelated aside no longer refuses a correct answer.
 - **Refusal instead of guessing.** A fixed Greek refusal is shown when the evidence is weak, when
   the question is about another country's law that no passage covers, when the draft itself says
   the sources do not answer the question, or when a gate fails.
@@ -118,6 +123,7 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-29 | After faster translation, file names kept, citation fix: Labour dev / Constitution / Labour test excerpt / full Code | 35 of 46 / 8 of 10 / 16 of 23 / 12 of 23 |
 | 2026-10-29 | OCR, 10 pages × clean / scan / photo, share of words found | PaddleOCR 96% / 48% / 96%; Vision 5% |
 | 2026-10-29 | OCR after the boxes follow tilted lines: scans / whole scanned PDF / 13 other tilted pages | 48% → 96% / 62% → 98% / 46% → 88% (untilted 88%) |
+| 2026-10-29 | Labour Code, development (46), excerpt, after table rows and the off-topic figure repair (two runs) | 36 and 35 of 46 (35 before) |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
 minutes after the faster translation.
@@ -131,7 +137,10 @@ are within this variation.
 - Refusal of off-topic questions has been measured on the development set (5 of 5 refused) but
   not yet on the held-out test split or over the full Code, where more loosely related passages
   compete.
-- With the right article retrieved, the model still sometimes picks a figure for the wrong case.
+- With the right article retrieved, the model still sometimes picks a figure for the wrong case,
+  or adds figures from another part of the same article (the severance question now gets 12
+  months right but also quotes rows of the article's second table). The number check doesn't
+  catch this, because the passage does state those figures.
 - A question naming a different law than the library holds (e.g. "Article 16 of the
   Constitution" in a Labour Code library) is not yet recognised when the article number exists in
   both.
@@ -162,6 +171,7 @@ The set is small (16 questions) and its library tiny (11 passages), so finding t
 the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-29: tables keep one row a line; an off-topic figure no longer refuses a correct answer.
 - 2026-10-29: OCR boxes follow tilted lines; scans read like clean pages (checked on other pages).
 - 2026-10-29: OCR measured on scans and photos; faster translation at import, one direction in
   memory; batch translation tried and dropped; file names kept in Greek answers; source references

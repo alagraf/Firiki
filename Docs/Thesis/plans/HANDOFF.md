@@ -47,7 +47,7 @@ The owner's list is `greek-legaltech-progress.md`: the open items under "Next (2
 the section "PoC capabilities (owner, 2026-10-29)", one capability at a time (implement, test,
 commit, then the next).
 
-1. Accuracy items: wrong-case figures (dev 34, 46), a question naming another law whose article
+1. Accuracy items: wrong-case figures (dev 34, 46; done, 2.11.23–24), a question naming another law whose article
    number exists in the library (test case 69), refusal rate over the full Code. Tune on the dev
    split only; run it twice before claiming a gain of 1–3 cases.
 2. PoC capabilities in the owner's priority: five-document Q&A, then template routing, then summary
@@ -63,6 +63,11 @@ Removed by the owner (don't add back unless asked): Greek translation for PDFs o
 streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
+
+- 2026-10-29 23:30 (Claude Code): committed 2.11.23 (table rows) and 2.11.24 (gate C off-topic
+  figures); dev 36 and 35 of 46. Committed the data for the five-document Q&A and the template
+  routing (`0514b17c`); the five-document harness change is written (compiles), not yet run.
+  Next: named-law refusal (test case 69), then the full-Code refusal run, then capability 1.
 
 - 2026-10-29 21:40 (Claude Code): fixes for dev cases 34 (table rows) and 46 (off-topic figure
   refused by gate C) written, **uncommitted**. The dev split is running as `labour13` (table fix) and

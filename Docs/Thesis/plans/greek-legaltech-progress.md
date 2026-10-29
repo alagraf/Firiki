@@ -138,7 +138,9 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   test case 69) needs the library to know which statute each document is; the full-code refusal
   rate is unmeasured since 2.11.14.
 - Model errors with the right article in the prompt: run 7 still mixes "18 months"/"18 years"
-  (case 34) and drifts off topic (46); consider a smaller context per question.
+  (case 34) and drifts off topic (46); consider a smaller context per question. **Done 2026-10-29 (FORK_CHANGES 2.11.23, 2.11.24):** table rows keep their lines (case 34
+  now right, with extra figures from the article's second table); an off-topic figure no longer
+  refuses a correct answer (unit-tested; not triggered in the dev runs). Dev 36 and 35 of 46.
 - OCR test set from scanned PDFs and photographed pages (the developer: a ΦΕΚ with a text layer
   mostly tests translation and search, not OCR). **Done 2026-10-29 (FORK_CHANGES 2.11.19):** word
   recall PaddleOCR 0.96 clean and photo, 0.48 scan; Vision 0.05 (no Greek).

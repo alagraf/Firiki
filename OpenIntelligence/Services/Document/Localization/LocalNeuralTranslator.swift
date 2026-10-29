@@ -326,7 +326,8 @@ actor LocalNeuralTranslator {
     /// such as "προκλήσεις και προοπτικές" translated alone came back as an invented sentence about
     /// the European Commission. A line is joined to the next unless it ends a sentence (. ; ! ? :
     /// or the Greek question mark), is blank or a "[Part N]" label, or the next line is blank, a
-    /// list item or a label.
+    /// list item or a label. The rows of a table (`GreekLegalStructureChunker.tableLineIndices`)
+    /// keep their own lines, so each row is translated on its own.
     static func reflow(_ text: String) -> String {
         let lines = text.components(separatedBy: "\n")
         guard lines.count > 1 else { return text }
@@ -342,13 +343,15 @@ actor LocalNeuralTranslator {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             return trimmed.range(of: #"^(?:[-•*–]\s|\d{1,3}[.)]\s|\(?[α-ωa-z]\)\s)"#, options: .regularExpression) != nil
         }
+        let table = GreekLegalStructureChunker.tableLineIndices(lines)
         var output: [String] = []
         var current = ""
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if current.isEmpty {
                 current = trimmed
             } else if isBreak(current) || isBreak(trimmed) || startsItem(trimmed)
+                        || table.contains(index) || table.contains(index - 1)
                         || current.range(of: #"[.;;!?:·]["»)\]]?$"#, options: .regularExpression) != nil {
                 output.append(current)
                 current = trimmed

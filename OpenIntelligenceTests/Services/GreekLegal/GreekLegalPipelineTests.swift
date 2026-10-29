@@ -779,6 +779,48 @@ struct GreekLegalVerificationTests {
         #expect(digits("the twenty-fifth year, one month, a second notice") == "the twenty-fifth year, one month, a second notice")
     }
 
+    @Test func offTopicFigureIsDroppedButAnOnTopicOneStillRefuses() async {
+        let draft = """
+            ### Violence and harassment at work
+
+            - The employer must prevent and address violence and harassment at work, including gender-based harassment [S1].
+            - The employer adopts a policy on the prevention of harassment and informs the employees about it [S1].
+            - **Six (6)** months after childbirth [S1] is the period during which the working father is protected from dismissal.
+            """
+        let harassment = "What must the employer do against violence and harassment at work?"
+        let trimmed = GreekLegalAnswerFinalizer.droppingOffTopicFigures(from: draft, query: harassment)
+        #expect(trimmed?.contains("(6)") == false)
+        #expect(trimmed?.contains("gender-based harassment [S1]") == true)
+        #expect(trimmed?.hasPrefix("### Violence and harassment at work") == true)
+        // The figure answers this question: never dropped.
+        #expect(GreekLegalAnswerFinalizer.droppingOffTopicFigures(
+            from: draft, query: "For how long after childbirth is the father protected from dismissal?") == nil)
+
+        // Gate C fails only while the figure is in the draft.
+        func gates(_ text: String) -> RAGVerificationResult {
+            let ok = !text.contains("(6)")
+            return RAGVerificationResult(
+                passed: ok,
+                gateResults: [.init(gate: .numericSanity, passed: ok, confidence: ok ? 1 : 0, details: ""),
+                              .init(gate: .semanticGrounding, passed: true, confidence: 0.9, details: "")],
+                claimResults: [], overallConfidence: ok ? 0.8 : 0.3, shouldAbstain: !ok, abstainReason: ok ? nil : "Gate C")
+        }
+        let answered = await GreekLegalAnswerFinalizer.review(
+            question: "Τι οφείλει να κάνει ο εργοδότης για τη βία και την παρενόχληση;", queryEn: harassment,
+            response: Self.response(draft, chunks: [Self.article38]),
+            verify: { d, _, _ in gates(d) }, translate: { text, _ in text })
+        #expect(!answered.review.abstained)
+        #expect(!answered.review.englishDraft.contains("(6)"))
+
+        let refused = await GreekLegalAnswerFinalizer.review(
+            question: "Για πόσο διάστημα προστατεύεται ο πατέρας από απόλυση;",
+            queryEn: "For how long after childbirth is the father protected from dismissal?",
+            response: Self.response(draft, chunks: [Self.article38]),
+            verify: { d, _, _ in gates(d) }, translate: { text, _ in text })
+        #expect(refused.review.abstained)
+        #expect(refused.response.generatedResponse == LegalVerificationPolicy.greekAbstentionMessage)
+    }
+
     @Test func gatesBAndCReadNumberWordsInThePassages() async {
         let age = Self.retrieved(
             "Article 55 [Άρθρο 55] 1. A Member of Parliament must have completed the twenty-fifth year of age on the day of the election.",
@@ -932,6 +974,19 @@ struct FragmentTranslationTests {
         #expect(!english.contains("Commission") && !english.contains("European Union"), "\(english)")
         #expect(english.contains("communication between people"), "\(english)")
         #expect(!english.hasPrefix("..."), "\(english)")
+    }
+
+    /// Joined into one sentence, the rows came back as "16 years completed and more than 12 months
+    /// compensation" (labour dev case 34).
+    @Test func tableRowsAreTranslatedRowByRow() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        let english = try await LocalNeuralTranslator.shared.translate(
+            "14 έτη συμπληρωμένα 10 μηνών αποζημίωση\n15 έτη συμπληρωμένα 11 μηνών αποζημίωση\n16 έτη συμπληρωμένα και άνω 12 μηνών αποζημίωση",
+            direction: .greekToEnglish)
+        let lines = english.components(separatedBy: "\n")
+        #expect(lines.count == 3, "\(english)")
+        #expect(!english.lowercased().contains("more than 12"), "\(english)")
+        #expect(lines.last.map { $0.contains("16") && $0.contains("12") && $0.lowercased().contains("month") } == true, "\(english)")
     }
 }
 
@@ -1188,6 +1243,49 @@ struct GreekLegalStructureChunkerTests {
         let pieces = GreekLegalStructureChunker.split(Array(repeating: sentence, count: 6).joined(separator: " "), maxWords: 30)
         #expect(pieces.count == 3)
         #expect(pieces.allSatisfy { $0.hasSuffix("έτος.") && $0.split(separator: " ").count <= 30 })
+    }
+
+    /// Article 333 §1 as PDFKit reads it: the table's rows, one or two cells a line.
+    static let severanceTable = """
+    Άρθρο 333
+    Αποζημίωση καταγγελίας χωρίς προειδοποίηση
+    1. Εργοδότης που παραμελεί την υποχρέωση προειδοποίησης οφείλει να καταβάλει στον απολυόμενο εργαζόμενο αποζημίωση απόλυσης ως εξής:
+    1 έτος συμπληρωμένο έως 4 έτη 2 μηνών αποζημίωση
+    4 έτη συμπληρωμένα έως 6 έτη
+    3 μηνών αποζημίωση
+    15 έτη συμπληρωμένα
+    11 μηνών αποζημίωση
+    16 έτη συμπληρωμένα και άνω
+    12 μηνών αποζημίωση
+    Ο υπολογισμός της ως άνω αποζημίωσης γίνεται με
+    βάση τις τακτικές αποδοχές του τελευταίου μήνα.
+    Άρθρο 334
+    Προθεσμία
+    Η αποζημίωση καταβάλλεται κατά την απόλυση και η καταγγελία είναι άκυρη αν δεν καταβληθεί.
+    Άρθρο 335
+    Υπολογισμός
+    Για τον υπολογισμό της αποζημίωσης λαμβάνεται υπόψη ο χρόνος υπηρεσίας στον ίδιο εργοδότη.
+    """
+
+    @Test func tableRowsKeepTheirLines() throws {
+        let passage = try #require(GreekLegalStructureChunker.passages(in: Self.severanceTable).first { $0.article == "Άρθρο 333" })
+        let lines = passage.text.components(separatedBy: "\n")
+        // A row PDFKit read as two lines is one line again; every row is on its own line.
+        #expect(lines.contains("16 έτη συμπληρωμένα και άνω 12 μηνών αποζημίωση"), "\(passage.text)")
+        #expect(lines.contains("4 έτη συμπληρωμένα έως 6 έτη 3 μηνών αποζημίωση"), "\(passage.text)")
+        #expect(lines.contains("15 έτη συμπληρωμένα 11 μηνών αποζημίωση"), "\(passage.text)")
+        #expect(lines.contains("1 έτος συμπληρωμένο έως 4 έτη 2 μηνών αποζημίωση"), "\(passage.text)")
+        // The prose around the table is still joined, and the sentence after it starts its own line.
+        #expect(lines.contains { $0.hasPrefix("1. Εργοδότης") && $0.hasSuffix("ως εξής:") }, "\(passage.text)")
+        #expect(lines.contains("Ο υπολογισμός της ως άνω αποζημίωσης γίνεται με βάση τις τακτικές αποδοχές του τελευταίου μήνα."), "\(passage.text)")
+        // Cut for the token cap, the rows still keep their lines.
+        let pieces = GreekLegalStructureChunker.pieces(of: passage) { $0.split(whereSeparator: \.isWhitespace).count <= 30 }
+        #expect(pieces.count >= 2)
+        #expect(pieces.contains { $0.components(separatedBy: "\n").contains("16 έτη συμπληρωμένα και άνω 12 μηνών αποζημίωση") }, "\(pieces)")
+        // The translator's line joining leaves the rows apart too.
+        let reflowed = LocalNeuralTranslator.reflow(passage.text).components(separatedBy: "\n")
+        #expect(reflowed.contains("15 έτη συμπληρωμένα 11 μηνών αποζημίωση"), "\(reflowed)")
+        #expect(reflowed.contains("16 έτη συμπληρωμένα και άνω 12 μηνών αποζημίωση"), "\(reflowed)")
     }
 
     @Test func passageOverTheTokenCapIsCutWithItsHeading() throws {

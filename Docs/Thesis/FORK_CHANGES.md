@@ -1398,6 +1398,64 @@ on every image. Whole import of `scan_pages.pdf`: word recall 0.98 (was 0.62), l
 6.6 s (Simulator, Debug build), and the OCR of the scanned PDF takes 204 s (120 s before the fix,
 when most crops read as fragments).
 
+#### 2.11.23 Greek statutes: table rows keep their own lines
+
+**Why:** labour dev case 34 asks for the severance pay of Article 333's table for 16 or more years
+of service (12 months). The chunker joined a paragraph's lines into one line, so the table's rows
+became one run-on sentence ("… 15 έτη συμπληρωμένα 11 μηνών αποζημίωση 16 έτη συμπληρωμένα και άνω
+12 μηνών αποζημίωση …"), translated as "16 years completed and more than 12 months compensation",
+and the model mixed rows and both of the article's tables. Seen in the stored passages of the
+Simulator's import (`chunk_legal.source_text_el` of Article 333). A first version that only kept
+table lines apart made it worse (labour13: case 34 answered "6 months"): PDFKit reads many rows as
+two lines ("10 έτη συμπληρωμένα", then "6 μηνών αποζημίωση"), and a passage boundary fell between
+"12 έτη συμπληρωμένα" and "8 μηνών αποζημίωση", so the next row's months read as this row's.
+
+**What:** `GreekLegalStructureChunker.tableLineIndices` finds table rows: runs of at least four short
+lines (≤34 characters, ≤5 words) of which half have a digit, extended to neighbouring lines that
+start with a number (not a numbered paragraph "1. …"), and runs of three or more lines that start
+with a number and hold a second one (rows already on one line). `secondCells` puts a row read as
+two lines back on one line (a one-number line right after a line whose numbers all have another
+unit: "έτη" then "μηνών"). `joined` keeps each row on its own line; the sentence splitter also cuts
+at line breaks and keeps them; `LocalNeuralTranslator.reflow` doesn't join table rows, so each row
+is translated on its own.
+
+**Files:** `GreekLegalStructureChunker.swift`, `LocalNeuralTranslator.swift`;
+`GreekLegalPipelineTests.swift` (`tableRowsKeepTheirLines`: Article 333's rows as PDFKit reads them,
+one row a line after chunking, cutting for the token cap and reflow;
+`tableRowsAreTranslatedRowByRow`: three rows translate to three lines, the last with 16, 12 and
+"month", no "more than 12").
+
+**Verification:** Greek suites `✔ Test run with 75 tests in 15 suites passed`, gate suites
+`Executed 67 tests, with 0 failures` (`/private/tmp/oi-logs/greekunit19.log`). Labour dev split with
+this change and 2.11.24, reimported: `labour15` 36 of 46, `labour16` 35 of 46 (35 before,
+`labour12`; runs since have ranged 31–36). Case 34 passes in both runs. Its answer now gives 12
+months for 16 or more years, but still adds figures from the article's second table ("28 years",
+"17 years: 1 month"); the key fact passes, the extra figures are wrong, and gate C doesn't catch
+them because the passages state them.
+
+#### 2.11.24 Gate C: an off-topic figure no longer refuses a correct answer
+
+**Why:** labour dev case 46 (`labour12`): a correct answer about violence and harassment ended with
+an unrelated bullet holding a figure from another passage ("Six (6) months after childbirth … the
+working father is protected from dismissal"), gate C found the figure unsupported, and the whole
+answer was refused.
+
+**What:** in `GreekLegalAnswerFinalizer.review`, when gate C is the only critical gate that failed,
+`droppingOffTopicFigures(from:query:)` removes the sentences that state a figure the gate counts and
+share no topic word with the English question (a word of 4+ letters, not a generic labour-law word
+such as "employee" or "article", or a longer form of one). What remains must still be a cited answer
+of at least 12 words; it is verified again from the start and used only if every gate passes and
+the composite confidence is at least 0.5. Otherwise the refusal stands. A figure on the question's
+own topic is never dropped, so an unsupported figure in the answer itself is still refused.
+
+**Files:** `GreekLegalAnswerService.swift`; `GreekLegalPipelineTests.swift`
+(`offTopicFigureIsDroppedButAnOnTopicOneStillRefuses`: the case-46 shape is answered without the
+bullet; the same draft for a question about the father's dismissal protection is refused).
+
+**Verification:** the unit test above in `greekunit19` (all passed). In the dev runs `labour14`–`16`
+case 46 passed without the repair firing (the model didn't add the bullet; no "Dropped off-topic"
+line in the logs), so the repair is checked by the unit test only so far.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

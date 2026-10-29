@@ -141,7 +141,7 @@ nonisolated enum GreekLegalStructureChunker {
     // MARK: Passages
 
     private static let paragraphStart = try? NSRegularExpression(pattern: #"^(\d{1,2})\.\s+\S"#)
-    private static let sentenceEnd = try? NSRegularExpression(pattern: #"(?<=[.;·])\s+(?=[\p{Lu}\d«"(])"#)
+    private static let sentenceEnd = try? NSRegularExpression(pattern: #"(?<=[.;·])\s+(?=[\p{Lu}\d«"(])|[ \t]*\n\s*"#)
 
     static func passages(in text: String, maxWords: Int = 200, minWords: Int = 40) -> [Passage] {
         let lines = lines(of: text)
@@ -229,15 +229,101 @@ nonisolated enum GreekLegalStructureChunker {
         return result
     }
 
+    // MARK: Tables
+
+    /// A table cell as PDFKit reads a Gazette table: a short line (a prose line of a two-column
+    /// page is about 50 characters).
+    static func isTableCell(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty && trimmed.count <= 34 && wordCount(trimmed) <= 5
+    }
+
+    /// The lines that are rows of a table: runs of at least four short lines, at least half of them
+    /// with a digit ("16 έτη συμπληρωμένα και άνω", "12 μηνών αποζημίωση"). Joined into one
+    /// sentence, the rows of Article 333's severance table were translated as "16 years completed
+    /// and more than 12 months compensation", and the model mixed them with the article's second
+    /// table (labour dev case 34). A wrapped prose line is as short only now and then, and rarely
+    /// has a number. A longer row next to the run that starts with a number ("1 έτος συμπληρωμένο
+    /// έως 4 έτη 2 μηνών αποζημίωση", both cells on one line) is a row too; a numbered paragraph
+    /// ("1. Εργοδότης …") is not. Three or more such rows in a row, each with a second number, are
+    /// a table on their own: the rows as `joined` leaves them, a cell per row each.
+    static func tableLineIndices(_ lines: [String]) -> Set<Int> {
+        func startsRow(_ line: String) -> Bool {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.first?.isNumber == true && trimmed.range(of: #"^\d{1,2}\.\s"#, options: .regularExpression) == nil
+        }
+        func isFullRow(_ line: String) -> Bool {
+            startsRow(line) && line.matches(of: #/\d+/#).count >= 2
+        }
+        var result = Set<Int>()
+        var rowStart = 0
+        while rowStart < lines.count {
+            var rowEnd = rowStart
+            while rowEnd < lines.count, isFullRow(lines[rowEnd]) { rowEnd += 1 }
+            if rowEnd - rowStart >= 3 { result.formUnion(rowStart..<rowEnd) }
+            rowStart = rowEnd + 1
+        }
+        var start = 0
+        while start < lines.count {
+            guard isTableCell(lines[start]) else { start += 1; continue }
+            var end = start
+            while end < lines.count, isTableCell(lines[end]) { end += 1 }
+            let run = lines[start..<end]
+            if run.count >= 4, run.filter({ $0.contains(where: \.isNumber) }).count * 2 >= run.count {
+                var first = start, last = end
+                while first > 0, startsRow(lines[first - 1]) { first -= 1 }
+                while last < lines.count, startsRow(lines[last]) { last += 1 }
+                result.formUnion(first..<last)
+            }
+            start = end
+        }
+        return result
+    }
+
+    /// Table lines that are the second cell of a row PDFKit read as two lines: a cell with one
+    /// number right after a cell whose numbers all have another unit ("10 έτη συμπληρωμένα" or
+    /// "4 έτη συμπληρωμένα έως 6 έτη", then "6 μηνών αποζημίωση"). On lines of their own, a passage
+    /// could end between the two cells, and the model read the next row's months as this row's
+    /// (labour dev case 34).
+    static func secondCells(_ lines: [String], table: Set<Int>) -> Set<Int> {
+        /// The units of a table line's numbers: the first two letters of the word after each.
+        func units(_ index: Int) -> [String] {
+            guard table.contains(index) else { return [] }
+            let line = lines[index].trimmingCharacters(in: .whitespaces)
+            return line.matches(of: #/\d+\s+(\w\w)/#).map {
+                $0.output.1.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            }
+        }
+        var result = Set<Int>()
+        for index in table.sorted() where !result.contains(index) {
+            let first = units(index), second = units(index + 1)
+            if !first.isEmpty, second.count == 1, !first.contains(second[0]) {
+                result.insert(index + 1)
+            }
+        }
+        return result
+    }
+
     /// Lines of one paragraph as one line: a word broken at a line end ("υπο -" + "χρέωση") is
-    /// joined, other lines are joined with a space.
+    /// joined, other lines are joined with a space. The rows of a table keep their own lines, with
+    /// a row read as two lines put back on one.
     static func joined(_ lines: [String]) -> String {
+        let table = tableLineIndices(lines)
+        let second = secondCells(lines, table: table)
         var result = ""
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
             if result.isEmpty {
                 result = trimmed
+                continue
+            }
+            if second.contains(index) {
+                result += " " + trimmed
+                continue
+            }
+            if table.contains(index) || table.contains(index - 1) {
+                result += "\n" + trimmed
                 continue
             }
             var head = result
@@ -333,24 +419,31 @@ nonisolated enum GreekLegalStructureChunker {
         }
     }
 
-    /// A paragraph cut into pieces of at most `maxWords` words at sentence ends (a sentence longer
-    /// than that is cut between words).
+    /// A paragraph cut into pieces of at most `maxWords` words at sentence ends and line breaks (a
+    /// sentence longer than that is cut between words). Line breaks, the rows of a table, stay.
     static func split(_ text: String, maxWords: Int) -> [String] {
         let ns = text as NSString
-        var sentences: [String] = []
+        // Each sentence with the separator that followed it: a line break or a space.
+        var sentences: [(text: String, separator: String)] = []
         var cursor = 0
         for match in sentenceEnd?.matches(in: text, range: NSRange(location: 0, length: ns.length)) ?? [] {
-            sentences.append(ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
+            let separator = ns.substring(with: match.range).contains("\n") ? "\n" : " "
+            sentences.append((ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor)), separator))
             cursor = match.range.location + match.range.length
         }
-        sentences.append(ns.substring(from: cursor))
+        sentences.append((ns.substring(from: cursor), " "))
         var pieces: [String] = []
-        var current: [String] = []
+        var current = ""
         var currentWords = 0
+        func close() {
+            if !current.isEmpty { pieces.append(current.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            current = ""
+            currentWords = 0
+        }
         for sentence in sentences {
-            let words = sentence.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            let words = sentence.text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
             if words.count > maxWords {
-                if !current.isEmpty { pieces.append(current.joined(separator: " ")); current = []; currentWords = 0 }
+                close()
                 var start = 0
                 while start < words.count {
                     pieces.append(words[start..<min(words.count, start + maxWords)].joined(separator: " "))
@@ -358,15 +451,11 @@ nonisolated enum GreekLegalStructureChunker {
                 }
                 continue
             }
-            if currentWords + words.count > maxWords, !current.isEmpty {
-                pieces.append(current.joined(separator: " "))
-                current = []
-                currentWords = 0
-            }
-            current.append(sentence)
+            if currentWords + words.count > maxWords, !current.isEmpty { close() }
+            current += sentence.text + sentence.separator
             currentWords += words.count
         }
-        if !current.isEmpty { pieces.append(current.joined(separator: " ")) }
+        close()
         return pieces
     }
 }
