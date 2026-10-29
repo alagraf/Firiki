@@ -1,0 +1,69 @@
+// Template routing set v1 (2026-10-29): user prompts labelled with the contract template that fits
+// (OpenIntelligence/Resources/LabourContractTemplates/, by id), or "none". Written by Claude Code;
+// worded as users ask, not copied from the templates' keywords. split: dev (2/3) or test (1/3).
+{"id": 1, "lang": "el", "prompt": "Θέλω να προσλάβω μόνιμα έναν λογιστή στην εταιρεία μου, οκτώ ώρες τη μέρα. Τι σύμβαση χρειάζομαι;", "template": "indefinite_full_time", "split": "dev"}
+{"id": 2, "lang": "el", "prompt": "Ετοίμασέ μου συμφωνητικό για νέα υπάλληλο γραφείου χωρίς λήξη, με έξι μήνες δοκιμή.", "template": "indefinite_full_time", "split": "dev"}
+{"id": 3, "lang": "el", "prompt": "Προσλαμβάνω πωλητή για πλήρες ωράριο, χωρίς ημερομηνία λήξης. Ποιο υπόδειγμα να χρησιμοποιήσω;", "template": "indefinite_full_time", "split": "test"}
+{"id": 4, "lang": "en", "prompt": "I'm hiring a warehouse manager on a permanent basis, 40 hours a week. Which contract should I use?", "template": "indefinite_full_time", "split": "dev"}
+{"id": 5, "lang": "en", "prompt": "Draft an open-ended full-time employment agreement for a new software engineer.", "template": "indefinite_full_time", "split": "dev"}
+{"id": 6, "lang": "en", "prompt": "We want to take on a receptionist for good, full days, starting next month.", "template": "indefinite_full_time", "split": "test"}
+{"id": 7, "lang": "el", "prompt": "Χρειάζομαι σερβιτόρο μόνο για τη θερινή σεζόν, από Μάιο ως Οκτώβριο.", "template": "fixed_term", "split": "dev"}
+{"id": 8, "lang": "el", "prompt": "Μια υπάλληλός μας φεύγει με άδεια μητρότητας· θέλω κάποιον να την αντικαταστήσει μέχρι να επιστρέψει.", "template": "fixed_term", "split": "dev"}
+{"id": 9, "lang": "el", "prompt": "Σύμβαση για μηχανικό που θα δουλέψει μόνο όσο κρατάει το έργο της ανακαίνισης, περίπου οκτώ μήνες.", "template": "fixed_term", "split": "test"}
+{"id": 10, "lang": "en", "prompt": "I need someone for six months to help with the end-of-year rush, then the job ends.", "template": "fixed_term", "split": "dev"}
+{"id": 11, "lang": "en", "prompt": "Contract for a lifeguard hired for the summer season only.", "template": "fixed_term", "split": "dev"}
+{"id": 12, "lang": "en", "prompt": "We're hiring a project coordinator until the EU-funded project finishes in December.", "template": "fixed_term", "split": "test"}
+{"id": 13, "lang": "el", "prompt": "Θέλω να πάρω μια φοιτήτρια για τέσσερις ώρες κάθε απόγευμα στο κατάστημα.", "template": "part_time", "split": "dev"}
+{"id": 14, "lang": "el", "prompt": "Ο υπάλληλος ζήτησε να δουλεύει 20 ώρες την εβδομάδα αντί για 40. Τι συμφωνητικό υπογράφουμε;", "template": "part_time", "split": "dev"}
+{"id": 15, "lang": "el", "prompt": "Πρόσληψη καθαρίστριας για δύο ώρες κάθε πρωί, όλες τις εργάσιμες.", "template": "part_time", "split": "test"}
+{"id": 16, "lang": "en", "prompt": "Hiring a cashier for mornings only, 9 to 1, Monday to Friday.", "template": "part_time", "split": "dev"}
+{"id": 17, "lang": "en", "prompt": "My employee wants to cut down to half days. What contract covers that?", "template": "part_time", "split": "dev"}
+{"id": 18, "lang": "en", "prompt": "Draft an agreement for a bookkeeper working 15 hours a week.", "template": "part_time", "split": "test"}
+{"id": 19, "lang": "el", "prompt": "Λόγω πτώσης πωλήσεων θέλω οι εργαζόμενοι να δουλεύουν τρεις ολόκληρες μέρες την εβδομάδα αντί να απολύσω κάποιον.", "template": "rotating_work", "split": "dev"}
+{"id": 20, "lang": "el", "prompt": "Ο τεχνικός θα δουλεύει κανονικό οκτάωρο, αλλά μόνο Δευτέρα, Τετάρτη και Παρασκευή.", "template": "rotating_work", "split": "dev"}
+{"id": 21, "lang": "el", "prompt": "Θέλω να βάλω το προσωπικό να δουλεύει εναλλάξ μία εβδομάδα ναι, μία όχι, με πλήρες ωράριο.", "template": "rotating_work", "split": "test"}
+{"id": 22, "lang": "en", "prompt": "Business is slow, so instead of layoffs I want staff on full days but only two days a week for a few months.", "template": "rotating_work", "split": "dev"}
+{"id": 23, "lang": "en", "prompt": "Contract for a driver who works full shifts but only every other week.", "template": "rotating_work", "split": "dev"}
+{"id": 24, "lang": "en", "prompt": "An employee will work eight-hour days, three days per week. Which template?", "template": "rotating_work", "split": "test"}
+{"id": 25, "lang": "el", "prompt": "Θέλω διανομείς που θα τους καλώ όποτε έχουμε παραγγελίες, χωρίς σταθερό πρόγραμμα.", "template": "unpredictable_schedule", "split": "dev"}
+{"id": 26, "lang": "el", "prompt": "Χρειάζομαι βοηθό σερβιτόρου που θα τον ειδοποιώ μια μέρα πριν, ανάλογα με τις κρατήσεις.", "template": "unpredictable_schedule", "split": "dev"}
+{"id": 27, "lang": "el", "prompt": "Σύμβαση για εργαζόμενο με ωράριο που αλλάζει κάθε εβδομάδα ανάλογα με τη ζήτηση.", "template": "unpredictable_schedule", "split": "test"}
+{"id": 28, "lang": "en", "prompt": "I want staff I can call in when it gets busy, with no fixed schedule.", "template": "unpredictable_schedule", "split": "dev"}
+{"id": 29, "lang": "en", "prompt": "Contract for event staff who work whenever we have a booking, with a day's notice.", "template": "unpredictable_schedule", "split": "dev"}
+{"id": 30, "lang": "en", "prompt": "Agreement for a worker whose hours vary every week depending on demand, with some guaranteed hours.", "template": "unpredictable_schedule", "split": "test"}
+{"id": 31, "lang": "el", "prompt": "Ο προγραμματιστής θα δουλεύει από το σπίτι του στη Θεσσαλονίκη. Τι πρέπει να γράφει η σύμβαση;", "template": "telework", "split": "dev"}
+{"id": 32, "lang": "el", "prompt": "Θέλω να συμφωνήσουμε με τη γραμματέα να δουλεύει δύο μέρες στο γραφείο και τρεις από το σπίτι.", "template": "telework", "split": "dev"}
+{"id": 33, "lang": "el", "prompt": "Ποιο υπόδειγμα για υπάλληλο που θα εργάζεται εξ ολοκλήρου μέσω υπολογιστή από άλλη πόλη;", "template": "telework", "split": "test"}
+{"id": 34, "lang": "en", "prompt": "Our designer will work fully remotely from home. Draft the contract, including laptop and internet costs.", "template": "telework", "split": "dev"}
+{"id": 35, "lang": "en", "prompt": "Hybrid arrangement: three days at home, two at the office. Which contract?", "template": "telework", "split": "dev"}
+{"id": 36, "lang": "en", "prompt": "Contract for a customer support agent working from their own flat with a company laptop.", "template": "telework", "split": "test"}
+{"id": 37, "lang": "el", "prompt": "Θέλω να πάρω έναν 16χρονο να μάθει τη δουλειά στο συνεργείο για ένα χρόνο.", "template": "apprenticeship", "split": "dev"}
+{"id": 38, "lang": "el", "prompt": "Ένας ανήλικος 17 ετών θέλει να μάθει την τέχνη του ζαχαροπλάστη κοντά μας. Τι σύμβαση κάνουμε;", "template": "apprenticeship", "split": "dev"}
+{"id": 39, "lang": "el", "prompt": "Σύμβαση για νέο 15 ετών που θα εκπαιδευτεί ως βοηθός ηλεκτρολόγου.", "template": "apprenticeship", "split": "test"}
+{"id": 40, "lang": "en", "prompt": "A 16-year-old wants to learn carpentry in my workshop for a year. What contract fits?", "template": "apprenticeship", "split": "dev"}
+{"id": 41, "lang": "en", "prompt": "Agreement for a teenager under 18 to train as a hairdresser's assistant.", "template": "apprenticeship", "split": "dev"}
+{"id": 42, "lang": "en", "prompt": "We want to train a 17-year-old in our bakery and pay the reduced apprentice rate.", "template": "apprenticeship", "split": "test"}
+{"id": 43, "lang": "el", "prompt": "Ένας φοιτητής του Οικονομικού θα κάνει την πρακτική του στο λογιστήριό μας τρεις μήνες.", "template": "internship", "split": "dev"}
+{"id": 44, "lang": "el", "prompt": "Το ΙΕΚ μας στέλνει μια σπουδάστρια για πρακτική άσκηση. Τι υπογράφουμε;", "template": "internship", "split": "dev"}
+{"id": 45, "lang": "el", "prompt": "Συμφωνία για τελειόφοιτο πολυτεχνείου που θα κάνει πρακτική στο τεχνικό μας γραφείο.", "template": "internship", "split": "test"}
+{"id": 46, "lang": "en", "prompt": "A university student will do a summer placement with us as part of their degree.", "template": "internship", "split": "dev"}
+{"id": 47, "lang": "en", "prompt": "Draft an internship agreement with the college for a marketing student.", "template": "internship", "split": "dev"}
+{"id": 48, "lang": "en", "prompt": "We're hosting a vocational school trainee for practical training required by their course.", "template": "internship", "split": "test"}
+{"id": 49, "lang": "el", "prompt": "Μια εταιρεία προσωρινής απασχόλησης θα μας δανείσει δύο αποθηκάριους για τρεις μήνες. Τι σύμβαση χρειάζεται;", "template": "temporary_agency", "split": "dev"}
+{"id": 50, "lang": "el", "prompt": "Είμαστε Ε.Π.Α. και τοποθετούμε έναν τεχνικό σε πελάτη μας. Ετοίμασε τη σύμβαση.", "template": "temporary_agency", "split": "dev"}
+{"id": 51, "lang": "el", "prompt": "Ο εργαζόμενος θα πληρώνεται από το γραφείο ευρέσεως, αλλά θα δουλεύει στο εργοστάσιό μας.", "template": "temporary_agency", "split": "test"}
+{"id": 52, "lang": "en", "prompt": "A staffing agency is sending us a temp to cover our call centre for two months.", "template": "temporary_agency", "split": "dev"}
+{"id": 53, "lang": "en", "prompt": "We are an agency and place workers with client companies. Which contract do we sign with the worker?", "template": "temporary_agency", "split": "dev"}
+{"id": 54, "lang": "en", "prompt": "Contract for an agency worker assigned to a user company's warehouse.", "template": "temporary_agency", "split": "test"}
+{"id": 55, "lang": "el", "prompt": "Αρρώστησε ο μάγειρας και χρειάζομαι κάποιον για αύριο και μεθαύριο μόνο.", "template": "urgent_needs", "split": "dev"}
+{"id": 56, "lang": "el", "prompt": "Πώς προσλαμβάνω γρήγορα έναν εργάτη για μία μέρα μέσω του ΕΡΓΑΝΗ επειδή έχουμε έκτακτη φόρτωση;", "template": "urgent_needs", "split": "dev"}
+{"id": 57, "lang": "el", "prompt": "Θέλω να καλύψω μια βάρδια αύριο το πρωί που έμεινε ακάλυπτη απρόσμενα.", "template": "urgent_needs", "split": "test"}
+{"id": 58, "lang": "en", "prompt": "Two of my waiters called in sick; I need someone just for this weekend, fast.", "template": "urgent_needs", "split": "dev"}
+{"id": 59, "lang": "en", "prompt": "Emergency: we need an extra pair of hands for one day tomorrow to unload a shipment.", "template": "urgent_needs", "split": "dev"}
+{"id": 60, "lang": "en", "prompt": "How do I quickly hire someone for a single day to cover an unexpected absence?", "template": "urgent_needs", "split": "test"}
+{"id": 61, "lang": "el", "prompt": "Ποιος είναι ο κατώτατος μισθός για το 2026;", "template": "none", "split": "dev"}
+{"id": 62, "lang": "el", "prompt": "Πώς υπολογίζεται η αποζημίωση απόλυσης για 10 χρόνια υπηρεσίας;", "template": "none", "split": "dev"}
+{"id": 63, "lang": "el", "prompt": "Θέλω να νοικιάσω ένα κατάστημα. Μπορείς να μου φτιάξεις μισθωτήριο;", "template": "none", "split": "test"}
+{"id": 64, "lang": "en", "prompt": "How many days of annual leave does an employee get in the second year?", "template": "none", "split": "dev"}
+{"id": 65, "lang": "en", "prompt": "Write a sales contract for selling my car.", "template": "none", "split": "dev"}
+{"id": 66, "lang": "en", "prompt": "Summarise Law 5239/2025 for me.", "template": "none", "split": "test"}

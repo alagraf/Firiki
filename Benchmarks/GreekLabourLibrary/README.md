@@ -23,3 +23,24 @@ Source: the Government Gazette's official files from the National Printing Offic
 Only the full Labour Code is in this library, not the 37-page excerpt. Ν. 5316/2026 transposes
 Directive (EU) 2023/970, which is not in the EU holdout (checked by counting "2023/970" in
 `eu_data.json`, without reading the holdout's questions or answers).
+
+## Question set
+
+`library_qa_v1.jsonl`: 36 questions (24 dev, 12 test), written by Claude Code from the documents'
+own text, in the format of `../GreekLabourCode/labour_qa_v1.jsonl`, with two more fields:
+
+- `document`: the file the answer must come from;
+- `alsoDocument`: for the three "which version applies" questions (30–32), the Labour Code, whose
+  original text a later law amended (overtime 3 → 4 hours a day; unjustified absence 5 → 3 days;
+  collective agreement terms after three months).
+
+| Document | Questions |
+|---|---|
+| Ν. 5239/2025 | 1–7, 30, 31 |
+| Ν. 5278/2026 | 8–12, 32 |
+| Ν. 5316/2026 | 13–19 |
+| Υ.Α. 8934/2026 | 20–24 (`article` 0: the decision has no articles) |
+| Labour Code | 25–29 (articles not in the Labour Code set) |
+| none (must be refused) | 33–36 |
+
+Tune on the dev split only; the test split is measured, not used to change anything.

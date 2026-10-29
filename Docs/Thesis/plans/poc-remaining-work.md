@@ -144,6 +144,15 @@ of import plus answers).
 
 ## 4. Capability 1 (owner priority 1): Q&A over one document, then five
 
+**Status 2026-10-29 22:00:**
+- Written: the question set `Benchmarks/GreekLabourLibrary/library_qa_v1.jsonl` (36 questions, 24 dev
+  and 12 test; the README there lists them).
+- Written, not yet committed or run: the harness change in `GreekConstitutionEvaluationTests.swift`
+  (a corpus is a list of PDFs; set `GreekLabourLibrary`, corpus `library`; cases with `document`
+  and `alsoDocument`; "right documents retrieved").
+- To run it: `TEST_RUNNER_OI_GREEK_EVAL_SET=GreekLabourLibrary TEST_RUNNER_OI_GREEK_EVAL_SPLIT=dev
+  TEST_RUNNER_OI_GREEK_EVAL_REIMPORT=1`. The first import of the five PDFs takes about 25–40 min.
+
 - **Library:** `Benchmarks/GreekLabourLibrary/README.md`, five Greek labour-law PDFs (Labour Code
   plus Ν. 5239/2025, Ν. 5278/2026, Ν. 5316/2026, Υ.Α. 8934/2026). One document is already measured
   by the Labour dev split; record it as the single-document result.
@@ -172,22 +181,14 @@ of import plus answers).
 
 ## 5. Capability 4 (owner priority 2): Routing to 10 labour contract templates
 
-- **Templates:** Claude Code drafts 10 Greek contract templates from the Labour Code, each headed as a
-  PoC draft and not legal advice (owner's choice). Suggested set:
-  1. indefinite-term full-time;
-  2. fixed-term;
-  3. part-time;
-  4. rotating work;
-  5. on-call work;
-  6. teleworking;
-  7. seasonal;
-  8. domestic worker;
-  9. internship or apprenticeship;
-  10. mutual termination or settlement.
+- **Templates: drafted (2026-10-29).** The 10 Greek templates are in
+  `Benchmarks/LabourContractTemplates/contracts/`, with a README listing each one's articles. Each is
+  marked as a PoC draft and not legal advice. The set is grounded in the Code: domestic worker and
+  mutual termination were dropped, temporary agency work and urgent-needs hiring added.
 
-  Each is a Markdown file with front matter (id, Greek title, the Code's articles, typical clauses, and
-  placeholders such as `{{employer_name}}`). Put them in `OpenIntelligence/Resources/LabourContractTemplates/`
-  and check that they're in the app bundle.
+  Each file is Markdown with front matter (id, titles, articles, Greek and English keywords and
+  description), then the contract with `{{placeholders}}`. When the router is built, move them to
+  `OpenIntelligence/Resources/LabourContractTemplates/` and check that they're in the app bundle.
 - **Router:**
   - `LabourContractTemplateRouter`: score a Greek or English prompt against each template's
     description and keywords. Use embeddings with the app's sentence-embedding model plus keyword
@@ -195,8 +196,8 @@ of import plus answers).
   - Return the best template with a confidence, or "none" under a threshold.
   - An optional Apple Intelligence tie-break between the top two.
 - **Test:**
-  - `Benchmarks/LabourContractTemplates/routing_v1.jsonl`: about 60 labelled prompts (6 per template,
-    Greek and English, plus 6 that fit none), split into dev and test.
+  - `Benchmarks/LabourContractTemplates/routing_v1.jsonl` (written 2026-10-29): 66 labelled prompts
+    (6 per template, Greek and English, plus 6 that fit none), 44 dev and 22 test.
   - Measure accuracy and a confusion matrix.
   - Unit tests run the router on the dev prompts (no Simulator model needed if embeddings run in
     tests).
