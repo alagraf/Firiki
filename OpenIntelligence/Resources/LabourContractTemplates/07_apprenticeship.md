@@ -4,7 +4,7 @@ number: 7
 title_el: "Σύμβαση μαθητείας ανηλίκου"
 title_en: "Apprenticeship contract (ages 15–18)"
 articles: ["Π.Δ. 62/2025 άρθρα 136, 138"]
-keywords_el: ["μαθητεία", "μαθητευόμενος", "ανήλικος", "15 έως 18 ετών", "απόκτηση δεξιοτήτων", "μαθητής"]
+keywords_el: ["μαθητεία", "15χρονος", "16χρονος", "17χρονος", "μαθητευόμενος", "ανήλικος", "15 έως 18 ετών", "απόκτηση δεξιοτήτων", "μαθητής"]
 keywords_en: ["apprenticeship", "apprentice", "minor", "aged 15 to 18", "learn a trade", "trainee teenager"]
 description_el: "Ειδική σύμβαση μαθητείας έως ενός έτους με νέο 15 έως 18 ετών για απόκτηση δεξιοτήτων, με αμοιβή 70% του κατώτατου μισθού ή ημερομισθίου."
 description_en: "A special apprenticeship of up to one year with a young person aged 15 to 18 to learn skills, paid 70% of the minimum wage."

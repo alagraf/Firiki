@@ -240,6 +240,7 @@ implement, test, commit, and only then start the next. **Priority (owner, 2026-1
 4. **Template routing.** Recognise from a user's prompt which of 10 labour contract templates fits
    (owner's choice: Claude Code drafts the 10 templates from the Labour Code, marked as PoC drafts,
    not legal advice). Test: a labelled set of prompts in Greek and English, accuracy and confusion
-   between templates, with a dev and a test split.
+   between templates, with a dev and a test split. **Done 2026-10-30 (FORK_CHANGES 2.11.26):** on-device model
+   with a schema of the template ids, keyword fallback; dev 43/44, test 20/22.
 
 The EU holdout stays evaluation only for all of these.

@@ -1492,6 +1492,48 @@ split, reimported: 38 of 46, refusals 5 of 5 (`labour17`; the last runs scored 3
 question names another statute, so the rule didn't fire there; the result is within the usual noise.
 Test case 69 is left for the test-split run.
 
+#### 2.11.26 PoC capability 4: choosing a labour contract template from a request
+
+**Why:** the owner's fourth PoC capability: given a request in Greek or English ("I need a waiter
+only for the summer season"), pick the right one of ten labour contract templates, or none (a
+question about wages, another kind of contract).
+
+**What:** the ten Greek templates drafted on 2026-10-29 (`Benchmarks/LabourContractTemplates`,
+committed in `0514b17c`) moved into the app as `OpenIntelligence/Resources/LabourContractTemplates/`
+(they ship in the bundle). `LabourContractTemplateRouter` (`Services/Legal/`) reads their front
+matter. A Greek request is translated by Opus-MT; Apple's on-device model then answers with a
+schema built at run time from the templates' ids (`DynamicGenerationSchema(anyOf:)`), so it can
+only return one of the ten ids or `none`. It first writes one sentence on the work arrangement the
+request describes, and decodes greedily. The instructions list each template's English title and
+description. Requests about employing 15- to 17-year-olds trip the default guardrails, so a
+guardrail violation is retried as a plain-text reply under the permissive guardrails, and the
+first id named in it is taken. Without the model, or if both calls fail, the templates' Greek and
+English keywords decide (a keyword counts when each of its words starts a word of the request;
+a tie gives none). Tuning on the dev split: the descriptions of part-time (shorter days, even every
+day), rotating work (full days, fewer of them), telework (hybrid included) and urgent needs (up to
+two days a week, often from the next day) were sharpened after `routing1`; the guardrail retry and
+three Greek age words for apprenticeship were added.
+
+**Files:** `OpenIntelligence/Services/Legal/LabourContractTemplateRouter.swift`;
+`OpenIntelligence/Resources/LabourContractTemplates/*.md` (moved; five descriptions and one keyword
+list changed); `OpenIntelligenceTests/Services/GreekLegal/LabourContractTemplateRouterTests.swift`
+(unit suite `LabourContractTemplateTests`: the ten templates are in the bundle with their front
+matter, front matter parsing, keywords in both languages, the instructions list every id; opt-in
+evaluation `LabourContractTemplateRoutingEvaluation`, `TEST_RUNNER_OI_TEMPLATE_ROUTING=1`,
+`_SPLIT=dev|test`); `Benchmarks/LabourContractTemplates/README.md`.
+
+**Verification** (routing set v1, 66 prompts, half Greek, half English; iOS 27 Simulator):
+
+| Run | Split | Router | Keywords alone | Misses |
+|---|---|---|---|---|
+| `routing1` | dev (44) | 40 (41 by the model) | 26 | part-time → rotating; hybrid telework → rotating; urgent → fixed-term; apprenticeship → none (guardrails, 3 prompts fell back to keywords) |
+| `routing2` | dev (44) | 43 (42 by the model) | 26 | apprenticeship → none (guardrails under both settings) |
+| `routing3` | test (22), once | **20 (21 by the model)** | 8 | apprenticeship → none (guardrails, no keyword); internship (a polytechnic student's practice) → apprenticeship |
+
+All five unit and evaluation tests passed in each run (`✔ Test run with 5 tests in 2 suites
+passed`). The six "none" prompts of the set were all answered none. Each prompt takes about 1–2 s
+in the Simulator.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

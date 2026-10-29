@@ -6,8 +6,8 @@ title_en: "Rotating (fewer days) employment contract"
 articles: ["Π.Δ. 62/2025 άρθρα 73, 113 παρ. 3"]
 keywords_el: ["εκ περιτροπής", "λιγότερες ημέρες", "τρεις ημέρες την εβδομάδα", "λιγότεροι μήνες", "πλήρες ωράριο λιγότερες μέρες", "περιορισμός δραστηριότητας"]
 keywords_en: ["rotating", "rotation", "fewer days a week", "three days a week", "fewer weeks", "reduced activity"]
-description_el: "Εργασία με πλήρες ημερήσιο ωράριο αλλά λιγότερες ημέρες την εβδομάδα, εβδομάδες τον μήνα ή μήνες τον χρόνο, π.χ. τρεις ημέρες την εβδομάδα."
-description_en: "Full working days but fewer days a week, weeks a month or months a year, for example three full days a week."
+description_el: "Εργασία με πλήρες ημερήσιο ωράριο αλλά λιγότερες ημέρες την εβδομάδα, εβδομάδες τον μήνα ή μήνες τον χρόνο, π.χ. τρεις ολόκληρες ημέρες την εβδομάδα ή μία εβδομάδα στις δύο, συχνά αντί για απολύσεις όταν μειώνεται η δραστηριότητα· όχι για μικρότερες ημέρες."
+description_en: "Full working days at the normal daily hours but on fewer days a week, weeks a month or months a year, for example three full days a week or every other week, often instead of layoffs when business is slow; not for shorter days."
 ---
 
 # Σύμβαση εκ περιτροπής απασχόλησης

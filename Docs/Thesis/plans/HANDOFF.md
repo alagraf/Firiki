@@ -64,6 +64,10 @@ streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
 
+- 2026-10-30 01:10 (Claude Code): committed 2.11.26, template routing (dev 43/44, test 20/22).
+  Five-document Q&A baseline running (`library1`, reimport of the five PDFs, dev split; script
+  `/private/tmp/oi-work/library_dev.sh <log> <reimport 0|1> [split]`).
+
 - 2026-10-30 00:30 (Claude Code): committed 2.11.25 (per-document statute key, named-statute
   refusal; Constitution 8/10, Labour dev 38/46). Owner (00:20): don't fix the remaining dev
   failures (cases 41, 68: diagnosed in the chat, patch at /private/tmp/oi-work/patch_split_refusal.py,

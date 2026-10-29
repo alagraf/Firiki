@@ -182,18 +182,11 @@ of import plus answers).
 - **Done when:** the dev split is measured twice and the test split once; FORK_CHANGES and
   METHODS_SUMMARY record one-document and five-document numbers.
 
-## 5. Capability 4 (owner priority 2): Routing to 10 labour contract templates
+## 5. Capability 4 (owner priority 2): Routing to 10 labour contract templates (done: 2.11.26)
 
-**Status 2026-10-29 23:40: router written, compiles (TEST BUILD SUCCEEDED), not yet run.**
-Templates moved (git mv, staged) to `OpenIntelligence/Resources/LabourContractTemplates/`; they are
-in the app bundle. `OpenIntelligence/Services/Legal/LabourContractTemplateRouter.swift`: a Greek
-prompt is translated by Opus-MT, then Apple's on-device model picks one id or "none" through a
-`DynamicGenerationSchema(anyOf:)` (a one-sentence reason first), with keywords as the fallback.
-Tests: `OpenIntelligenceTests/Services/GreekLegal/LabourContractTemplateRouterTests.swift` (unit
-suite `LabourContractTemplateTests`; opt-in evaluation `LabourContractTemplateRoutingEvaluation`,
-`TEST_RUNNER_OI_TEMPLATE_ROUTING=1`, `_SPLIT=dev|test`). Queued after the statute round:
-`/private/tmp/oi-work/router_round.sh` (log `routing1`). The embedding idea below was replaced by
-the model choice; measure keywords alone as the baseline (the evaluation prints both).
+**Done 2026-10-30 (FORK_CHANGES 2.11.26):** dev 43/44, test 20/22 (keywords alone 26/44, 8/22).
+The router is not yet reachable from the chat UI (a "which contract do I need" request in the app);
+that and filling a template's `{{placeholders}}` are possible follow-ups.
 
 - **Templates: drafted (2026-10-29).** The 10 Greek templates are in
   `Benchmarks/LabourContractTemplates/contracts/`, with a README listing each one's articles. Each is

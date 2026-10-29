@@ -96,6 +96,16 @@ fix that stage in a general way; run again and compare.
 - The answer's details show the verification outcome, the English draft and the models used, so
   every answer can be audited.
 
+## 6a. Choosing a contract template (PoC capability)
+- Ten Greek labour contract templates, drafted from the Labour Code and the laws of the library and
+  marked as drafts that are not legal advice, ship with the app.
+- A request is translated to English if it is Greek; the on-device model then chooses one
+  template, or none, from their descriptions. The choice is constrained to the valid template
+  names, and the model first states in one sentence what work arrangement the request describes.
+- The model's default safety filter blocks some requests about employing minors (apprenticeship
+  for ages 15–18). Such a request is asked again as a plain-text classification under the
+  filter's setting for transforming user content; keywords decide when the model can't.
+
 ## 7. Evaluation method
 - **Question sets** written from the official texts, each with a reference answer citing article
   and paragraph and key-fact patterns for automatic grading:
@@ -129,6 +139,7 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-29 | OCR after the boxes follow tilted lines: scans / whole scanned PDF / 13 other tilted pages | 48% → 96% / 62% → 98% / 46% → 88% (untilted 88%) |
 | 2026-10-29 | Labour Code, development (46), excerpt, after table rows and the off-topic figure repair (two runs) | 36 and 35 of 46 (35 before) |
 | 2026-10-29 | Constitution (10) and Labour Code development (46), after the per-document statute check | 8 of 10 (8 before); 38 of 46, refusals 5 of 5 |
+| 2026-10-30 | Contract template routing (66 requests, half Greek): development (44) / test (22), on-device model; keywords alone | 43 of 44 / 20 of 22; 26 of 44 / 8 of 22 |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
 minutes after the faster translation.
@@ -153,6 +164,9 @@ are within this variation.
   measured. Constitution pages read worse than Labour Code pages even untilted (61–79% of the
   words, not yet investigated).
 - No device measurements yet (speed, memory, answer quality on an iPhone).
+- Template routing: the safety filter can block a request about a 15-year-old under both
+  settings, and the keywords then may not recognise it; a student's practicum was once taken for
+  an apprenticeship. The templates themselves are drafts that a lawyer must check.
 
 ## Holdout evaluation (before/after)
 A second, never-tuned test set is kept for the before/after comparison (Chapter 6): 16 questions
@@ -176,6 +190,7 @@ The set is small (16 questions) and its library tiny (11 passages), so finding t
 the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-30: contract template routing (PoC capability), with results.
 - 2026-10-29: each statute knows which statute it is; a question naming another one is refused.
 - 2026-10-29: tables keep one row a line; an off-topic figure no longer refuses a correct answer.
 - 2026-10-29: OCR boxes follow tilted lines; scans read like clean pages (checked on other pages).

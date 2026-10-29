@@ -6,8 +6,8 @@ title_en: "Telework (remote work) contract"
 articles: ["Π.Δ. 62/2025 άρθρα 73, 130–134"]
 keywords_el: ["τηλεργασία", "εξ αποστάσεως", "από το σπίτι", "απομακρυσμένη εργασία", "δικαίωμα αποσύνδεσης", "εξοπλισμός"]
 keywords_en: ["telework", "remote", "work from home", "home office", "right to disconnect", "hybrid"]
-description_el: "Εργασία που παρέχεται εξ αποστάσεως, π.χ. από το σπίτι, με τεχνολογία, ενώ θα μπορούσε να γίνει στις εγκαταστάσεις του εργοδότη· ρυθμίζει εξοπλισμό, κόστος και δικαίωμα αποσύνδεσης."
-description_en: "Work done remotely, for example from home, using technology, that could otherwise be done at the employer's premises; covers equipment, costs and the right to disconnect."
+description_el: "Εργασία που παρέχεται εξ αποστάσεως, εξ ολοκλήρου ή εν μέρει (υβριδικά, π.χ. κάποιες ημέρες από το σπίτι και κάποιες στο γραφείο), με τεχνολογία, ενώ θα μπορούσε να γίνει στις εγκαταστάσεις του εργοδότη· ρυθμίζει εξοπλισμό, κόστος και δικαίωμα αποσύνδεσης."
+description_en: "Work done remotely, fully or partly (hybrid, for example some days at home and some at the office), using technology, that could otherwise be done at the employer's premises; covers equipment, costs and the right to disconnect."
 ---
 
 # Σύμβαση τηλεργασίας
