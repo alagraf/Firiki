@@ -121,10 +121,10 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 - 2026-10-29 Steps 2–4 of the night plan (FORK_CHANGES 2.11.12, 2.11.13): multi-set evaluation
   harness (TEST_RUNNER_OI_GREEK_EVAL_SET/SPLIT/CORPUS), Labour Code QA set (Π.Δ. 62/2025, 69 cases,
   `Benchmarks/GreekLabourCode/`), fixes from the dev runs (contents headings, markdown before
-  translation, glossary). Labour dev (excerpt): 24 → 31/46; test (excerpt, once): 14/23.
+  translation, glossary). Labour dev (excerpt): 24 → 31/46; test (excerpt, once): 14/23; test on the
+  full code: 11/23 (import of the 260 pages: 4,218 passages, 29 min in the Simulator).
 
 ## Next (2026-10-29)
-- Full-corpus Labour Code import (260 pages, expect ~30 min) and the test split on it.
 - Refusals: income tax, pensions, unemployment benefit and Germany questions were answered from
   unrelated passages (2 of 5 dev, 2 of 3 test wrong); a "the code does not cover this" check
   (relevance of the best passage to the question's subject) is the next lever.

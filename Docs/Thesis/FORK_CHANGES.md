@@ -1001,6 +1001,7 @@ model). Corpus: excerpt (37 pages), re-imported each run (263 s, 641/691 passage
 | 3 | dev | + glossary «προειδοποίηση», «σπουδαίος λόγος»; "26 (26)" → "26"; patterns of cases 31, 32 | 31 | 28/41 | 38/41 | 3/5 |
 | 3' | dev | run 3 regraded with the number–unit patterns | 32 | 29/41 | – | 3/5 |
 | 4 | test (23), once | same app as run 3, reused library | 14 | 13/20 | 19/20 | 1/3 |
+| 5 | test (23), **full code** | same app; full 260-page import: 4,218 passages in 1,757 s | 11 | 11/20 | 18/20 | 0/3 |
 
 \* Run 2 was stopped at question 45 of 46 by the test script's 30-minute default; its 45 answers
 were graded from the log with a Python copy of the harness's grading, which reproduces run 1's 24
@@ -1014,7 +1015,10 @@ questions that should have been refused were answered from other passages (65 pe
 unemployment benefit, which the translator calls "IDP"). Test split: 42 renders «σπουδαίος λόγος»
 as «σοβαρός λόγος» (its pattern was not widened after seeing it), 45 (Article 250 not retrieved),
 48, 18, 30, 33, 54 wrong or incomplete figures; 63 and 66 (income tax, Germany) answered instead of
-refused. Greek unit suites in run 3: `✔ Test run with 62 tests in 16 suites passed` (61 unit tests
+refused. With the full code (run 5) three more fail: 9 (does not say the leave can be replaced by
+money only when the employment ends), 36 (Article 338 not retrieved among 4,218 passages) and 57
+(pregnancy dismissal answered without "prohibited/void"), and none of the three off-code questions
+is refused (the larger corpus always has some related passage); 18 passes there. Greek unit suites in run 3: `✔ Test run with 62 tests in 16 suites passed` (61 unit tests
 and the evaluation). Constitution set, run 12 (re-import with this section's chunker, 712 passages, 340 s): 9 of 10,
 expected article retrieved 10 of 10; Q10 (Article 120 §4) passes now that the last article ends
 before the signatures; Q8 still leaves out the first round's two-thirds. Full suite
