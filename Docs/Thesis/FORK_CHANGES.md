@@ -1193,7 +1193,18 @@ The fork's advantage stays; it is smaller than in 2.11.15 where the developer's 
 original app's correct English answers to Greek questions as wrong, and larger in that the original
 app answers a Greek user in English and answers every unanswerable Greek question. The bare-model
 row of 2.11.15 is the developer's own grading and was not graded again (its raw output has another
-format). Still to do: the owner's grade of each answer (the sheet).
+format).
+
+**The owner's grade (final), 2026-10-29:** every one of the 96 answers read and graded by the owner
+in the sheet (`rag-tests/results/holdout_grading_sheet_completed.csv`). Of 13 answerable questions,
+and of the 3 questions the text doesn't answer:
+
+| System | English passages, English questions | Greek passages, English questions | Greek passages, Greek questions |
+|---|---|---|---|
+| Original app | 13 right; 3/3 refused | 7 right, 3 wrong, 3 refused although answerable; 3/3 refused | 0 right in Greek (9 right but in English, 4 wrong); 0/3 refused (all 3 answered) |
+| This fork | 13 right; 3/3 refused | 12 right, 1 wrong; 3/3 refused | 13 right; 3/3 refused |
+
+The grader knew which app wrote each answer (not blind).
 
 ## 3. How to inspect the changes
 
