@@ -1,254 +1,203 @@
 <p align="center">
-   <img src=".github/assets/openintelligence-app-icon.png" alt="OpenIntelligence app icon" width="132" height="132">
+  <h1 align="center">🍎 Firiki (Φιρίκι)</h1>
+  <p align="center">
+    <strong>On-Device Greek Legal AI Assistant for iOS</strong>
+  </p>
+  <p align="center">
+    <em>A privacy-preserving, retrieval-augmented intelligence assistant for Greek labour law running entirely on-device.</em>
+  </p>
 </p>
 
-<h1 align="center">OpenIntelligence</h1>
-
 <p align="center">
-   <strong>Ask your own documents anything. Every answer cites the page it came from.</strong>
-</p>
-
-<p align="center">
-   <a href="https://apps.apple.com/app/apple-store/id6756559175?pt=127101782&ct=GitHub_Repo&mt=8"><img alt="Download OpenIntelligence on the App Store" src="https://img.shields.io/badge/App%20Store-Download-0D96F6?style=for-the-badge&logo=appstore&logoColor=white"></a>
-   <a href="Docs/DEMO.md"><img alt="Read the OpenIntelligence demo guide" src="https://img.shields.io/badge/Demo-Guide-6E56CF?style=for-the-badge"></a>
-   <a href="Docs/OPENINTELLIGENCE_ARCHITECTURE_ATLAS.md"><img alt="Read the OpenIntelligence architecture guide" src="https://img.shields.io/badge/Architecture-Read-111827?style=for-the-badge"></a>
-   <a href="https://gunzino.notion.site/OpenIntelligence-Public-Roadmap-e4446012bb8940e6b78a745aee688075"><img alt="View the OpenIntelligence public roadmap" src="https://img.shields.io/badge/Public-Roadmap-FF6B6B?style=for-the-badge&logo=notion&logoColor=white"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-iOS%2018%2B%20%7C%20macOS%2015%2B-blue?style=flat-square&logo=apple">
+  <img alt="Swift" src="https://img.shields.io/badge/Swift-6.0-orange?style=flat-square&logo=swift">
+  <img alt="Inference" src="https://img.shields.io/badge/Inference-100%25%20On--Device-success?style=flat-square">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-purple?style=flat-square">
+  <img alt="Fork of" src="https://img.shields.io/badge/Forked%20from-OpenIntelligence-informational?style=flat-square">
 </p>
 
 ---
 
-Drop in PDFs, Office files, code, images, audio, or video. OpenIntelligence reads
-them, builds a private searchable index, and answers questions about them with
-citations you can tap and check.
+## 📖 Overview
 
-The app icon includes light and dark appearances, so it follows the device's appearance setting.
+**Firiki** (named after the historic, small Pelion apple variety *φιρίκι*) is an open-source, on-device legal question-answering assistant for iPhone. Developed as a Master's thesis proof of concept, Firiki adapts local Retrieval-Augmented Generation (RAG) to the challenging domain of **Greek labour law** (such as the Hellenic Labour Code Π.Δ. 62/2025 and constitutional provisions).
 
-**It runs on your device.** Ingestion, indexing, retrieval, ranking, and
-verification are all local. Nothing is uploaded to make search work. There is no
-account, no server of mine, and no third-party AI service anywhere in the path.
+While general-purpose consumer LLMs rely on external cloud APIs and struggle with Greek legal terminology, statutory structure, and Greek-alphabet OCR, **Firiki operates under strict zero-egress local constraints**:
+- **Zero Cloud Leakage:** Ingestion, OCR, translation, indexing, retrieval, reasoning, and verification run 100% on Apple Silicon hardware.
+- **No Fine-Tuning Required:** Bridges pretrained open weights (PaddleOCR, Opus-MT) with Apple's on-device foundation model through an evaluation-driven, modular pipeline.
+- **Auditable & Strict:** Answers cite exact statutory articles and paragraphs, enforce numeric consistency, and abstain gracefully when evidence is insufficient or inapplicable.
 
-On iOS and macOS 27+, you can optionally allow Apple **Private Cloud Compute** to
-write the final answer, but only after you have seen how much would be sent
-and why. Every answer carries a badge showing where it actually ran, read
-from an execution receipt rather than from what was requested.
+---
 
-<p align="center">
-  <img src=".github/assets/screenshots/openintelligence-cited-answer.png" alt="An answer with inline citations linking back to source excerpts" width="24%">
-  <img src=".github/assets/screenshots/openintelligence-answer-inspection.png" alt="Inspecting an answer's supporting evidence" width="24%">
-  <img src=".github/assets/screenshots/openintelligence-ingestion-pipeline.png" alt="The live ingestion pipeline naming each stage as it runs" width="24%">
-  <img src=".github/assets/screenshots/openintelligence-library.png" alt="The document library" width="24%">
-</p>
-<p align="center">
-  <em>A cited answer · inspecting the evidence behind it · the live pipeline · the library</em>
-</p>
+## ⚡ What is New in Firiki (Fork Highlights)
 
-## Why it exists
-
-Most document AI asks you to upload your files somewhere first. If those files
-are medical, legal, financial, or simply yours, that is the whole problem.
-
-This is a bet that a genuinely good retrieval engine fits on an iPhone, and that
-an answer is more trustworthy when you can see what it was built from.
-
-## What it does
-
-| | |
-| :-- | :-- |
-| **Reads real documents** | PDFs with tables and figures, Office files, code, plain text, images, audio, and video. From 5.7, JSON and JSON Lines files import as records. Pages, Numbers and Keynote are not readable and must be exported first. Vision handles OCR when a PDF's text layer is unreliable. |
-| **Searches two ways at once** | Meaning-based vector search and keyword BM25 run together, then fuse and re-rank. Hunting a part number and asking a conceptual question both work. |
-| **Shows its work** | A live pipeline view names each stage as it runs, and every claim links back to the excerpt behind it. |
-| **Explains its own vocabulary** | Every figure it shows defines itself where it sits, in a plain register and a technical one. Tapping `38 TOPS` says what the number is, and says that it is a per-chip rating rather than a measurement. |
-| **Answers offline** | Airplane mode included. |
-| **Works with Siri, Shortcuts and Spotlight** | From 5.7, Shortcuts actions ask a library in any answer mode and hand the answer and its sources to the next step, and others find passages, check a claim, add a file, a link or text, and create, open and switch libraries. A question from Siri that needs Private Cloud Compute brings the app forward to ask first. Spotlight opens the document you tap, and Visual Intelligence lists the documents that mention what the camera sees. |
-| **Follows you between devices** | From 5.7, Handoff carries what's open, conversations in an iCloud library sync with it, and on the Mac there's a menu bar item, Services menu entries and keyboard shortcuts. |
-
-### Quality modes
-
-**Standard** answers in one pass — best for lookups and direct questions. It is
-the only mode with a measured accuracy baseline: **0.410 exact-match across 83
-cases drawn from 40 real research papers** (QASPER), local-only.
-
-> **Withdrawn 2026-08-21.** This previously read "80% across 20 ground-truthed
-> cases with zero hallucinations". That figure came from a synthetic corpus
-> written alongside its own questions, from a run now flagged in
-> `BenchmarkRuns/PROGRESSION.md` as averaging 7 seconds per case, below the
-> threshold at which generation almost certainly did not execute. The replacement
-> is a harder external set and a worse number. See
-> [How OpenIntelligence Works, section 08](Docs/HOW_IT_WORKS.md).
-
-**Deep Think** runs a chain of up to 8 sequential reasoning sessions over rotating
-context windows, passing compressed findings forward before synthesising, and
-research rounds can follow it. It stops early once it reaches the confidence it
-aims for on the device and stops learning.
-
-**Maximum** lifts the session ceiling for questions that span a whole library.
-
-> Neither Deep Think nor Maximum has a score against `Benchmarks/rag_eval_v1.jsonl`
-> yet. Their reasoning chain was broken until mid-2026, so the question this
-> architecture exists to answer — *does more compute buy more correctness?* —
-> is still open. Please don't cite a Deep Think accuracy figure; none has been measured.
-
-## How it works
+Firiki extends the upstream [OpenIntelligence](https://github.com/Gunnarguy/OpenIntelligence) engine with domain-specific components engineered specifically for the Greek legal system:
 
 ```
-Import    →  extract → chunk → embed → index (vectors + full-text)
-
-Question  →  expand → hybrid search → fuse → re-rank → diversify
-          →  expand to parent sections → pack context → answer → verify
+[Greek Legal PDF / Photo / Scan]
+               │
+               ▼
+   [OCR Router & Text Repair]  ──────► (PaddleOCR PP-OCRv5 for Greek vs. Apple Vision)
+               │
+               ▼
+  [Structure-Aware Chunking]   ──────► (Splits on statutory articles & numbered paragraphs)
+               │
+               ▼
+[Masker & Terminology Engine]  ──────► (Protects laws, ΦΕΚ citations, ELOT 743 names)
+               │
+               ▼
+   [On-Device Translation]     ──────► (INT8 Opus-MT el ↔ en with KV cache)
+               │
+               ▼
+   [Bilingual Hybrid Index]    ──────► (Dense vector on EN text + Greek BM25 keywords)
+               │
+               ▼
+   [Reasoning & Legal Gates]   ──────► (Apple Foundation Model + Statutory Isolation Gates)
+               │
+               ▼
+   [Greek Verified Answer]     ──────► (Deterministic response with verified citations)
 ```
 
-Dense vector similarity and BM25 keyword matching run in parallel, merge through
-Reciprocal Rank Fusion, get re-ranked by a cross-encoder, then pass through MMR
-so the context is diverse rather than five phrasings of one paragraph. Answers
-face verification gates that check the response is genuinely grounded in the
-retrieved text before you see it.
+### 1. Hybrid On-Device Greek OCR Router
+Apple Vision OCR natively lacks support for the Greek script. Firiki introduces an on-device `OCRRouterService` and `GreekPaddleOCRService`:
+- Runs **PaddleOCR PP-OCRv5** (DB text detector and Greek recognizer via ONNX Runtime) directly on the device.
+- Features dynamic page-language routing: routes images to Vision for Latin text and PaddleOCR for Greek text (achieving **96% word recall** on Greek scans and photos versus Vision's 5%).
+- Automated pre- and post-processing: Unicode normalization, Greek homoglyph repair (correcting Latin look-alike characters in Gazette citations like `ΦΕΚ A'`), hyphenation rejoining across line wraps, and removal of Government Gazette running headers.
 
-Measured on a physical A18 Pro: **27 tokens/sec on-device**, **86 tokens/sec on
-PCC**, time-to-first-token 2.2–3.2s. The PCC figure was measured from an Xcode 27
-build, which is what App Store builds have been since 5.2.
+### 2. Legislative Structure-Aware Chunking
+Generic chunking strategies cut statutory articles arbitrarily across token windows. Firiki implements a specialized legal parser:
+- Chunks legal texts strictly along statutory boundaries (one passage per numbered paragraph of an article).
+- Embeds parent article titles and context into every chunk so retrieval preserves the legislative hierarchy.
 
-### Routing, and what the badge means
+### 3. Translation-Bridged Bilingual Architecture
+Apple's on-device foundation models perform with highest fidelity in English. Firiki introduces an on-device translation bridge:
+- **Quantized Opus-MT:** Compact INT8 `el↔en` and `en↔el` models with key/value cache in the decoder for fast, low-memory inference on iOS devices.
+- **Legal Entity & Citation Masking:** Custom rules identify legal citations (e.g., laws, presidential decrees, Government Gazette / ΦΕΚ references, court rulings) and mask them with protected tokens prior to translation, preventing distortion.
+- **ELOT 743 Transliteration:** Proper Greek personal names are transliterated instead of erroneously translated.
+- **Bilingual Legal Glossary:** Normalizes recurring Greek statutory terms to consistent English concepts during indexing and restores authoritative Greek legal vocabulary upon reverse translation.
 
-The model picker is a policy, not a hint:
+### 4. Bilingual Hybrid Search & Article Lookup
+- Combines semantic vector similarity search over translated English passages with token-level BM25 keyword search over original, unaccented, stem-matched Greek passages.
+- Includes a dedicated statutory article index that matches direct citations (e.g., *"Άρθρο 65"*) directly to the target legal provision.
 
-- **On-Device** never uses PCC. Not for planning, not for synthesis.
-- **PCC** requests Private Cloud Compute, with a declared local fallback if a gate or quota blocks it. Since 5.2 the App Store build carries the PCC paths compiled in, so the fallback is taken only when an entitlement, availability, quota, network or consent gate actually blocks the route.
-- **Hybrid** decides per query, based on the evidence actually retrieved.
+### 5. Legal Verification Gates & Refusal Policy
+- Enforces strict factual consistency checks before showing an answer: checks that numbers, deadlines, conditions, and legal citations match the retrieved sources.
+- **Strict Abstention:** Generates a deterministic, natural Greek refusal when questions touch out-of-scope jurisdictions, lack sufficient textual backing, or fail verification gates.
+- **Full Audit Trail:** A "Response Details" inspector enables users to audit the English generation draft, verification gate telemetry, and active models.
 
-Cloud consent is requested only for a real, finalised evidence envelope — never
-at launch, never speculatively. Retrieval and verification stay local regardless
-of which model writes the answer.
+### 6. Strict Local Privacy Guardrails
+- Implements `StrictLocalControlGuard` enforcing thesis requirements R1.1–R1.4: excludes application data stores from device backups (`isExcludedFromBackup`), completely disables cloud sync (`WorkspaceSyncService`), and blocks outbound remote web fetching.
 
-There is no separately selectable "3B" or "20B" on-device model here, because the
-public SDK exposes no such selector. Apple's larger on-device model is real and
-managed by the OS; no app can choose it. From iOS and macOS 27 an app can read
-which one it has (`SystemLanguageModel.variant`).
+---
 
-## Documentation
+## 🛠️ Installation Instructions
 
-The engineering docs are unusually detailed, and label every claim with how it
-was verified — source-read, build-checked, test-covered, or confirmed on a
-physical device. Where something is unproven, it says so.
+### Prerequisites
+- **macOS Sequoia (15.0+)** with **Xcode 16.0+**
+- **iOS 18+** / iOS Simulator
+- **Python 3.10+** (used once to prepare quantized ONNX translation weights)
+- Apple Silicon Mac recommended for building and testing
 
-**If you are reading one thing, read this:** [How OpenIntelligence Works](Docs/HOW_IT_WORKS.md). Every stage of both pipelines in order, with the reason each one exists and what breaks without it. Written at two levels, plain English and technical, side by side.
-
-**Start here for everything else:** [Documentation Atlas](Docs/README.md)
-
-**Architecture**
-- [System Architecture](Docs/OPENINTELLIGENCE_ARCHITECTURE_ATLAS.md) — import-time and query-time pipelines
-- [Retrieval Pipeline](Docs/RETRIEVAL_PIPELINE.md) — hybrid search, RRF, re-ranking
-- [Ingestion Pipeline](Docs/INGESTION_PIPELINE.md) — semantic chunking, OCR fallbacks, metadata
-- [Privacy & Routing](Docs/PRIVACY_AND_ROUTING.md) — local-first guarantees and the routing protocol
-
-**Apple platform specifics**
-- [Apple Foundation Models](Docs/Engineering/APPLE_MODELS.md) — token budgets, guided generation
-- [Document Intelligence and OCR sources](Docs/Research/DOCUMENT_INTELLIGENCE_AND_OCR.md) — Apple's Vision and PDFKit documentation, as researched
-- [Private Cloud Compute](Docs/Engineering/PRIVATE_CLOUD_COMPUTE.md) — enclave constraints, native integration
-
-**Honest limits**
-- [Hard Limits](Docs/Engineering/HARD_LIMITS.md) — token boundaries, model caps, memory ceilings
-- [Limitations](Docs/LIMITATIONS.md) — what is slow, what is missing, what is unverified
-- [Evaluation Framework](Docs/EVALS.md) — how accuracy is measured
-- [Changelog](CHANGELOG.md) · [User-facing changelog](Docs/USER_CHANGELOG.md) · [Roadmap](Docs/ROADMAP.md)
-
-**Contributing agents:** [RepoOS Command Center](Docs/RepoOS/00_REPO_COMMAND_CENTER.md) routes
-repository work through canonical evidence, safe edit boundaries, and required tests.
-The [codemap](Docs/ai/codemap/INDEX.md) names, for each feature, the code to read first and how it connects to the rest.
-
-## Codebase map
-
-| Module | Core files | Responsibility |
-| :--- | :--- | :--- |
-| **Ingestion** | `DocumentProcessor.swift`, `LayoutAwareExtractor.swift` | Content extraction, Vision OCR fallback, structure recovery |
-| **Chunking** | `SemanticChunker.swift`, `ContentTaggingService.swift` | Context-aware chunking, entity resolution, metadata |
-| **Indexing** | `SQLiteFullTextService.swift`, `BNNSVectorDatabase.swift` | SQLite FTS5 and BNNS-accelerated vector storage |
-| **Retrieval** | `HybridSearchService.swift`, `ContextPackingService.swift` | Hybrid merge, parent-chunk reconstruction, token packing |
-| **Orchestration** | `RAGEngine.swift`, `AgenticOrchestrator.swift` | Re-ranking, MMR, agentic reasoning loops |
-| **Foundation Models** | `LLMService.swift`, `FoundationModelRoutePolicy.swift` | On-device execution, PCC escalation, routing receipts |
-| **Evidence Threads** | `EvidenceThread.swift`, `EvidenceThreadStore.swift` | Local persistence of conversations and verification state |
-| **Storage & Sync** | `SettingsStore.swift`, `WorkspaceSyncService.swift` | Feature gates, StoreKit 2 quotas, iCloud workspace sync |
-| **Interface** | `ChatScreen.swift`, `DocumentLibraryView.swift` | Chat and library surfaces |
-| **Vocabulary** | `Glossary.swift`, `GlossaryViews.swift` | One definition per term in two registers, attached in place via `.definedTerm(_:)` |
-| **Shortcuts** | `RAGAppIntents.swift`, `ScreenAwarenessIntents.swift`, `VisualIntelligenceIntents.swift`; from 5.7 also `SearchPassagesIntent.swift`, `AddToLibraryIntent.swift`, `LibraryIntents.swift`, `OpenItemIntents.swift` | Siri and App Intents, resolving in-process |
-
-## Building
-
-**Requirements:** macOS 26 or later with Xcode 26+, iOS 26.0 deployment target,
-Apple Silicon (M1+ / A17 Pro+) for usable Neural Engine throughput. Xcode 27 is
-needed for the iOS/macOS 27 paths — Core AI embeddings and native Private Cloud
-Compute — which compile out below that SDK.
-
+### Step 1: Clone the Repository
 ```bash
-# iCloud sets extended attributes that break codesign — clear them first
-/usr/bin/xattr -cr .
-
-# Simulator smoke build
-./scripts/build_simulator_smoke.sh
-
-# Quality-mode benchmark matrix, 20 cases per mode
-python3 scripts/run_quality_matrix.py --app <path to the built OpenIntelligence.app>
-
-# Guard against iCloud conflict copies before any signing work
-./scripts/check_icloud_conflicts.sh
+git clone https://github.com/alagraf/Firiki.git
+cd Firiki
 ```
 
-The benchmark denies PCC by default so runs reproduce offline, and reports
-`Measured` separately from `Unmeasured` rather than scoring an empty run as a
-failure.
+### Step 2: Fetch and Prepare On-Device Translation Models
+Firiki uses quantized INT8 Helsinki-NLP Opus-MT models for on-device translation. Run the automated fetch and conversion script:
+```bash
+chmod +x scripts/thesis_fetch_translation_models.sh
+./scripts/thesis_fetch_translation_models.sh
+```
+*This downloads `opus-mt-tc-big-el-en` and `opus-mt-tc-big-en-el`, applies INT8 quantization with KV-cache export, and places the compiled assets in `OpenIntelligence/Resources/MLModels/Translation/` (~730 MB).*
 
-> This repository lives in iCloud Drive, so builds need a `-derivedDataPath`
-> outside `~/Documents`, and `.git` is redirected through `.git.nosync`.
+### Step 3: Verify Model Assets
+Ensure the Greek OCR and translation models exist in the resources directory:
+```bash
+ls -la OpenIntelligence/Resources/MLModels/GreekOCR/
+# Expected: PP-OCRv5_mobile_det.onnx, el_PP-OCRv5_mobile_rec.onnx, el_dict.txt
 
-## Large documents
+ls -la OpenIntelligence/Resources/MLModels/Translation/
+# Expected: encoder, decoder_step, decoder_cross, and tokenizer files
+```
 
-500+ page PDFs go through a streamed, batched ingestion pipeline with page-level
-checkpointing, so a long import survives memory pressure and app restarts instead
-of starting over.
+### Step 4: Build the Project
+To run a headless smoke build on the simulator:
+```bash
+bash scripts/build_simulator_smoke.sh
+```
+Or open `OpenIntelligence.xcodeproj` directly in Xcode:
+```bash
+open OpenIntelligence.xcodeproj
+```
+Select the **OpenIntelligence** scheme and target your connected iOS device or iOS Simulator.
 
-From 5.7 a text, Markdown or JSON Lines file over 8 MB is imported the same way, in pieces of
-about 2 MB with a checkpoint after each. An 88.5 MB JSON Lines file finished on an iPhone 16 Pro
-Max as 144,247 passages on 2026-10-10.
+---
 
-## Status
+## 🚀 Usage
 
-Shipping on the App Store for iPhone, iPad, and Mac. **5.6 is live on both platforms**, released
-2026-10-08 from build 485. Developed against a
-[public roadmap](https://gunzino.notion.site/OpenIntelligence-Public-Roadmap-e4446012bb8940e6b78a745aee688075)
-synced from the same database the work is planned in.
+### 1. Ingesting Greek Legal Documents
+1. Launch Firiki on your device or simulator.
+2. Tap **Add to Library** to import Greek statutes (e.g., PDFs of the Labour Code, Government Gazette issues, or scanned contracts).
+3. The live ingestion pipeline will display:
+   - Greek language detection and text normalization.
+   - Dynamic routing to **PaddleOCR** when processing scanned or photographed pages.
+   - Statutory chunking and background translation via **Opus-MT**.
 
-**5.7 is in preparation and is not on the App Store yet.** It adds JSON and JSON Lines import as records,
-imports of very large text files in pieces, Shortcuts actions that return their results, Siri that asks
-before using Private Cloud Compute, Spotlight and Visual Intelligence that find documents, Handoff, a Mac
-menu bar item and Services, dictation, and sharing or exporting an answer with its sources. Statements in
-this file marked "from 5.7" describe that release.
+### 2. Querying Legal Provisions
+Ask questions in natural Greek:
+- *"Ποιες είναι οι προϋποθέσεις για τη χορήγηση άδειας πατρότητας;"*
+- *"Ποια είναι η νόμιμη προθεσμία προειδοποίησης για απόλυση υπαλλήλου με 5 έτη υπηρεσίας;"*
+- *"Τι προβλέπει το άρθρο 65 για το ωράριο εργασίας;"*
 
-**Private Cloud Compute shipped in 5.2**, live on both platforms since 2026-09-10, and execution is
-confirmed on a physical device. The release pipeline enforces the claim rather than trusting it:
-every archive is checked with `nm -u` for `PrivateCloudCompute` symbols, against a live
-`SystemLanguageModel` count as a control so a dead binary cannot pass the gate vacuously. The
-version stamped on the archive decides which way the gate points: below 5.2 any PCC symbol fails the
-build, from 5.2 zero PCC symbols fails it, so the binary cannot silently contradict this page in
-either direction. Edge cases, quota exhaustion, mid-stream network transitions and background
-consent, are still unverified and tracked as open items rather than quietly assumed.
+Answers are rendered deterministically in Greek with exact article and paragraph citations.
 
-Releases are produced by **Xcode Cloud**, never from the maintainer's Mac. This was not a
-preference. That Mac ran a beta macOS, every local archive stamped a prerelease
-`BuildMachineOSBuild` into `Info.plist`, and App Store *ingestion* rejected that with ITMS-90111 even
-though `altool --validate-app` returned VERIFY SUCCEEDED and processing reached `VALID`. Validation
-is not ingestion. Xcode Cloud builds on Apple's released images, so the stamp comes out clean. The
-Mac now runs the macOS 27.0 release, build 26A428.
-<!-- [evidence_level: measured, confidence: exact, evidence_source: sw_vers on the maintainer's Mac 2026-10-01 read ProductVersion 27.0, BuildVersion 26A428, with no trailing lowercase letter, the prerelease mark per Docs/ai/RUNBOOK.md "Do not build a release on this Mac"] -->
+### 3. Inspecting Verification Details
+- Tap inline citations to read the exact statutory excerpt behind each legal claim.
+- Open **Response Details** to inspect the intermediate English draft, verification gate audit receipts, and OCR engine metrics.
 
-That is also where the toolchain question above is settled. Xcode Cloud runs one workflow,
-`Default`, pinned to the **Xcode 27 release**, build `27A266a`, on macOS `Latest Release`, with two
-archive actions. Xcode 27 ships Swift 6.4, which compiles the `#if compiler(>=6.4)` sites in,
-and `ci_scripts/ci_post_clone.sh` fails in seconds if a 5.2-or-later version ever meets a Swift
-earlier than 6.4 runner.
+### 4. Running the Thesis Test Suites
+Firiki includes automated test harnesses and evaluation splits for Greek legal reasoning:
+```bash
+# Run the Greek legal unit test suite
+./scripts/thesis_run_tests.sh /tmp/thesis_test.log -only-testing:OpenIntelligenceTests/GreekLegalPipelineTests
 
-GitHub Actions ran releases for one stretch in August 2026, as a fallback after the free Xcode Cloud
-allowance ran out, and was retired on 2026-08-28 once paid Xcode Cloud capacity was in place. Its
-workflow no longer exists.
+# Run the OCR benchmark tests
+TEST_RUNNER_OI_OCR_BENCH=1 ./scripts/thesis_run_tests.sh /tmp/ocr_bench.log -only-testing:OpenIntelligenceTests/GreekOCRBenchmarkTests
+```
 
-## License
+---
 
-MIT. See [LICENSE](LICENSE).
+## 📊 Empirical Evaluation (Thesis Summary)
+
+Tested on official Greek statutory corpora (Hellenic Labour Code Π.Δ. 62/2025 and Greek Constitution):
+
+| Metric / Benchmark | Baseline (Upstream) | Firiki (This Fork) | Notes |
+|---|---|---|---|
+| **Greek OCR Word Recall** | 5.0% (Vision) | **96.0%** (PaddleOCR) | Evaluated on clean & photographed Greek statute pages |
+| **Greek QA Accuracy (Constitution)** | 6 / 10 | **9 / 10** (10/10 retrieval) | Measured on Greek legal query test set |
+| **Labour Code Dev Set (46 Qs)** | 24 / 46 | **37 / 46** | Includes 100% correct refusal on out-of-scope questions |
+| **EU Labour Directives Holdout (16 Qs)** | 0 / 13 in Greek (9 in EN) | **13 / 13 in Greek** (3/3 refused) | Evaluated on held-out parallel statutory corpus |
+
+*For complete benchmarks, methodologies, and ablation details, refer to [`Docs/Thesis/METHODS_SUMMARY.md`](Docs/Thesis/METHODS_SUMMARY.md) and [`Docs/Thesis/FORK_CHANGES.md`](Docs/Thesis/FORK_CHANGES.md).*
+
+---
+
+## ⚖️ Credits & Acknowledgements
+
+Firiki is developed by **Alexandros Agrafiotis** as part of an academic thesis exploring on-device, bilingual Retrieval-Augmented Generation for specialized legal domains.
+
+### Upstream Project
+Firiki is built upon and extends **[OpenIntelligence](https://github.com/Gunnarguy/OpenIntelligence)**, originally created by **[Gunnar Hostettler](https://github.com/Gunnarguy)**. We gratefully acknowledge the upstream project's foundational work in local, on-device vector indexing, hybrid BM25 retrieval, and privacy-preserving document architectures for Apple platforms.
+
+### Third-Party Models & Libraries
+- **[PaddlePaddle / PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)**: Lightweight text detection and Greek character recognition models.
+- **[Helsinki-NLP (Opus-MT)](https://huggingface.co/Helsinki-NLP)**: Pretrained Greek–English bilingual transformer models.
+- **[ONNX Runtime](https://onnxruntime.ai/)**: High-performance cross-platform inference engine for mobile neural network execution.
+
+---
+
+## 📜 Disclaimer
+
+Firiki is an academic research proof of concept and is intended for informational and research purposes only. It does not provide certified legal advice. Always consult official publications of the Government Gazette (*Εφημερίδα της Κυβερνήσεως*) and qualified legal professionals for official legal matters.

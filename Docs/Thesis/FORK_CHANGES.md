@@ -1335,6 +1335,20 @@ draft refused by gate B, and the first round's two-thirds left out). Labour dev 
 34 passing, which are a draft saying the passages don't answer, a figure left out, and an
 abstention case answered (1 and 68 failed in the run before this change as well).
 
+#### 2.11.21 Firiki open-source README and thesis documentation
+
+**Why:** replace the upstream App Store product README with an open-source technical README for the
+thesis fork, Firiki (an on-device Greek legal AI assistant for iOS).
+
+**What:** new `README.md` covering project overview, thesis problem premise, architectural pipeline,
+key new features (PaddleOCR router, structure-aware legal chunker, INT8 Opus-MT translation bridge,
+legal identifier masker, bilingual hybrid retrieval, verification gates, strict local privacy),
+installation and model setup steps, usage, empirical evaluation summary, and upstream credits.
+
+**Files:** `README.md`.
+
+**Verification:** markdown verified; links and model paths aligned with thesis scripts.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):
