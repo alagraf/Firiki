@@ -39,6 +39,10 @@ Latest numbers (Simulator, one run each; 2–8 of 46 dev cases flip between runs
 
 ## Next, in order
 
+**The step-by-step plan for everything left is `poc-remaining-work.md`** (in this folder): how to run
+the tests, what is uncommitted and how to finish it, and a design and test for each remaining item.
+Start there.
+
 The owner's list is `greek-legaltech-progress.md`: the open items under "Next (2026-10-29)", then
 the section "PoC capabilities (owner, 2026-10-29)", one capability at a time (implement, test,
 commit, then the next).
@@ -58,6 +62,10 @@ Removed by the owner (don't add back unless asked): Greek translation for PDFs o
 streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
+
+- 2026-10-29 21:40 (Claude Code): fixes for dev cases 34 (table rows) and 46 (off-topic figure
+  refused by gate C) written, **uncommitted**. The dev split is running as `labour13` (table fix) and
+  `labour14` (both fixes). Wrote `poc-remaining-work.md` for whoever continues.
 
 - 2026-10-29 21:30 (Claude Code): tilted scans fixed (2.11.22): boxes follow each line's angle;
   scans 0.48 → 0.96 word recall, 13 other pages 0.46 → 0.88 (`scripts/thesis/ocr_tilt_check.py`).
