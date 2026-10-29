@@ -99,6 +99,8 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   citation UI shows sourceTextEl; LegalSLMEnricherProtocol; assetID logging.
 - 2026-10-28 P5 committed: all plan phases implemented. Full suite: 1363 XCTests, only the 3
   Greek-region failures; 33 Greek Swift tests pass.
+- 2026-10-29 EU holdout measured (FORK_CHANGES 2.11.15): Greek passages + Greek questions, original
+  app 5/13 and 0/3 refused, fork 13/13 and 3/3. Harness committed; data stays in rag-tests.
 
 ## Next (outside the plan's checklist)
 - Device check (M3 Mac / iPhone): import a Greek PDF and a scan, ask Greek questions in each quality
@@ -155,8 +157,29 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   4. Metrics per condition: right answers of 13 (graded by the file's `any`/`any_el` and read by a
      person), declined of the 3 unanswerable (hallucination rate), right passage cited; model
      variant and window logged with each answer.
+  **Done 2026-10-29 (FORK_CHANGES 2.11.15):** right of 13 / unanswerable declined of 3 — bare model
+  12, 3 | 7, 2 | 12, 0; original app 13, 2 | 9, 2 | 5, 0; fork at f0460f5c 13, 2 | 13, 2 | 13, 3
+  (conditions: EN/EN | EL passages, EN questions | EL/EL). Rerun at the next milestone only.
   Rules: build the harness from the file's structure only; run it once per milestone, at the end;
   record the numbers and never change the app, the prompts, the glossary or any threshold because
   of what a holdout answer says. Don't open the questions or answers to diagnose failures. Any
   change made after a holdout run is tuned on the Labour Code dev split only.
+- Translator memory on the iPhone (owner, 2026-10-29): each translation direction loads three ONNX
+  sessions (encoder, cross and step decoder, about 360 MB on disk), and the app keeps both
+  directions loaded once used. Next to Apple's model, that could get the app killed on an 8 GB
+  phone. Fix: load each direction only when it's needed and release it after an import.
+- Faster import, measurable in the Simulator (owner, 2026-10-29; after the holdout runs, so the
+  holdout records the current fork):
+  1. Translate sentences in batches. Today the translator handles one sentence at a time
+     (`scripts/thesis/convert_opus_mt.py:62`, "a batch of one sentence"). For every output word it
+     reads the whole 210 MB step decoder, so the work is mostly waiting on memory; translating 8–16
+     sentences together shares each read across all of them. Needs the models exported again with
+     a batch axis and a padding mask, plus a batched decoding loop. Estimate: about 2–4× faster
+     import.
+  2. Use more CPU threads: `setIntraOpNumThreads(2)` in `LocalNeuralTranslator.swift` (~line 223).
+     Small change, modest gain.
+  Then test that it worked: unit tests of the translator (same output as one sentence at a time);
+  import time of the 37-page excerpt and the full Labour Code before and after; the Labour Code dev
+  split and the Constitution set again, to show answers didn't get worse. The Neural Engine
+  (native Core ML conversion) stays a later, device-only step.
 - Device check of all of this on the M3 Mac / iPhone (only the Simulator was used).

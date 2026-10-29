@@ -102,6 +102,7 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-29 | Labour Code, development (46), 37-page excerpt | 24 → 31 of 46 |
 | 2026-10-29 | Labour Code, test (23), excerpt / full 260-page Code | 14 of 23 / 11 of 23 |
 | 2026-10-29 | Labour Code, development (46), excerpt, after the out-of-scope refusals | 37 of 46; all 5 questions that must be refused were refused |
+| 2026-10-29 | EU holdout (16), Greek passages and Greek questions | original app 5 of 13, 0 of 3 refused; this fork 13 of 13, 3 of 3 refused |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages).
 
@@ -117,13 +118,26 @@ Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,21
   the next OCR test set.
 - No device measurements yet (speed, memory, answer quality on an iPhone).
 
-## Holdout evaluation (planned)
-A second, never-tuned test set is kept for the final before/after comparison (Chapter 6): 16
-questions on 11 articles of EU labour directives, published officially in Greek and English (13
-answered by the text, 3 not, to measure hallucination). It will be run on the bare on-device
-model, on the original app and on this fork, with and without translation to English, and only
-as a final measurement.
+## Holdout evaluation (before/after)
+A second, never-tuned test set is kept for the before/after comparison (Chapter 6): 16 questions
+on 11 articles of EU labour directives, published officially in Greek and English (13 answered by
+the text, 3 not, to measure hallucination). Nothing in the app was changed because of it. Each
+passage is a document; each question goes through the whole app as a user's question would.
+Right answers of 13, and how many of the 3 unanswerable questions were refused (refusing is
+right):
+
+| System | English passages, English questions | Greek passages, English questions | Greek passages, Greek questions |
+|---|---|---|---|
+| Bare on-device model, given the right passage | 12, 3 refused | 7, 2 refused | 12, 0 refused |
+| Original app | 13, 2 refused | 9, 2 refused | 5, 0 refused |
+| This fork | 13, 2 refused | 13, 2 refused | 13, 3 refused |
+
+The original app does well in English and loses most in all-Greek use, where it also answers every
+question the text can't answer. The fork's translation bridge, Greek-aware retrieval and refusals
+close that gap. The set is small (16 questions) and its library tiny (11 passages), so finding the
+passage is easy; the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-29: EU holdout before/after measured (bare model, original app, this fork).
 - 2026-10-29: first version; one-sentence summary and the improvement loop; out-of-scope refusals,
   glossary Greek kept in answers, Cyrillic misreads of Greek stamps; holdout evaluation planned.

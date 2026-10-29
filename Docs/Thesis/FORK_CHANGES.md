@@ -1106,6 +1106,58 @@ still leaves out the first round's two-thirds). Full suite (`/private/tmp/oi-log
 `Executed 1363 tests, with 8 tests skipped and 3 failures` (the 3 Greek-region formatting tests);
 Swift Testing `✔ Test run with 68 tests in 18 suites passed`.
 
+#### 2.11.15 EU labour-law holdout: before/after measurement
+
+**Why:** the owner asked for a "before and after" of the on-device model's accuracy and
+hallucination, with and without translation to English, on a set that was never used for tuning
+(thesis Chapter 6). The set is the app developer's test in `/Users/alagra/Documents/thesis/rag-tests/`
+(`eu_data.json`): 11 articles of three EU labour directives in their official English and Greek
+texts, 16 questions, 13 answered by the text and 3 not. It is a holdout (AGENTS.md step 5): it
+stays outside the repository, only the summary lines of its runs were read, and nothing in the app
+was changed because of it.
+
+**What:**
+- `EUHoldoutEvaluationTests` (opt-in `TEST_RUNNER_OI_EU_HOLDOUT=1`): imports each passage as a
+  document of its own into two libraries (English passages, Greek passages) and asks every question
+  through `RAGService.query` in Standard mode, as a user's question goes (a Greek question in Greek
+  legal mode: translated, answered in English, verified, translated back). Three conditions as in the
+  developer's `ragtests.swift`: English passages + English questions, Greek passages + English
+  questions, Greek passages + Greek questions. Graded the developer's way: an answer is right when
+  it holds one of the question's expected terms (whole word; a Greek term as a word start); a
+  question with no answer counts as declined when the app abstains. Also reported: the right
+  passage among the retrieved ones, and answerable questions declined. Cached searches are cleared
+  first.
+- `scripts/thesis/holdout/EUHoldoutStockAppTests.swift`: the same harness for the original app
+  (git worktree of `upstream/main` at `a7276983`, the commit the fork last synced with), with the
+  original app's model settings (default temperature and guardrails); copied into the worktree's
+  test target to run, not part of the fork's tests.
+- `GreekEvalOnDeviceModel` (in `GreekConstitutionEvaluationTests.swift`) is no longer private, so
+  both harnesses use the same on-device model wrapper.
+
+**Files:** `OpenIntelligenceTests/Services/GreekLegal/EUHoldoutEvaluationTests.swift` (new),
+`OpenIntelligenceTests/Services/GreekLegal/GreekConstitutionEvaluationTests.swift`,
+`scripts/thesis/holdout/EUHoldoutStockAppTests.swift` (new).
+
+**Verification:** Apple's on-device model (AFM 3 Core Advanced, context window 8,192) in the iOS 27
+Simulator on an M3 Mac, 2026-10-29. Right answers of 13; "declined" = of the 3 questions the text
+doesn't answer (declining is right); retrieved = the right passage among those given to the model.
+
+| System | English passages, English questions | Greek passages, English questions | Greek passages, Greek questions |
+|---|---|---|---|
+| Bare model, right passage given (developer's `run_all.sh`) | 12/13, declined 3/3 | 7/13, declined 2/3 | 12/13, declined 0/3 |
+| Original app (`holdout_stock2.log`) | 13/13, declined 2/3, retrieved 13/13 | 9/13, declined 2/3, retrieved 12/13, 1 answerable declined | 5/13, declined 0/3, retrieved 12/13 |
+| This fork at `f0460f5c` (`holdout_fork3.log`) | 13/13, declined 2/3, retrieved 13/13 | 13/13, declined 2/3, retrieved 13/13 | 13/13, declined 3/3, retrieved 13/13 |
+
+Log lines: original app `✔ Test run with 1 test in 1 suite passed after 2876.766 seconds`; fork
+`✔ Test run with 1 test in 1 suite passed after 2890.972 seconds`. An earlier fork run of the same
+code (run 2, whose retrieval column was wrong because of a harness bug since fixed) gave 13/13 and
+2/3, 13/13 and 2/3, 12/13 and 3/3 with one answerable question declined: runs of the same code can
+differ by one question (the model runs greedily, but the import is not bit-for-bit repeatable).
+
+Limits: 13 + 3 questions; a library of 11 short passages, of which Standard hands the model 5, so
+finding the passage is easy compared with the 4,218-passage Labour Code; grading by expected terms,
+not yet read by a person; Simulator, not a device.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

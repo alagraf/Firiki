@@ -34,7 +34,7 @@ import Testing
 
 /// Apple's on-device model, called the way `AnswerQualityEvaluationTests` calls it.
 @available(iOS 27.0, macOS 27.0, *)
-private final class GreekEvalOnDeviceModel: LLMService {
+final class GreekEvalOnDeviceModel: LLMService {
     var toolHandler: RAGToolHandler?
     var isAvailable: Bool { SystemLanguageModel.default.isAvailable }
     var modelName: String { "Apple on-device model (Greek evaluation)" }
