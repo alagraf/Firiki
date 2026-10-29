@@ -1,0 +1,408 @@
+{
+  "description": "Greek OCR test set from pd_62_2025_excerpt.pdf across clean, scan, and photo versions",
+  "source": "Benchmarks/GreekLabourCode/pd_62_2025_excerpt.pdf",
+  "pages": [
+    1,
+    4,
+    8,
+    12,
+    16,
+    20,
+    24,
+    28,
+    32,
+    36
+  ],
+  "items": [
+    {
+      "page": 1,
+      "version": "clean",
+      "file": "images/clean_p01.jpg",
+      "reference_text_file": "ref/page_01_ref.txt",
+      "reference_column_files": [
+        "ref/page_01_col1.txt",
+        "ref/page_01_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 1,
+      "version": "scan",
+      "file": "images/scan_p01.jpg",
+      "reference_text_file": "ref/page_01_ref.txt",
+      "reference_column_files": [
+        "ref/page_01_col1.txt",
+        "ref/page_01_col2.txt"
+      ],
+      "rotation_degrees": -1.2,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 1,
+      "version": "photo",
+      "file": "images/photo_p01.jpg",
+      "reference_text_file": "ref/page_01_ref.txt",
+      "reference_column_files": [
+        "ref/page_01_col1.txt",
+        "ref/page_01_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 4,
+      "version": "clean",
+      "file": "images/clean_p04.jpg",
+      "reference_text_file": "ref/page_04_ref.txt",
+      "reference_column_files": [
+        "ref/page_04_col1.txt",
+        "ref/page_04_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 4,
+      "version": "scan",
+      "file": "images/scan_p04.jpg",
+      "reference_text_file": "ref/page_04_ref.txt",
+      "reference_column_files": [
+        "ref/page_04_col1.txt",
+        "ref/page_04_col2.txt"
+      ],
+      "rotation_degrees": 0.8,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 4,
+      "version": "photo",
+      "file": "images/photo_p04.jpg",
+      "reference_text_file": "ref/page_04_ref.txt",
+      "reference_column_files": [
+        "ref/page_04_col1.txt",
+        "ref/page_04_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 8,
+      "version": "clean",
+      "file": "images/clean_p08.jpg",
+      "reference_text_file": "ref/page_08_ref.txt",
+      "reference_column_files": [
+        "ref/page_08_col1.txt",
+        "ref/page_08_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 8,
+      "version": "scan",
+      "file": "images/scan_p08.jpg",
+      "reference_text_file": "ref/page_08_ref.txt",
+      "reference_column_files": [
+        "ref/page_08_col1.txt",
+        "ref/page_08_col2.txt"
+      ],
+      "rotation_degrees": -0.5,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 8,
+      "version": "photo",
+      "file": "images/photo_p08.jpg",
+      "reference_text_file": "ref/page_08_ref.txt",
+      "reference_column_files": [
+        "ref/page_08_col1.txt",
+        "ref/page_08_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 12,
+      "version": "clean",
+      "file": "images/clean_p12.jpg",
+      "reference_text_file": "ref/page_12_ref.txt",
+      "reference_column_files": [
+        "ref/page_12_col1.txt",
+        "ref/page_12_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 12,
+      "version": "scan",
+      "file": "images/scan_p12.jpg",
+      "reference_text_file": "ref/page_12_ref.txt",
+      "reference_column_files": [
+        "ref/page_12_col1.txt",
+        "ref/page_12_col2.txt"
+      ],
+      "rotation_degrees": 1.4,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 12,
+      "version": "photo",
+      "file": "images/photo_p12.jpg",
+      "reference_text_file": "ref/page_12_ref.txt",
+      "reference_column_files": [
+        "ref/page_12_col1.txt",
+        "ref/page_12_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 16,
+      "version": "clean",
+      "file": "images/clean_p16.jpg",
+      "reference_text_file": "ref/page_16_ref.txt",
+      "reference_column_files": [
+        "ref/page_16_col1.txt",
+        "ref/page_16_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 16,
+      "version": "scan",
+      "file": "images/scan_p16.jpg",
+      "reference_text_file": "ref/page_16_ref.txt",
+      "reference_column_files": [
+        "ref/page_16_col1.txt",
+        "ref/page_16_col2.txt"
+      ],
+      "rotation_degrees": -0.9,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 16,
+      "version": "photo",
+      "file": "images/photo_p16.jpg",
+      "reference_text_file": "ref/page_16_ref.txt",
+      "reference_column_files": [
+        "ref/page_16_col1.txt",
+        "ref/page_16_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 20,
+      "version": "clean",
+      "file": "images/clean_p20.jpg",
+      "reference_text_file": "ref/page_20_ref.txt",
+      "reference_column_files": [
+        "ref/page_20_col1.txt",
+        "ref/page_20_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 20,
+      "version": "scan",
+      "file": "images/scan_p20.jpg",
+      "reference_text_file": "ref/page_20_ref.txt",
+      "reference_column_files": [
+        "ref/page_20_col1.txt",
+        "ref/page_20_col2.txt"
+      ],
+      "rotation_degrees": 1.1,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 20,
+      "version": "photo",
+      "file": "images/photo_p20.jpg",
+      "reference_text_file": "ref/page_20_ref.txt",
+      "reference_column_files": [
+        "ref/page_20_col1.txt",
+        "ref/page_20_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 24,
+      "version": "clean",
+      "file": "images/clean_p24.jpg",
+      "reference_text_file": "ref/page_24_ref.txt",
+      "reference_column_files": [
+        "ref/page_24_col1.txt",
+        "ref/page_24_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 24,
+      "version": "scan",
+      "file": "images/scan_p24.jpg",
+      "reference_text_file": "ref/page_24_ref.txt",
+      "reference_column_files": [
+        "ref/page_24_col1.txt",
+        "ref/page_24_col2.txt"
+      ],
+      "rotation_degrees": -1.5,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 24,
+      "version": "photo",
+      "file": "images/photo_p24.jpg",
+      "reference_text_file": "ref/page_24_ref.txt",
+      "reference_column_files": [
+        "ref/page_24_col1.txt",
+        "ref/page_24_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 28,
+      "version": "clean",
+      "file": "images/clean_p28.jpg",
+      "reference_text_file": "ref/page_28_ref.txt",
+      "reference_column_files": [
+        "ref/page_28_col1.txt",
+        "ref/page_28_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 28,
+      "version": "scan",
+      "file": "images/scan_p28.jpg",
+      "reference_text_file": "ref/page_28_ref.txt",
+      "reference_column_files": [
+        "ref/page_28_col1.txt",
+        "ref/page_28_col2.txt"
+      ],
+      "rotation_degrees": 0.6,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 28,
+      "version": "photo",
+      "file": "images/photo_p28.jpg",
+      "reference_text_file": "ref/page_28_ref.txt",
+      "reference_column_files": [
+        "ref/page_28_col1.txt",
+        "ref/page_28_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 32,
+      "version": "clean",
+      "file": "images/clean_p32.jpg",
+      "reference_text_file": "ref/page_32_ref.txt",
+      "reference_column_files": [
+        "ref/page_32_col1.txt",
+        "ref/page_32_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 32,
+      "version": "scan",
+      "file": "images/scan_p32.jpg",
+      "reference_text_file": "ref/page_32_ref.txt",
+      "reference_column_files": [
+        "ref/page_32_col1.txt",
+        "ref/page_32_col2.txt"
+      ],
+      "rotation_degrees": -1.0,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 32,
+      "version": "photo",
+      "file": "images/photo_p32.jpg",
+      "reference_text_file": "ref/page_32_ref.txt",
+      "reference_column_files": [
+        "ref/page_32_col1.txt",
+        "ref/page_32_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    },
+    {
+      "page": 36,
+      "version": "clean",
+      "file": "images/clean_p36.jpg",
+      "reference_text_file": "ref/page_36_ref.txt",
+      "reference_column_files": [
+        "ref/page_36_col1.txt",
+        "ref/page_36_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 40,
+      "dpi": 200
+    },
+    {
+      "page": 36,
+      "version": "scan",
+      "file": "images/scan_p36.jpg",
+      "reference_text_file": "ref/page_36_ref.txt",
+      "reference_column_files": [
+        "ref/page_36_col1.txt",
+        "ref/page_36_col2.txt"
+      ],
+      "rotation_degrees": 1.3,
+      "jpeg_quality": 45,
+      "dpi": 180
+    },
+    {
+      "page": 36,
+      "version": "photo",
+      "file": "images/photo_p36.jpg",
+      "reference_text_file": "ref/page_36_ref.txt",
+      "reference_column_files": [
+        "ref/page_36_col1.txt",
+        "ref/page_36_col2.txt"
+      ],
+      "rotation_degrees": 0.0,
+      "jpeg_quality": 55,
+      "dpi": 200
+    }
+  ]
+}
