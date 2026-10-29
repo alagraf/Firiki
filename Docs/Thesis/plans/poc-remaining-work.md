@@ -6,7 +6,8 @@ first. The owner has given standing permission to change code and to commit and 
 branch; this plan counts as approved. Check `git status` and `git log --oneline -10` before
 starting: whatever is already committed below is done.
 
-Order (the owner's): steps 1–3, then capabilities 4–7, **one at a time: implement, test, commit,
+Order (the owner's): steps 1–3, then the capabilities in the owner's priority (2026-10-29 21:50):
+five-document Q&A (4), template routing (5), then summary (6) and legal opinion (7), **one at a time: implement, test, commit,
 and only then start the next**. Each step ends with its records: `Docs/Thesis/FORK_CHANGES.md`
 (next free number; 2.11.22 is the last used at the time of writing), the 5.7 section of
 `CHANGELOG.md`, `Docs/Thesis/METHODS_SUMMARY.md` (results row, revision history), the log in
@@ -141,7 +142,7 @@ of import plus answers).
 - Results only. Don't tune on the test split.
 - If wrong refusals are common, look for the cause on the dev split with the full corpus (`SPLIT=dev CORPUS=full`).
 
-## 4. Capability 1: Q&A over one document, then five
+## 4. Capability 1 (owner priority 1): Q&A over one document, then five
 
 - **Library:** `Benchmarks/GreekLabourLibrary/README.md`, five Greek labour-law PDFs (Labour Code
   plus Ν. 5239/2025, Ν. 5278/2026, Ν. 5316/2026, Υ.Α. 8934/2026). One document is already measured
@@ -169,54 +170,7 @@ of import plus answers).
 - **Done when:** the dev split is measured twice and the test split once; FORK_CHANGES and
   METHODS_SUMMARY record one-document and five-document numbers.
 
-## 5. Capability 2: Summary of one legal document
-
-- **Behaviour:** a "summarise this document" request in Greek legal mode produces a complete Greek
-  summary of one statute:
-  - its structure (parts or chapters);
-  - its main rules;
-  - its figures and deadlines;
-  - article references.
-- **Method:**
-  - Map–reduce over the document's article passages:
-    - summarise groups of articles in English, with each article number kept;
-    - then combine the group summaries;
-    - then translate with the existing English→Greek path (citations preserved).
-  - Check figures with gate C and articles with gate F against the document's own passages, and drop
-    any unsupported sentence rather than refusing the whole summary.
-  - Reuse `DocumentSummaryService` (`Services/Document/Analysis/DocumentSummaryService.swift`, actor,
-    Apple Intelligence) where it fits; it makes short RAPTOR summaries today, so the legal summary is
-    probably a new method or service.
-  - Intent: recognise summary requests (Greek and English) where `classifyAnswerIntent` is called.
-- **Test:**
-  - For two documents (Ν. 5278/2026, 14 pages, and Υ.Α. 8934/2026, 4 pages; the Code is too long for
-    a first version), write a checklist of key provisions (regexes, as `keyFacts`).
-  - Report coverage, unsupported figures (gate C) and articles not in the document (gate F).
-  - Unit tests for the map–reduce grouping and the sentence dropping with stubbed model calls.
-
-## 6. Capability 3: Legal opinion from five documents
-
-- **Behaviour:** a question asking for an opinion produces a structured Greek opinion with these
-  sections:
-  - question;
-  - applicable law (which of the five documents and articles);
-  - what each says;
-  - how they combine (later law amends earlier; special over general);
-  - conclusion;
-  - a PoC disclaimer.
-
-  Every claim is cited to document and article.
-- **Method:**
-  - Retrieve per document: the top passages of each of the five, not top-k overall.
-  - Draft one section at a time, so each prompt fits the on-device context.
-  - Verify each section with gates A–I.
-  - Drop unsupported claims, and refuse only if the conclusion has no support.
-- **Test:**
-  - `Benchmarks/GreekLabourLibrary/opinion_qa_v1.jsonl`: about 10 questions, each with the
-    documents and articles the opinion must cite, plus key facts; split into dev and test.
-  - Measure citation recall, wrong citations, and key facts.
-
-## 7. Capability 4: Routing to 10 labour contract templates
+## 5. Capability 4 (owner priority 2): Routing to 10 labour contract templates
 
 - **Templates:** Claude Code drafts 10 Greek contract templates from the Labour Code, each headed as a
   PoC draft and not legal advice (owner's choice). Suggested set:
@@ -246,6 +200,53 @@ of import plus answers).
   - Measure accuracy and a confusion matrix.
   - Unit tests run the router on the dev prompts (no Simulator model needed if embeddings run in
     tests).
+
+## 6. Capability 2: Summary of one legal document
+
+- **Behaviour:** a "summarise this document" request in Greek legal mode produces a complete Greek
+  summary of one statute:
+  - its structure (parts or chapters);
+  - its main rules;
+  - its figures and deadlines;
+  - article references.
+- **Method:**
+  - Map–reduce over the document's article passages:
+    - summarise groups of articles in English, with each article number kept;
+    - then combine the group summaries;
+    - then translate with the existing English→Greek path (citations preserved).
+  - Check figures with gate C and articles with gate F against the document's own passages, and drop
+    any unsupported sentence rather than refusing the whole summary.
+  - Reuse `DocumentSummaryService` (`Services/Document/Analysis/DocumentSummaryService.swift`, actor,
+    Apple Intelligence) where it fits; it makes short RAPTOR summaries today, so the legal summary is
+    probably a new method or service.
+  - Intent: recognise summary requests (Greek and English) where `classifyAnswerIntent` is called.
+- **Test:**
+  - For two documents (Ν. 5278/2026, 14 pages, and Υ.Α. 8934/2026, 4 pages; the Code is too long for
+    a first version), write a checklist of key provisions (regexes, as `keyFacts`).
+  - Report coverage, unsupported figures (gate C) and articles not in the document (gate F).
+  - Unit tests for the map–reduce grouping and the sentence dropping with stubbed model calls.
+
+## 7. Capability 3: Legal opinion from five documents
+
+- **Behaviour:** a question asking for an opinion produces a structured Greek opinion with these
+  sections:
+  - question;
+  - applicable law (which of the five documents and articles);
+  - what each says;
+  - how they combine (later law amends earlier; special over general);
+  - conclusion;
+  - a PoC disclaimer.
+
+  Every claim is cited to document and article.
+- **Method:**
+  - Retrieve per document: the top passages of each of the five, not top-k overall.
+  - Draft one section at a time, so each prompt fits the on-device context.
+  - Verify each section with gates A–I.
+  - Drop unsupported claims, and refuse only if the conclusion has no support.
+- **Test:**
+  - `Benchmarks/GreekLabourLibrary/opinion_qa_v1.jsonl`: about 10 questions, each with the
+    documents and articles the opinion must cite, plus key facts; split into dev and test.
+  - Measure citation recall, wrong citations, and key facts.
 
 ## 8. Device check (needs the owner)
 

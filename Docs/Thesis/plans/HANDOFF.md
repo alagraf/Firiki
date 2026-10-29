@@ -50,7 +50,8 @@ commit, then the next).
 1. Accuracy items: wrong-case figures (dev 34, 46), a question naming another law whose article
    number exists in the library (test case 69), refusal rate over the full Code. Tune on the dev
    split only; run it twice before claiming a gain of 1–3 cases.
-2. PoC capabilities 1–4 (five-document Q&A, summary, legal opinion, template routing). The five
+2. PoC capabilities in the owner's priority: five-document Q&A, then template routing, then summary
+   and legal opinion. The five
    documents are Greek **labour** laws only: the Labour Code plus four labour statutes not already
    codified in it, each downloaded only after the owner approves it (name, source, size). The 10
    contract templates are drafted by Claude Code from the Labour Code, marked as PoC drafts.

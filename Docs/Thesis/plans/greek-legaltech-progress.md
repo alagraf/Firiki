@@ -216,7 +216,8 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 
 Finish the open items above first (tilted-scan commit, wrong-case figures, named-law mismatch,
 full-Code refusals; iPhone check with the owner; holdout last). Then, one capability at a time:
-implement, test, commit, and only then start the next.
+implement, test, commit, and only then start the next. **Priority (owner, 2026-10-29 21:50): 1
+(five-document Q&A) first, then 4 (template routing), then 2 and 3.**
 
 1. **Document Q&A, one document then five.** Optimise Q&A over a single document (the Labour Code
    dev split already measures this), then scale retrieval and the model's context to five
