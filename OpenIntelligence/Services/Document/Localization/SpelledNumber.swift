@@ -167,7 +167,8 @@ nonisolated enum SpelledNumber {
             guard let range = Range(replacement.range, in: result) else { continue }
             result.replaceSubrange(range, with: String(replacement.value))
         }
-        return result
+        // The draft writes "twenty-six (26)" as the code does; once a digit, it is "26".
+        return result.replacingOccurrences(of: #"\b(\d+) \(\1\)"#, with: "$1", options: .regularExpression)
     }
 
     private static func isFraction(_ word: String) -> Bool {

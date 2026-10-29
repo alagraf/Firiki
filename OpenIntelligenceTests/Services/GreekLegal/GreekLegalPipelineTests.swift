@@ -562,11 +562,17 @@ struct GreekLegalVerificationTests {
         #expect(annotate("δύο ή τρεις φορές") == "δύο (2) ή τρεις (3) φορές")
     }
 
+    @Test func answerMarkdownIsRemovedBeforeTranslation() {
+        #expect(LocalNeuralTranslator.withoutMarkdown("### Notice\nfor the first **twelve (12)** months, *not* later [S1].\n- one item")
+            == "Notice\nfor the first twelve (12) months, not later [S1].\n- one item")
+    }
+
     @Test func englishNumberWordsBecomeDigitsBeforeTranslation() {
         let digits = SpelledNumber.digitsForEnglishNumberWords
         #expect(digits("not less than **two-hundred** nor more than **three hundred** [S3]")
             == "not less than **200** nor more than **300** [S3]")
         #expect(digits("one hundred and fifty hours a year, five days") == "150 hours a year, 5 days")
+        #expect(digits("up to **twenty-six (26)** working days") == "up to **26** working days")
         // Fractions, ordinals, "one" and "a second" stay words.
         #expect(digits("a two-thirds majority, then three fifths, then one half") == "a two-thirds majority, then three fifths, then one half")
         #expect(digits("the twenty-fifth year, one month, a second notice") == "the twenty-fifth year, one month, a second notice")
@@ -846,6 +852,10 @@ struct LegalGlossaryTests {
         #expect(GreekLegalEntityMasker.canonicalKeys(in: "The maximum pre-trial detention for felonies") == ["TERM:pre-trial detention", "TERM:felonies"])
         // An institution in capitals is a term, not a person's name.
         #expect(GreekLegalEntityMasker.canonicalKeys(in: "Ποιος είναι ο αρχηγός των Ενόπλων Δυνάμεων της Χώρας;") == ["TERM:Armed Forces"])
+        // Labour Code terms, in the question and in an English answer alike.
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "Πόση προειδοποίηση απαιτείται για την απόλυση;") == ["TERM:notice"])
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "χωρίς προθεσμία για σπουδαίο λόγο") == ["TERM:serious reason"])
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "for a good reason, without notice") == ["TERM:serious reason", "TERM:notice"])
         // A term is not a statutory identifier.
         #expect(!LegalVerificationPolicy.isLegalQuery("What is the form of government of Greece?"))
         #expect(LegalVerificationPolicy.unsupportedLegalIdentifiers(response: "The form of government is a republic.", chunks: []).isEmpty)
@@ -976,6 +986,32 @@ struct GreekLegalStructureChunkerTests {
         #expect(pieces.count >= 3)
         #expect(pieces.allSatisfy { $0.hasPrefix("Άρθρο 221\nΔικαίωμα άδειας με αποδοχές\n") && $0.split(whereSeparator: \.isWhitespace).count <= 40 })
         #expect(pieces.joined().components(separatedBy: "ημερολογιακό έτος.").count - 1 == 8)
+    }
+
+    @Test func contentsWithHeadingsOnTheirOwnLinesAreNotTheArticles() {
+        // PDFKit reads the Labour Code's contents with each heading on its own line, its title on
+        // the next; the real articles follow with lower numbers than the last contents entry.
+        let text = """
+        Άρθρο 1
+        Σύμβαση εργασίας και υποχρεώσεις των μερών
+        Άρθρο 2
+        Δοκιμαστική περίοδος και δόκιμος εργαζόμενος
+        Άρθρο 588
+        Έναρξη ισχύος του παρόντος διατάγματος
+        Άρθρο 1
+        Σύμβαση εργασίας
+        Με τη σύμβαση εργασίας ο εργαζόμενος έχει υποχρέωση να παρέχει την εργασία του στον εργοδότη και αυτός να καταβάλλει το συμφωνημένο μισθό.
+        Άρθρο 2
+        Δοκιμαστική περίοδος
+        1. Ο εργοδότης δύναται να συμφωνήσει με τον εργαζόμενο δοκιμαστική περίοδο έως έξι (6) μηνών, κατά τη διάρκεια της οποίας η σύμβαση τελεί υπό δοκιμή.
+        2. Αν ο εργοδότης κρίνει ότι η δοκιμαστική υπηρεσία είναι επιτυχής, ως χρόνος έναρξης της σύμβασης λογίζεται η αρχική ημερομηνία πρόσληψης.
+        Άρθρο 3
+        Έλλειψη συμφωνίας για το μισθό
+        Αν η εργασία κατά τις συνηθισμένες περιστάσεις παρέχεται μόνο με μισθό, λογίζεται ότι έχει σιωπηρά συμφωνηθεί μισθός.
+        """
+        let passages = GreekLegalStructureChunker.passages(in: text, maxWords: 200, minWords: 1)
+        #expect(passages.compactMap(\.article) == ["Άρθρο 1", "Άρθρο 2", "Άρθρο 2", "Άρθρο 3"])
+        #expect(!passages.contains { $0.article != nil && $0.text.contains("Έναρξη ισχύος") })
     }
 
     @Test func otherDocumentsAreLeftToTheGeneralChunker() {

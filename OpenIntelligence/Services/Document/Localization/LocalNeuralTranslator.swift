@@ -480,9 +480,21 @@ actor LocalNeuralTranslator {
     /// Phase F: translate a verified English answer to Greek. Bilingual anchors collapse to one
     /// identifier, identifiers and `[C#]` markers are kept out of the model, and identifiers come
     /// back in Greek (the source wording when `entities` has the same key).
+    /// The text without markdown emphasis and heading marks: "**two (2)** months" → "two (2)
+    /// months", "### Title" → "Title". List dashes and citation brackets stay.
+    nonisolated static func withoutMarkdown(_ text: String) -> String {
+        var s = text.replacingOccurrences(of: #"(?m)^\s{0,3}#{1,6}\s*"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
+        s = s.replacingOccurrences(of: #"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])"#, with: "$1", options: .regularExpression)
+        return s
+    }
+
     func translateEnglishToGreekPreservingCitations(_ textEn: String, entities: [LegalEntityRecord] = []) async throws -> String {
-        // Numbers in words go to Greek as digits ("three hundred" came back "τρία εκατοντάδες").
-        let collapsed = SpelledNumber.digitsForEnglishNumberWords(GreekLegalEntityMasker.collapseBilingualAnchors(textEn))
+        // Numbers in words go to Greek as digits ("three hundred" came back "τρία εκατοντάδες"), and
+        // the answer goes as plain text: the translator returned "**δώδεκα (12)** μήνες",
+        // "8 (****) εβδομάδες" and "# #" headings from the draft's markdown (labour run 1).
+        let collapsed = SpelledNumber.digitsForEnglishNumberWords(
+            Self.withoutMarkdown(GreekLegalEntityMasker.collapseBilingualAnchors(textEn)))
         let (maskedWithTerms, allFound) = GreekLegalEntityMasker.maskEntities(in: collapsed)
         // Glossary terms go through the model in English: put back as written, the Greek keeps its
         // grammar ("για τα κακουργήματα"), which a restored lemma would not.

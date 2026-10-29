@@ -925,6 +925,7 @@ model, re-import each time):
 | 9 | before this section (reused library) | 7/10 | 7/10 | – |
 | 10 | structure-aware chunking, digits before translation | 7/10 | 9/10 | 356 s |
 | 11 | + token-cap pieces with headings, fractions stay words | 8/10 | 10/10 | 362 s |
+| 12 | + end of the last article, contents headings, glossary (2.11.13) | 9/10 | 10/10 | 340 s |
 
 Run 11 (`/private/tmp/oi-logs/eval11.log`): PASS 1–7 and 9; Q2 (200/300) and Q5 (President of the
 Republic) pass now. FAIL Q8: the draft gives the three-fifths and later rounds but not the
@@ -936,6 +937,90 @@ seconds` (59 unit tests and the evaluation). Full suite with the end-of-last-art
 the 3 Greek-region formatting tests and the same 4 issues in 2 `ShortcutsActionTests` as in 2.11.9
 (the Simulator's saved active library was still the leftover "Syntagma 99C669"; reset to "General"
 in the app's preferences afterwards); Swift Testing `✔ Test run with 62 tests in 18 suites passed`.
+
+#### 2.11.12 Evaluation harness and the Greek labour-law QA set
+
+**What changed:**
+- `GreekConstitutionEvaluationTests` is a harness over any set in `Benchmarks/`:
+  `TEST_RUNNER_OI_GREEK_EVAL_SET=GreekConstitution|GreekLabourCode`,
+  `TEST_RUNNER_OI_GREEK_EVAL_SPLIT=dev|test|all`, `TEST_RUNNER_OI_GREEK_EVAL_CORPUS=excerpt|full`;
+  a library per set and corpus (the Constitution's keeps its old name, so its import is reused);
+  it reports retrieval hit, answer pass (every key fact and no abstention), false abstentions and
+  abstention correctness for `shouldAbstain` cases, and a summary line. Time limit 150 min;
+  `scripts/thesis_run_tests.sh` takes `OI_TEST_TIMEOUT_SECONDS` (default 1800) for longer runs.
+- `Benchmarks/GreekLabourCode/`: the Labour Code Π.Δ. 62/2025 (ΦΕΚ Α' 121/11.07.2025, 260
+  pages, the owner's PDF), a 37-page excerpt and `labour_qa_v1.jsonl` (69 cases: 61 answerable
+  from the code's own article text, 6 of them cross-references and 6 in everyday words, and 8 that
+  must be refused; 46 dev, 23 test). Sources and page numbers in its README.
+
+**Files:** `GreekConstitutionEvaluationTests.swift`, `scripts/thesis_run_tests.sh`,
+`Benchmarks/GreekLabourCode/` (new)
+
+**Grading patterns changed after run 2 (justification):** case 32's answer said the termination
+must be made "γραπτώς" (in writing), which the key fact `εγγραφ` (εγγράφως) did not accept: now
+`(εγγραφ|γραπτ)`. Case 31's answer rendered «σπουδαίος λόγος» as «σοβαρός/καλός λόγος»; the key
+fact now accepts `(σπουδαι|σοβαρ)\w*\s+λογ` (a serious reason, the code's meaning), not "καλός".
+After run 3, case 28's correct answer read "τους δώδεκα πρώτους (12) μήνες", which the pattern
+`(12|δωδεκα)\s*(\(12\)\s*)?μην` (number right before the unit) rejected. Every key fact of that
+shape (17 cases, dev and test alike, before the test split was run) now accepts the whole-word
+number followed within 25 characters, without another number or a sentence end, by the unit:
+`\b(12|δωδεκα)\b(?:[^.;\d]|\(\d+\)){0,25}μην`. "18 μήνες" still fails a "6 months" fact.
+
+**Verification:** see 2.11.13 for the runs on this set. The harness ran the Constitution set
+unchanged (runs 9–11 and 12 print the same per-question lines plus the summary line).
+
+#### 2.11.13 Labour Code fixes (dev split, excerpt corpus)
+
+**Why and what (each from a logged failure of the labour dev runs):**
+- **Contents headings:** PDFKit reads the Labour Code's table of contents with each "Άρθρο N" on
+  a line of its own and the title on the next, so the chunker's first-come increasing chain was
+  the contents (1 … 588), and every real heading after it, with a lower number, was rejected: all
+  641 passages were headed "Άρθρο 588" (run 1: expected article retrieved 0 of 41; answers cited
+  "Άρθρο 588"). `acceptedHeadings` now takes, of the headings in increasing order, the chain with
+  the most text under its headings (a weighted longest increasing subsequence); a contents entry
+  has only its title under it.
+- **Markdown in Greek answers:** the draft's `**bold**` and `###` headings came back from the
+  translator as "**δώδεκα (12)** μήνες", "8 (****) εβδομάδες" and "# #". Greek legal answers are
+  plain text: `LocalNeuralTranslator.withoutMarkdown` removes emphasis and heading marks before
+  English→Greek translation (list dashes and [S#] stay). A number the draft writes as "twenty-six
+  (26)" is "26" once converted, not "26 (26)".
+- **Glossary** (the code's own wording): «προειδοποίηση» → "notice" (the question said "warning",
+  the passages "notice", and gate E refused case 29 as a topical mismatch on "warning");
+  «σπουδαίος λόγος» → "serious reason" (was "good reason").
+
+**Files:** `GreekLegalStructureChunker.swift`, `LocalNeuralTranslator.swift`, `SpelledNumber.swift`,
+`GreekLegalEntityMasker.swift`, `GreekLegalPipelineTests.swift`
+
+**Verification:** Labour Code set, whole app path (iPhone 18 Pro simulator, Apple's on-device
+model). Corpus: excerpt (37 pages), re-imported each run (263 s, 641/691 passages):
+
+| Run | Split | Change | Passed | Answers (key facts, no abstention) | Expected article retrieved | Refusals correct |
+|---|---|---|---|---|---|---|
+| 1 | dev (46) | baseline (2.11.11 chunker) | 24 | 20/41 | 0/41 | 4/5 |
+| 2 | dev | + heading chain, markdown removed before translation | 29 of 45 graded* | 26/41 | – | 3/4 |
+| 3 | dev | + glossary «προειδοποίηση», «σπουδαίος λόγος»; "26 (26)" → "26"; patterns of cases 31, 32 | 31 | 28/41 | 38/41 | 3/5 |
+| 3' | dev | run 3 regraded with the number–unit patterns | 32 | 29/41 | – | 3/5 |
+| 4 | test (23), once | same app as run 3, reused library | 14 | 13/20 | 19/20 | 1/3 |
+
+\* Run 2 was stopped at question 45 of 46 by the test script's 30-minute default; its 45 answers
+were graded from the log with a Python copy of the harness's grading, which reproduces run 1's 24
+of 46 exactly. Retrieval is not given for it (the copy only sees the five passages printed).
+
+Remaining failures (run 3, dev): model errors with the right article in the prompt (case 1 and 2
+gave the six-day 26 days for a five-day week; 41 gave the mother's 18 months for the father; 19
+cited Article 113 instead of 219; 43 left out the 30 months; 7 and 47 drifted to other passages);
+retrieval misses (10: Article 188 instead of 187; 8, 58); one false abstention (50, gate E); two
+questions that should have been refused were answered from other passages (65 pensions, 68
+unemployment benefit, which the translator calls "IDP"). Test split: 42 renders «σπουδαίος λόγος»
+as «σοβαρός λόγος» (its pattern was not widened after seeing it), 45 (Article 250 not retrieved),
+48, 18, 30, 33, 54 wrong or incomplete figures; 63 and 66 (income tax, Germany) answered instead of
+refused. Greek unit suites in run 3: `✔ Test run with 62 tests in 16 suites passed` (61 unit tests
+and the evaluation). Constitution set, run 12 (re-import with this section's chunker, 712 passages, 340 s): 9 of 10,
+expected article retrieved 10 of 10; Q10 (Article 120 §4) passes now that the last article ends
+before the signatures; Q8 still leaves out the first round's two-thirds. Full suite
+(`/private/tmp/oi-logs/full13.log`): `Executed 1363 tests, with 8 tests skipped and 3 failures`
+(the 3 Greek-region formatting tests; `ShortcutsActionTests` pass with the active library reset);
+Swift Testing `✔ Test run with 64 tests in 18 suites passed`.
 
 ## 3. How to inspect the changes
 

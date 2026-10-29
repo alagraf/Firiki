@@ -102,22 +102,40 @@ nonisolated enum GreekLegalStructureChunker {
         return .text
     }
 
-    /// The article headings that start the code's articles: each followed by text before the next
-    /// heading, in increasing order (a quoted article or a correlation table after the last article
-    /// with a lower number is text of the article it is in).
+    /// The article headings that start the code's articles: of the headings in increasing order,
+    /// the chain with the most text under its headings. A table of contents can have headings on
+    /// lines of their own too (PDFKit reads the Labour Code's contents that way, each with its title
+    /// on the next line): taking headings first come, first served accepted the contents up to
+    /// "Άρθρο 588" and rejected every real heading after it, so every passage was headed "Άρθρο 588"
+    /// (labour run 1). A quoted article or a correlation table after the last article, with a lower
+    /// number, stays text of the article it is in.
     static func acceptedHeadings(in lines: [Line]) -> [Int] {
-        var accepted: [Int] = []
-        var last = -Double.infinity
+        var candidates: [(index: Int, number: Double, weight: Int)] = []
         let headingIndices = lines.indices.filter { if case .heading = lines[$0].kind { return true } else { return false } }
         for (position, index) in headingIndices.enumerated() {
-            guard case .heading(let number, _) = lines[index].kind, number > last else { continue }
+            guard case .heading(let number, _) = lines[index].kind else { continue }
             let next = position + 1 < headingIndices.count ? headingIndices[position + 1] : lines.count
             let letters = lines[(index + 1)..<next].filter { $0.kind == .text }.reduce(0) { $0 + $1.text.filter(\.isLetter).count }
             guard letters >= 20 else { continue }
-            accepted.append(index)
-            last = number
+            candidates.append((index, number, letters))
         }
-        return accepted
+        guard !candidates.isEmpty else { return [] }
+        // Heaviest increasing chain (weighted longest increasing subsequence).
+        var best = candidates.map(\.weight)
+        var previous = [Int](repeating: -1, count: candidates.count)
+        for i in candidates.indices {
+            for j in 0..<i where candidates[j].number < candidates[i].number && best[j] + candidates[i].weight > best[i] {
+                best[i] = best[j] + candidates[i].weight
+                previous[i] = j
+            }
+        }
+        var chain: [Int] = []
+        var cursor = best.indices.max { best[$0] < best[$1] } ?? -1
+        while cursor >= 0 {
+            chain.append(candidates[cursor].index)
+            cursor = previous[cursor]
+        }
+        return chain.reversed()
     }
 
     // MARK: Passages

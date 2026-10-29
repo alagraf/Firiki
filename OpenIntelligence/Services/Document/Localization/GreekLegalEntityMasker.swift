@@ -245,6 +245,10 @@ nonisolated enum GreekLegalEntityMasker {
         ("αναθεώρησ(?:η|ης) του Συντάγματος", "revision of the Constitution", "revision of the Constitution", "αναθεώρηση του Συντάγματος"),
         ("αποζημίωσ(?:η|ης) απόλυσης", "severance pay", "severance pay", "αποζημίωση απόλυσης"),
         ("καταγγελί(?:α|ας) της σύμβασης εργασίας", "termination of the employment contract", "termination of the employment contract", "καταγγελία της σύμβασης εργασίας"),
+        // Labour Code (labour run 2): a question's "προειδοποίηση" became "warning" and the passages'
+        // "notice"; "σπουδαίος λόγος" became "good reason".
+        ("προειδοποίησ(?:η|ης)", "(?:prior )?notice|warning", "notice", "προειδοποίηση"),
+        ("σπουδαί(?:ος|ου|ο) λόγ(?:ος|ου|ο)", "(?:serious|good|important) (?:reason|cause)", "serious reason", "σπουδαίος λόγος"),
     ]
 
     nonisolated(unsafe) private static let glossaryRules: [Rule] = glossary.map { term in

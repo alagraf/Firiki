@@ -118,3 +118,18 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   GreekLegalStructureChunker (article/paragraph passages with headings, token-cap pieces, Gazette
   headers, end of last article), digits before Greek translation. Constitution run 11: 8/10,
   retrieval 10/10, import 362 s. test script restarts the simulator service before every run.
+- 2026-10-29 Steps 2–4 of the night plan (FORK_CHANGES 2.11.12, 2.11.13): multi-set evaluation
+  harness (TEST_RUNNER_OI_GREEK_EVAL_SET/SPLIT/CORPUS), Labour Code QA set (Π.Δ. 62/2025, 69 cases,
+  `Benchmarks/GreekLabourCode/`), fixes from the dev runs (contents headings, markdown before
+  translation, glossary). Labour dev (excerpt): 24 → 31/46; test (excerpt, once): 14/23.
+
+## Next (2026-10-29)
+- Full-corpus Labour Code import (260 pages, expect ~30 min) and the test split on it.
+- Refusals: income tax, pensions, unemployment benefit and Germany questions were answered from
+  unrelated passages (2 of 5 dev, 2 of 3 test wrong); a "the code does not cover this" check
+  (relevance of the best passage to the question's subject) is the next lever.
+- Model errors with the right article in the prompt (five-day vs six-day figures, father vs
+  mother periods): try asking for the condition each figure applies to, or a smaller context.
+- «σπουδαίος λόγος» comes back as «σοβαρός λόγος» from English→Greek; put the glossary's Greek
+  term back after translation.
+- Device check of all of this on the M3 Mac / iPhone (only the Simulator was used).
