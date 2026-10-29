@@ -22,7 +22,7 @@ changes and to commit and push the thesis branch to `origin`, https://github.com
 - Record every change in `Docs/Thesis/FORK_CHANGES.md`, the 5.7 section of `CHANGELOG.md`, and
   results in `Docs/Thesis/METHODS_SUMMARY.md`; show the test output that proves a claim.
 
-## State (2026-10-29, 14:30)
+## State (2026-10-29, 13:15)
 
 Committed and pushed: everything up to `7ef19654` (EU holdout final, hand-graded; see FORK_CHANGES
 2.11.15–2.11.16).
@@ -75,5 +75,5 @@ Measured so far:
 
 ## Log
 
-- 2026-10-29 14:30 (Claude Code): file created; batched translation measured in the app (2.3×),
+- 2026-10-29 13:15 (Claude Code): file created; batched translation measured in the app (2.3×),
   quality equal; import re-timing running.
