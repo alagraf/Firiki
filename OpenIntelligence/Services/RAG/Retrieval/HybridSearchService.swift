@@ -1206,6 +1206,29 @@ class HybridSearchService {
     /// - BM25-only matches are no longer invisible (catches vocabulary mismatch gaps)
     /// - Native SQLite `bm25()` replaces in-memory `BM25Scorer.snapshot(from:)` — no local IDF bias
     /// - `async let` parallelism: vector and FTS5 run concurrently, ~40% faster than sequential
+    /// The Greek question behind this search: the user's question in Greek legal mode, or the
+    /// query itself when it is Greek.
+    nonisolated static func greekQuestion(originalQuery: String) -> String? {
+        if let original = GreekLegalAnswerContext.originalQuestion { return original }
+        return GreekLegalEntityMasker.greekLetterRatio(originalQuery) >= 0.3 ? originalQuery : nil
+    }
+
+    /// Two ranked lists merged first, second, first, second…, each chunk once.
+    nonisolated static func interleaving(
+        _ first: [SQLiteFullTextService.ChunkSearchResult],
+        _ second: [SQLiteFullTextService.ChunkSearchResult],
+        limit: Int
+    ) -> [SQLiteFullTextService.ChunkSearchResult] {
+        var merged: [SQLiteFullTextService.ChunkSearchResult] = []
+        var seen = Set<String>()
+        for index in 0..<max(first.count, second.count) {
+            for list in [first, second] where index < list.count && seen.insert(list[index].chunkId).inserted {
+                merged.append(list[index])
+            }
+        }
+        return Array(merged.prefix(limit))
+    }
+
     /// The FTS5 query: `originalQuery`, unless it is Greek and `query` is its English translation;
     /// then the translation plus the English form of every legal identifier in the Greek original
     /// ("Law 4808/2021", "Article 66") that the translation doesn't already contain.
@@ -1281,6 +1304,18 @@ class HybridSearchService {
             if !expandedFTSResults.isEmpty {
                 Log.debug("[Hybrid] FTS5 fallback used expanded query terms after original query miss", category: .pipeline)
                 fts5ChunkResults = expandedFTSResults
+            }
+        }
+
+        // Thesis fork: the Greek keyword arm. For a Greek question, chunks whose original Greek text
+        // uses its words are interleaved with the English keyword hits, best first, so a paragraph
+        // the translation paraphrased is still found by the question's own words.
+        if let greekQuestion = Self.greekQuestion(originalQuery: originalQuery) {
+            let greekHits = await SQLiteFullTextService.shared.searchGreekChunks(
+                question: greekQuestion, containerId: containerId, limit: fts5Limit)
+            if !greekHits.isEmpty {
+                fts5ChunkResults = Self.interleaving(greekHits, fts5ChunkResults, limit: fts5Limit)
+                Log.info("[Hybrid] Greek keyword arm: \(greekHits.count) chunks fused into the keyword list", category: .pipeline)
             }
         }
 

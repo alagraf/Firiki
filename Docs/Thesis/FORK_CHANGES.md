@@ -703,6 +703,164 @@ Processing Log; suggested questions are off. Full suite: `Executed 1363 tests, w
 and 3 failures` (the 3 Greek-region formatting tests); Swift Testing 44 passed. The empty chat
 screen was not looked at on screen.
 
+#### 2.11.9 Greek Constitution accuracy: article lookup, Greek keyword arm, whole provisions
+
+**Why:** the owner reported that "Τι αναφέρει το Άρθρο 1 του Συντάγματος;" was answered from a
+transitional provision, and "ποιός είναι ο Ανδρέας Ζέρβας" was refused after gate E failed, and
+asked for the owner's 10-question Constitution set (`Benchmarks/GreekConstitution/syntagma_qa_v1.jsonl`,
+over `syntagma1_1.pdf`) to be evaluated and fixed without hard-coding answers.
+
+**Evaluation:** new opt-in `GreekConstitutionEvaluationTests` runs the set through the whole app path
+in the iOS 27 Simulator: import of the PDF, then `RAGService.query` per Greek question with Apple's
+on-device model (the test hands the engine a model of its own, as `AnswerQualityEvaluationTests`
+does). An answer passes when it contains every key fact of its case (regular expressions over the
+lower-cased, accent-free answer); the table also says whether a passage holding the expected article
+was retrieved. The imported library is kept between runs (`TEST_RUNNER_OI_GREEK_EVAL_REIMPORT=1`
+imports again). Runs:
+
+| Run | Change | Passed | Expected article retrieved |
+|---|---|---|---|
+| 1 | baseline (opus-mt-grk-en) | 6/10 | 6/10 |
+| 2 | Greek→English with opus-mt-tc-big-el-en (2.11.10) | 5/10 | 8/10 |
+| 4 | + Greek keyword arm, grading fix for "εικοστή πέμπτη" | 7/10 | 8/10 |
+| 5 | + whole provisions, permissive guardrails, tc-big both ways, decoder cache (re-import, 487 s) | 6/10 | 5/10 |
+| 6 | + two following sentences instead of whole passages | 6/10 | 7/10 |
+| 7 | + legal glossary (re-import, 463 s), continuation up to 4 passages, Greek-mode instruction | stopped at Q8: 7 of 8 passed | – |
+| 8 | + greedy decoding in Greek legal mode | 6/10 | 8/10 |
+| 9 | + number words in gates B and C, softened instruction | 7/10 | 7/10 |
+
+(Run 3 was stopped: its Greek index matched nothing, fixed before run 4. Runs 6, 8 and 9 reused the
+library imported in run 7 or 5; run 7 was cut off by the session's usage limit. Run 9 took 796 s.)
+
+Run 9 per question: PASS 1, 3, 4, 6, 7, 8, 9; FAIL 2, 5, 10.
+- Q2 (200–300 MPs): the English draft was right ("not less than two-hundred nor more than three
+  hundred", Article 51), and with the number-word fix the gates passed it (in run 8 gate B
+  refused it); the English→Greek translation wrote "τρία εκατοντάδες", which the key fact
+  `300|τριακοσι` does not match. Fixed in the next round (2.11.11: digits before translation).
+- Q3 (age 25, Article 55): fixed by the number-word reading in gate C ("εικοσιπέντε χρόνια").
+- Q5 (Armed Forces): the draft named Article 87 and an unnamed "leader"; gate B found its claims
+  only partial and the app abstained. A refusal instead of run 8's wrong answer, still a fail.
+- Q10 (Article 120 §4): §4 did not reach the prompt; structure-aware chunking (2.11.11) addresses it.
+
+**Causes found and what changed:**
+- **The PDF draws Greek with Latin look-alike glyphs** ("Άρθρo 1" with a Latin o, "MEPOΣ",
+  "To πoλίτευμα"). `repairGreekHomoglyphs` now also converts a token made only of look-alike letters
+  on a Greek line.
+- **Article headings were lost:** line rejoining before translation merged "Άρθρο 1" into the line
+  before it. `reflow` keeps an article heading, or a line that is only a masked identifier, on its
+  own line. `LegalCrossReferences.articleHeadings` finds every article whose heading is a line of
+  its own in a passage (a table-of-contents line is not a heading), with where it starts.
+- **Article lookup:** a question naming an article gets, first in the context, the passage holding
+  that article (the one whose heading comes earliest), found among the candidates or in the
+  library, followed by up to two continuation passages of the same document before the next
+  heading (`LegalCrossReferences.pinningRequestedArticle`, in `RAGService` before ordering).
+- **Greek mode ran the pipeline on the Greek question.** The prompt carried the Greek question, the
+  model answered in Greek, and gate E compared a Greek answer with English passages through an
+  English embedding model and failed (the Ζέρβας refusal). `RAGService.query` now runs the whole
+  pipeline on the English translation; the Greek question is kept in
+  `GreekLegalAnswerContext.originalQuestion`.
+- **Greek keyword arm** (the plan's bilingual dual index): new FTS5 table `chunk_greek` with each
+  translated chunk's original Greek text, folded in Swift (accents removed, lower case, final sigma
+  as sigma; SQLite's tokenizer keeps Greek accents). For a Greek question its content words (Greek
+  and parser stop words removed) become stem prefixes ("προφυλάκισης" → `"προφυλακισ"*`) joined
+  with OR; the hits are interleaved with the English keyword hits before fusion. A question's own
+  words find the paragraph the translation paraphrased ("τήρηση του Συντάγματος επαφίεται").
+- **Names:** a pair of capitalized Greek words is as often "Κοινοβουλευτική Δημοκρατία" as a
+  person. Names are now translated in context and their ELOT 743 transliteration is added after
+  the text; they stay masked only in a text that is not Greek apart from them.
+- **Following sentences:** sentence extraction (for lookup questions) kept only the sentences
+  sharing words with the question and dropped a provision's exception or deadline in the next
+  sentence (Article 6: "six more months", "within three days"). Run 5 put passages into the prompt
+  whole in Greek legal mode; from run 6 that was replaced by a narrower change: a chosen sentence
+  brings the two sentences after it in its passage (`followingUnits`), so the 4,096-token context
+  still holds passages from several articles.
+- **Guardrails:** Apple's default guardrails refused to restate Article 120 §4 (the duty to resist
+  anyone abolishing the Constitution "by force"). In Greek legal mode the on-device model is
+  `SystemLanguageModel(guardrails: .permissiveContentTransformations)`, Apple's setting for
+  transforming text the user supplies, with plain-text output only; everything else keeps the
+  default (`greekLegalAwareOnDeviceModel`, `FoundationModelSessionFactory`).
+- **Legal glossary** (after run 5): `GreekLegalEntityMasker` masks a few legal terms as `legalTerm`
+  entities with one English rendering each ("πολίτευμα" → "form of government", "Ακροτελεύτια
+  διάταξη" → "final provision", "προφυλάκιση" → "pre-trial detention", "Ένοπλες Δυνάμεις" → "Armed
+  Forces", in every case form), so a question and the passage use the same English words.
+- **Article continuation** up to four passages after the passage holding the requested article
+  (was two).
+- **Prompt:** in Greek legal mode the question carries "State every number, time limit, condition
+  and exception that the excerpts give for this question" (run 5 answered "one year" for
+  pre-trial detention without the six-month extension). Run 8 showed it also produced filler ("The
+  document does not specify a time limit") and an invented "Chief of the Armed Forces", so it now
+  ends "…; do not mention ones they do not give" and asks for the excerpts' own words for who or
+  what they name (run 9).
+- **Greedy decoding** in Greek legal mode (`GenerationOptions(samplingMode: .greedy)` in
+  `LLMService` and in the evaluation's model), so a run is repeatable; the same question no longer
+  passes in one run and fails in the next because of sampling.
+- **Number words in gates B and C** (after run 8): Q3 drafted "25" but gate C reported "0/1 verified.
+  Unverified: 25" and the answer was refused, because the Constitution writes "εικοστό πέμπτο"
+  ("twenty-fifth"); Q2's claims about 200 and 300 MPs were only "partial" against "two hundred" /
+  "three hundred" and gate B failed (grounded-only mode abstains on any failed gate). New
+  `LegalVerificationPolicy.annotatingSpelledNumbers` writes the value after every English or Greek
+  number word from 2 to 999 in the evidence ("twenty-fifth (25)", "διακοσίους (200)", compounds
+  like "εικοσιπέντε", ordinals, "εκατόν πενήντα"; "one"/"ένα", "έκτος" = except and "εβδομάδα" are
+  left alone). In legal mode gate C reads the passages and their Greek source through it, and
+  gate B builds its claim corpus and numeric evidence through it. The answer side needs nothing:
+  gate C does not count a number the answer writes in words.
+- **Logging:** in Greek legal mode a rejected draft and each claim gate B did not support are
+  logged (`[GreekLegal] Rejected draft`, `[GreekLegal]   claim …`), so an abstention can be traced.
+
+**Files:** `GreekLegalEntityMasker.swift`, `LocalNeuralTranslator.swift`, `LegalCrossReferences.swift`,
+`RAGService.swift`, `HybridSearchService.swift`, `SQLiteFullTextService.swift`,
+`GreekLegalAnswerService.swift`, `FoundationModelSessionFactory.swift`, `GreekLegalPipelineTests.swift`,
+`GreekConstitutionEvaluationTests.swift` (new), `Benchmarks/GreekConstitution/` (new: the owner's
+question set and the PDF), `scripts/thesis_run_tests.sh`
+
+**Verification:** Greek unit suites (iPhone 18 Pro simulator, `/private/tmp/oi-logs/greek11.log`):
+`✘ Test run with 57 tests in 15 suites failed after 25.920 seconds with 1 issue`: the one issue
+was in the new chunking suite of 2.11.11 (a wrong expectation, fixed there); every suite of this
+round passed, including `numberWordsReadAsDigits`, `gatesBAndCReadNumberWordsInThePassages` and
+`termsHaveOneEnglishRendering` (its accent pattern was fixed after run 8 was built).
+`legalMetadataRoundTripsThroughSQLite` now ignores glossary `TERM:` keys (the glossary adds "TERM:
+termination of the employment contract" for its phrase). Evaluation run 9 as above. Full suite
+(`/private/tmp/oi-logs/full9.log`): `Executed 1363 tests, with 8 tests skipped and 7 failures`:
+the 3 known Greek-region formatting tests and 4 issues in 2 `ShortcutsActionTests`, whose note was
+filed into a library "Syntagma 99C669" left as the Simulator's active library by an earlier
+diagnostic test while the question ran in "General"; re-run alone after resetting the active
+library: `Executed 13 tests, with 0 failures` (`/private/tmp/oi-logs/shortcuts9.log`). Swift
+Testing in the full suite: `✔ Test run with 60 tests in 18 suites passed`.
+
+#### 2.11.10 Translator: opus-mt-tc-big in both directions, decoder key/value cache
+
+**Why:** in run 1, opus-mt-grk-en mistranslated the questions ("πολίτευμα" → "sovereignty",
+"Ακροτελεύτια διάταξη" → "CSCE provision", "προφυλάκιση" → "felony guard") and the indexed text
+("not less than a 200-mile break-up"). Helsinki-NLP's Greek-specific transformer-big models
+(`opus-mt-tc-big-el-en`, `opus-mt-tc-big-en-el`, CC-BY 4.0) translated every failing sentence
+correctly. The owner chose to ship only tc-big in both directions and asked for a decoder cache.
+
+**What changed:**
+- `scripts/thesis/convert_opus_mt.py`: ties the output layer to the shared embeddings (the tc-big
+  checkpoints store a different `lm_head`, which newer transformers leaves untied, giving garbage),
+  converts the float16 checkpoints to float32 before INT8 quantization, and exports the decoder as
+  `decoder_cross` (each layer's cross-attention keys and values, once per sentence) and
+  `decoder_step` (one token with the self-attention key/value cache). The step graph is the Marian
+  decoder written out for one token with the model's own weights; in full precision its greedy
+  output equals transformers' `generate()` token for token.
+- `LocalNeuralTranslator`: runs encoder → `decoder_cross` → `decoder_step` per token, the cache
+  starting as [1, heads, 0, head_dim] tensors. Decoder time on 12 Constitution sentences: 4.4 s →
+  1.2 s (3.5×); 8 of 12 translations identical to the uncached decoder, the other 4 differ by one
+  word (INT8 rounding along a different path; both valid).
+- Models: `opus-mt-tc-big-el-en_*` and `opus-mt-tc-big-en-el_*` (encoder 137 MB, decoder_step
+  210 MB, decoder_cross 13 MB each, INT8), made by `scripts/thesis_fetch_translation_models.sh`;
+  the small opus-mt-grk-en and opus-mt-en-el are no longer used. The project file's engine-target
+  exclusions list the new files.
+- Import of the 162-page Constitution in the Simulator: 6.6 min (opus-mt-grk-en), 15 min (tc-big
+  without cache), 487 s and 463 s (tc-big with cache, runs 5 and 7).
+
+**Files:** `LocalNeuralTranslator.swift`, `scripts/thesis/convert_opus_mt.py`,
+`scripts/thesis_fetch_translation_models.sh`, `project.pbxproj` (resource exceptions),
+`GreekLegalPipelineTests.swift`, `GreekProcessingLogTests.swift`
+
+**Verification:** all Greek suites (32 tests) pass on the iPhone 18 Pro simulator with the cached
+decoder; evaluation runs 5–9 and the full suite: see 2.11.9.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

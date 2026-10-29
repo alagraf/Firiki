@@ -332,6 +332,20 @@ actor SQLiteFullTextService {
         _ = execute(sql: "CREATE INDEX IF NOT EXISTS idx_chunk_legal_document ON chunk_legal(document_id)")
         _ = execute(sql: "CREATE INDEX IF NOT EXISTS idx_chunks_primary_statute ON chunk_legal(primary_statute_key)")
 
+        // Thesis fork: the Greek keyword arm. The original Greek text of each translated chunk,
+        // accents removed by the tokenizer, so a Greek question finds the paragraph that uses its
+        // words even where the English translation paraphrases them.
+        _ = execute(sql: """
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_greek USING fts5(
+                chunk_id UNINDEXED,
+                document_id UNINDEXED,
+                container_id UNINDEXED,
+                chunk_index UNINDEXED,
+                content,
+                tokenize='unicode61'
+            )
+        """)
+
         // MARK: Page-Level FTS5 Table
         // Stores each PDF page as a separate row for page-level search and context isolation.
         // This enables: (1) page-scoped BM25 search, (2) page-level context retrieval,
@@ -1068,6 +1082,100 @@ actor SQLiteFullTextService {
             let error = String(cString: sqlite3_errmsg(db))
             Log.error("[SQLiteFTS5] Legal chunk insert failed: \(error)", category: .vectorDB)
         }
+        if let greek = metadata.sourceTextEl, !greek.isEmpty {
+            storeGreekChunk(chunkId: chunkId, documentId: documentId, containerId: containerId, text: greek, using: db)
+        }
+    }
+
+    private func storeGreekChunk(chunkId: String, documentId: UUID, containerId: UUID, text: String, using db: OpaquePointer) {
+        var delete: OpaquePointer?
+        if sqlite3_prepare_v2(db, "DELETE FROM chunk_greek WHERE chunk_id = ?", -1, &delete, nil) == SQLITE_OK {
+            sqlite3_bind_text(delete, 1, chunkId, -1, SQLITE_TRANSIENT)
+            sqlite3_step(delete)
+            sqlite3_finalize(delete)
+        }
+        let sql = "INSERT INTO chunk_greek (chunk_id, document_id, container_id, chunk_index, content) VALUES (?, ?, ?, ?, ?)"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(statement) }
+        let chunkIndex = Int(chunkId.split(separator: "_").last ?? "") ?? 0
+        sqlite3_bind_text(statement, 1, chunkId, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, documentId.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 3, containerId.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(statement, 4, Int32(chunkIndex))
+        // Folded here, not by the tokenizer: unicode61 keeps Greek accents and the final sigma.
+        sqlite3_bind_text(statement, 5, Self.greekSearchFold(text), -1, SQLITE_TRANSIENT)
+        if sqlite3_step(statement) != SQLITE_DONE {
+            Log.error("[SQLiteFTS5] Greek chunk insert failed: \(String(cString: sqlite3_errmsg(db)))", category: .vectorDB)
+        }
+    }
+
+    /// Greek text as the Greek index holds it: no accents, lower case, final sigma as sigma.
+    nonisolated static func greekSearchFold(_ text: String) -> String {
+        GreekLegalEntityMasker.normalizeGreekText(text)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "el"))
+            .replacingOccurrences(of: "ς", with: "σ")
+    }
+
+    /// The stop words below and the parser's Greek common words, folded like the index.
+    nonisolated static let foldedGreekStopWords: Set<String> = Set(
+        (greekQueryStopWords.union(StructuredDocumentParser.greekCommonWords)).map(greekSearchFold))
+
+    /// Greek words that say nothing about the topic of a question.
+    nonisolated static let greekQueryStopWords: Set<String> = [
+        "ποιο", "ποιος", "ποια", "ποιες", "ποιοι", "ποιον", "ποιου", "ποιας", "τι", "πως", "ποτε", "που",
+        "υπαρχει", "υπαρχουν", "ειναι", "μπορει", "μπορουν", "πρεπει", "συμφωνα", "οσον", "αφορα",
+        "ακριβως", "σχετικα", "σχετικη", "σχετικο", "οποια", "οποιο", "οποιος", "αυτος", "αυτη",
+        "αυτο", "οταν", "μετα", "προς", "μεσα", "αναφερει", "οριζει", "λεει", "ναι", "οχι", "αποκλειστικα",
+    ]
+
+    /// An FTS5 query for a Greek question: its content words without accents, each as a prefix of
+    /// its stem (the last two letters dropped from a word of six or more) so that inflected forms
+    /// match ("προφυλακισης" → "προφυλακισ*" finds "προφυλάκιση"), joined with OR.
+    nonisolated static func greekFTSQuery(_ question: String) -> String? {
+        let folded = greekSearchFold(question)
+        var terms: [String] = []
+        for word in folded.components(separatedBy: CharacterSet.alphanumerics.inverted) {
+            guard word.count >= 4, !foldedGreekStopWords.contains(word),
+                  GreekLegalEntityMasker.containsGreek(word) || word.allSatisfy(\.isNumber)
+            else { continue }
+            let stem = word.count >= 6 ? String(word.prefix(max(5, word.count - 2))) : word
+            let term = "\"\(stem)\"*"
+            if !terms.contains(term) { terms.append(term) }
+        }
+        return terms.isEmpty ? nil : terms.joined(separator: " OR ")
+    }
+
+    /// Thesis fork: chunks whose Greek source text matches a Greek question, best BM25 first.
+    func searchGreekChunks(question: String, containerId: UUID, limit: Int = 20) async -> [ChunkSearchResult] {
+        ensureInitialized()
+        guard let db = database, let match = Self.greekFTSQuery(question) else { return [] }
+        let sql = """
+            SELECT chunk_id, document_id, chunk_index, content, bm25(chunk_greek) AS score
+            FROM chunk_greek WHERE chunk_greek MATCH ? AND container_id = ?
+            ORDER BY score LIMIT ?
+        """
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, match, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(statement, 2, containerId.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(statement, 3, Int32(limit))
+        var results: [ChunkSearchResult] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let chunkId = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+                  let documentId = sqlite3_column_text(statement, 1).flatMap({ UUID(uuidString: String(cString: $0)) })
+            else { continue }
+            results.append(ChunkSearchResult(
+                chunkId: chunkId, documentId: documentId, containerId: containerId,
+                chunkIndex: Int(sqlite3_column_int(statement, 2)), pageNumber: nil,
+                sectionTitle: nil, sectionPath: nil,
+                content: sqlite3_column_text(statement, 3).map { String(cString: $0) } ?? "",
+                bm25Score: sqlite3_column_double(statement, 4)
+            ))
+        }
+        Log.debug("[SQLiteFTS5] Greek chunk search '\(match.prefix(80))' → \(results.count)", category: .retrieval)
+        return results
     }
 
     /// The legal metadata stored for a document's chunks, keyed by chunk id.
@@ -1211,7 +1319,8 @@ actor SQLiteFullTextService {
         let deletes = [
             "DELETE FROM chunk_structured WHERE document_id = ?",
             "DELETE FROM chunk_table_rows WHERE document_id = ?",
-            "DELETE FROM chunk_legal WHERE document_id = ?"
+            "DELETE FROM chunk_legal WHERE document_id = ?",
+            "DELETE FROM chunk_greek WHERE document_id = ?"
         ]
 
         for sql in deletes {
@@ -1229,7 +1338,8 @@ actor SQLiteFullTextService {
         let deletes = [
             "DELETE FROM chunk_structured WHERE container_id = ?",
             "DELETE FROM chunk_table_rows WHERE container_id = ?",
-            "DELETE FROM chunk_legal WHERE container_id = ?"
+            "DELETE FROM chunk_legal WHERE container_id = ?",
+            "DELETE FROM chunk_greek WHERE container_id = ?"
         ]
 
         for sql in deletes {

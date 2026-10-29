@@ -110,3 +110,7 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 - Owner reports the app partly works on device; improvements and bug fixes come next.
 - 2026-10-28 Fix (FORK_CHANGES 2.11.7): Greek name questions; names transliterated, reflow, fragments, gate A only for legal questions. Note: documents imported before this fix must be re-imported to get the new translations.
 - 2026-10-28 Suggested questions off (`SuggestedQuestionsService.isEnabled`); PaddleOCR and Opus-MT lines in the Processing Log (FORK_CHANGES 2.11.8).
+- 2026-10-29 Constitution accuracy round committed (FORK_CHANGES 2.11.9/2.11.10): article lookup, Greek
+  keyword arm, glossary, following sentences, greedy decoding, number words in gates B/C, tc-big with
+  decoder cache. Constitution set: run 1 6/10 → run 9 7/10. Full suite: only the 3 Greek-region
+  failures (ShortcutsActionTests failed once on a leftover active library, 13/13 on re-run).

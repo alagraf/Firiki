@@ -22,6 +22,7 @@ nonisolated enum GreekLegalEntityType: String, Codable, Sendable, CaseIterable {
     case supremeCourtDecision = "AP"    // ΑΠ 123/2023, ΟλΑΠ 1/2022, ΣτΕ 456/2021
     case euDirective = "EU_DIR"         // Οδηγία (ΕΕ) 2019/1152
     case properName = "NAME"            // Ανδρέας Ζέρβας (two or more capitalized Greek words)
+    case legalTerm = "TERM"             // πολίτευμα → "form of government" (GreekLegalGlossary)
 }
 
 nonisolated struct LegalEntityRecord: Codable, Hashable, Sendable {
@@ -38,7 +39,8 @@ nonisolated struct LegalEntityRecord: Codable, Hashable, Sendable {
     let canonicalKey: String
 
     /// Injected into the English text after translation.
-    var bilingualAnchor: String { "\(canonicalEn) [\(canonicalEl)]" }
+    /// A legal term reads as its English rendering alone; it is vocabulary, not an identifier.
+    var bilingualAnchor: String { type == .legalTerm ? canonicalEn : "\(canonicalEn) [\(canonicalEl)]" }
 
     /// The Greek form shown to the lawyer: the source wording when it was Greek, else canonical.
     var greekDisplay: String {
@@ -54,6 +56,8 @@ nonisolated enum GreekLegalEntityMasker {
         case greekVerbatim
         /// "Article 38".
         case englishCanonical
+        /// The text as it was matched.
+        case verbatim
     }
 
     // MARK: - Normalization
@@ -90,6 +94,12 @@ nonisolated enum GreekLegalEntityMasker {
                 let word = String(token)
                 let letters = word.filter(\.isLetter)
                 let hasGreek = letters.unicodeScalars.contains(where: isGreekScalar)
+                // A token written only in look-alike letters ("To", "o" in a PDF whose font draws
+                // Greek with Latin glyphs) is Greek on a Greek line.
+                let allLookAlikes = !letters.isEmpty && letters.allSatisfy { latinToGreek[$0] != nil }
+                if allLookAlikes && lineRatio >= 0.5 {
+                    return String(word.map { latinToGreek[$0] ?? $0 })
+                }
                 let isCapitalAbbreviation = !letters.isEmpty && letters.count <= 3
                     && letters.allSatisfy { latinToGreek[$0] != nil || isGreekScalar($0.unicodeScalars.first!) }
                     && word.count <= letters.count + 4
@@ -212,6 +222,39 @@ nonisolated enum GreekLegalEntityMasker {
         ),
     ]
 
+    // MARK: Legal glossary
+
+    /// Thesis fork: constitutional and labour-law terms the general-purpose translator renders
+    /// wrongly or inconsistently ("πολίτευμα" became "sovereignty" and "constitution",
+    /// "Ακροτελεύτια διάταξη" "CSCE provision"), given one fixed English rendering in documents and
+    /// questions alike. Each entry: Greek forms, English forms (so an English answer's term is
+    /// recognized too), English rendering, Greek lemma. Singular and plural are separate entries.
+    static let glossary: [(greek: String, english: String, en: String, el: String)] = [
+        ("πολίτευμ(?:α|ατος)", "form of government", "form of government", "πολίτευμα"),
+        ("ακροτελεύτι(?:α|ας) διάταξ(?:η|ης)", "final provision", "final provision", "ακροτελεύτια διάταξη"),
+        ("μεταβατικ(?:ή|ής) διάταξ(?:η|ης)", "transitional provision", "transitional provision", "μεταβατική διάταξη"),
+        ("μεταβατικ(?:ές|ών) διατάξ(?:εις|εων)", "transitional provisions", "transitional provisions", "μεταβατικές διατάξεις"),
+        ("προφυλάκισ(?:η|ης)", "pre-?trial detention", "pre-trial detention", "προφυλάκιση"),
+        ("ανακριτ(?:ής|ή)", "investigating judge", "investigating judge", "ανακριτής"),
+        ("πλημμέλημ(?:α|ατος)", "misdemeanou?r", "misdemeanour", "πλημμέλημα"),
+        ("πλημμελήματ(?:α|ων)|πλημμελημάτων", "misdemeanou?rs", "misdemeanours", "πλημμελήματα"),
+        ("κακούργημ(?:α|ατος)", "felony", "felony", "κακούργημα"),
+        ("κακουργήματ(?:α|ων)|κακουργημάτων", "felonies", "felonies", "κακουργήματα"),
+        ("θητεί(?:α|ας)", "term of office", "term of office", "θητεία"),
+        ("[ΕΈεέ]ν[οό]πλ(?:ες|ων)\\s+[Δδ]υνάμ(?:εις|εων)", "armed forces", "Armed Forces", "Ένοπλες Δυνάμεις"),
+        ("αναθεώρησ(?:η|ης) του Συντάγματος", "revision of the Constitution", "revision of the Constitution", "αναθεώρηση του Συντάγματος"),
+        ("αποζημίωσ(?:η|ης) απόλυσης", "severance pay", "severance pay", "αποζημίωση απόλυσης"),
+        ("καταγγελί(?:α|ας) της σύμβασης εργασίας", "termination of the employment contract", "termination of the employment contract", "καταγγελία της σύμβασης εργασίας"),
+    ]
+
+    nonisolated(unsafe) private static let glossaryRules: [Rule] = glossary.map { term in
+        Rule(
+            type: .legalTerm,
+            regex: regex("(?:\(term.greek)|\(term.english))" + end),
+            canonicalize: { _ in ("TERM:" + term.en, term.en, term.el) }
+        )
+    }
+
     private static func gazetteSeries(_ raw: String) -> String {
         switch raw.uppercased() {
         case "A", "Α": return "Α"
@@ -266,7 +309,7 @@ nonisolated enum GreekLegalEntityMasker {
         let whole = NSRange(location: 0, length: ns.length)
         var found: [Match] = []
         var taken = IndexSet()
-        for rule in rules {
+        for rule in rules + glossaryRules {
             for result in rule.regex.matches(in: text, range: whole) {
                 let range = result.range
                 guard !taken.intersects(integersIn: range.location..<(range.location + range.length)) else { continue }
@@ -428,6 +471,7 @@ nonisolated enum GreekLegalEntityMasker {
             case .bilingualAnchor: output += entity.bilingualAnchor
             case .greekVerbatim: output += entity.greekDisplay
             case .englishCanonical: output += entity.canonicalEn
+            case .verbatim: output += entity.verbatimEl
             }
             cursor = result.range.location + result.range.length
         }

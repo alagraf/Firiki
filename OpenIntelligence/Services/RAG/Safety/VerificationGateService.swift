@@ -192,7 +192,8 @@ actor VerificationGateService {
             response: response,
             chunks: retrievedChunks,
             query: query,
-            structuredClaims: structuredClaims
+            structuredClaims: structuredClaims,
+            legal: legal
         )
         gateResults.append(gateB.gateResult)
 
@@ -357,7 +358,8 @@ actor VerificationGateService {
         response: String,
         chunks: [RetrievedChunk],
         query: String,
-        structuredClaims: [StructuredRAGClaim]? = nil
+        structuredClaims: [StructuredRAGClaim]? = nil,
+        legal: Bool = false
     ) async -> GateBEvaluation {
         // The answer's own headings are not claims (5.7): the model sometimes lists its title among its claims, and
         // Fact Check scored "Hotel Address in Lisbon" Partial, so a right answer read "1 of 2 Verified" (demo copy of
@@ -402,8 +404,9 @@ actor VerificationGateService {
             )
         }
 
-        let corpus = buildCorpus(from: chunks)
-        let numericEvidence = Self.numericEvidence(from: chunks)
+        // Thesis fork: in legal mode a number the passages write in words counts as its digits.
+        let corpus = buildCorpus(from: chunks, spelledNumbers: legal)
+        let numericEvidence = Self.numericEvidence(from: chunks, spelledNumbers: legal)
         // Amounts of money and dates the passages contradict, read with Apple's detector (5.7, `DetectedValueCheck`).
         let detectedEvidence = await DetectedValueCheck.evidence(from: chunks.map { $0.chunk.contextText })
         var claimResults: [RAGVerificationResult.ClaimResult] = []
@@ -414,7 +417,7 @@ actor VerificationGateService {
             claimResults.append(
                 evaluateClaim(
                     claimInput, in: chunks, corpus: corpus, numericEvidence: numericEvidence,
-                    detectedContradiction: contradiction, query: query))
+                    detectedContradiction: contradiction, query: query, spelledNumbers: legal))
         }
 
         let supportedCount = claimResults.filter { $0.verdict == .supported }.count
@@ -462,7 +465,7 @@ actor VerificationGateService {
         let evidenceTexts: [String] = chunks.flatMap { retrieved -> [String] in
             guard greekNumerals else { return [retrieved.chunk.contextText] }
             return [retrieved.chunk.contextText, retrieved.chunk.sourceTextEl].compactMap { $0 }
-                .map(LegalVerificationPolicy.normalizeGreekNumerals)
+                .map { LegalVerificationPolicy.annotatingSpelledNumbers(LegalVerificationPolicy.normalizeGreekNumerals($0)) }
         }
         // The numbers the answer states, read as values (NumericValueExtractor): "2.5 billion" is
         // compared as 2,500,000,000, and a number inside a name ("Qwen-2.5-3B") is matched as that
@@ -544,8 +547,10 @@ actor VerificationGateService {
         mention.identifier == nil && mention.scale == nil && isYearOrReference(mention.digits)
     }
 
-    private static func numericEvidence(from chunks: [RetrievedChunk]) -> [NumericValueExtractor.Evidence] {
-        NumericValueExtractor.evidence(from: chunks.map { $0.chunk.contextText })
+    private static func numericEvidence(from chunks: [RetrievedChunk], spelledNumbers: Bool = false) -> [NumericValueExtractor.Evidence] {
+        NumericValueExtractor.evidence(from: chunks.map {
+            spelledNumbers ? LegalVerificationPolicy.annotatingSpelledNumbers($0.chunk.contextText) : $0.chunk.contextText
+        })
     }
 
     /// Gate D: Contradiction Sweep
@@ -1549,9 +1554,10 @@ actor VerificationGateService {
         return false
     }
 
-    private func buildCorpus(from chunks: [RetrievedChunk]) -> String {
+    private func buildCorpus(from chunks: [RetrievedChunk], spelledNumbers: Bool = false) -> String {
         chunks.map { chunk -> String in
-            let content = chunk.chunk.contextText
+            let content = spelledNumbers
+                ? LegalVerificationPolicy.annotatingSpelledNumbers(chunk.chunk.contextText) : chunk.chunk.contextText
             return content.lowercased()
         }.joined(separator: " ")
     }
@@ -1562,15 +1568,16 @@ actor VerificationGateService {
         corpus: String,
         numericEvidence: [NumericValueExtractor.Evidence],
         detectedContradiction: DetectedValueCheck.Contradiction? = nil,
-        query: String
+        query: String,
+        spelledNumbers: Bool = false
     ) -> RAGVerificationResult.ClaimResult {
         let claimText = cleanClaimText(claimInput.claim)
         let citedChunks = citedEvidence(for: claimInput.citations, in: chunks)
         let heuristicChunks = supportingEvidence(for: claimText, in: chunks)
         let supportingChunks = citedChunks.isEmpty ? heuristicChunks : citedChunks
 
-        let citedCorpus = buildCorpus(from: citedChunks)
-        let supportingCorpus = buildCorpus(from: supportingChunks)
+        let citedCorpus = buildCorpus(from: citedChunks, spelledNumbers: spelledNumbers)
+        let supportingCorpus = buildCorpus(from: supportingChunks, spelledNumbers: spelledNumbers)
         let citedCoverage = !citedChunks.isEmpty && isClaimCovered(claim: claimText, inCorpus: citedCorpus, query: query)
         let supportingCoverage = !supportingChunks.isEmpty && isClaimCovered(claim: claimText, inCorpus: supportingCorpus, query: query)
         let corpusCoverage = isClaimCovered(claim: claimText, inCorpus: corpus, query: query)

@@ -160,7 +160,8 @@ struct BilingualChunkStorageTests {
         let read = await store.legalChunkMetadata(for: documentId)
         #expect(read[chunkId] == metadata)
         #expect(read[chunkId]?.primaryStatuteKey == "LAW:4808/2021")
-        #expect(read[chunkId]?.canonicalKeys == ["ART:66", "LAW:4808/2021"])
+        // The legal glossary adds "TERM:termination of the employment contract" for the phrase.
+        #expect(read[chunkId]?.canonicalKeys.filter { !$0.hasPrefix("TERM:") } == ["ART:66", "LAW:4808/2021"])
 
         await store.deleteChunks(for: documentId)
         #expect(await store.legalChunkMetadata(for: documentId).isEmpty)
@@ -295,14 +296,14 @@ struct GreekTranslationRetrievalTests {
     static let query = "Ποιες είναι οι προϋποθέσεις απόλυσης σύμφωνα με το Άρθρο 66 του Ν. 4808/2021;"
 
     @Test func tokenizerMatchesMarianReferenceIds() throws {
-        let url = try #require(LocalNeuralTranslator.resourceURL("opus-mt-grk-en_tokenizer", "json"))
+        let url = try #require(LocalNeuralTranslator.resourceURL("opus-mt-tc-big-el-en_tokenizer", "json"))
         let grk = try SentencePieceUnigramTokenizer(jsonData: Data(contentsOf: url))
-        // Reference ids from transformers' MarianTokenizer (opus-mt-grk-en / opus-mt-en-el).
-        #expect(grk.encode("Η καταγγελία της σύμβασης εργασίας γίνεται εγγράφως.") == [77, 12348, 14, 5193, 1061, 1396, 1078, 2752, 2471, 2, 0])
-        #expect(grk.encode("Ποιες είναι οι προϋποθέσεις απόλυσης σύμφωνα με το __LEX_ENT_001__;") == [288, 512, 201, 39, 72, 4037, 35, 7729, 7, 386, 24, 16, 2254, 1733, 505, 8263, 1733, 1011, 342, 1733, 469, 400, 1733, 1733, 29, 0])
-        let enURL = try #require(LocalNeuralTranslator.resourceURL("opus-mt-en-el_tokenizer", "json"))
+        // Reference ids from transformers' MarianTokenizer (opus-mt-tc-big-el-en / opus-mt-tc-big-en-el).
+        #expect(grk.encode("Η καταγγελία της σύμβασης εργασίας γίνεται εγγράφως.") == [42486, 44535, 55972, 54544, 41610, 36786, 38904, 39, 25697])
+        #expect(grk.encode("Ποιες είναι οι προϋποθέσεις απόλυσης σύμφωνα με το __LEX_ENT_001__;") == [51499, 39238, 48994, 52589, 34526, 46673, 53235, 54721, 47004, 56092, 123, 7, 17751, 7, 11268, 7, 224, 7, 7, 17, 25697])
+        let enURL = try #require(LocalNeuralTranslator.resourceURL("opus-mt-tc-big-en-el_tokenizer", "json"))
         let en = try SentencePieceUnigramTokenizer(jsonData: Data(contentsOf: enURL))
-        #expect(en.encode("The employer must pay severance [C1].") == [58, 15509, 338, 1619, 51513, 429, 383, 28634, 2, 0])
+        #expect(en.encode("The employer must pay severance [C1].") == [29125, 11042, 19986, 22011, 26439, 3444, 161, 6047, 333, 97, 39, 25697])
     }
 
     @Test func greekToEnglishKeepsLegalIdentifiers() async throws {
@@ -312,7 +313,8 @@ struct GreekTranslationRetrievalTests {
         #expect(entities.map(\.canonicalKey) == ["ART:66", "LAW:4808/2021"])
         #expect(english.contains("Article 66 [Άρθρο 66]"), "\(english)")
         #expect(english.contains("Law 4808/2021 [Ν. 4808/2021]"), "\(english)")
-        #expect(english.lowercased().contains("dismissal") || english.lowercased().contains("termination"), "\(english)")
+        // "απόλυση": dismissal, termination, or the British legal "redundancy".
+        #expect(["dismissal", "termination", "redundancy"].contains { english.lowercased().contains($0) }, "\(english)")
     }
 
     @Test func englishToGreekKeepsCitationsAndGreekIdentifiers() async throws {
@@ -544,6 +546,42 @@ struct GreekLegalVerificationTests {
             retrievedChunks: [chunk], topScores: [0.9], enforceLegalChecks: true)
         #expect(result.gateResults.first { $0.gate == .numericSanity }?.passed == true)
     }
+
+    @Test func numberWordsReadAsDigits() {
+        let annotate = LegalVerificationPolicy.annotatingSpelledNumbers
+        #expect(annotate("has completed the twenty-fifth year of age") == "has completed the twenty-fifth (25) year of age")
+        #expect(annotate("not less than two hundred nor more than three hundred") == "not less than two hundred (200) nor more than three hundred (300)")
+        #expect(annotate("one hundred and fifty days") == "one hundred and fifty (150) days")
+        #expect(annotate("είναι εικοσιπέντε ετών") == "είναι εικοσιπέντε (25) ετών")
+        #expect(annotate("μικρότερος από διακόσιους ούτε μεγαλύτερος από τριακόσιους") == "μικρότερος από διακόσιους (200) ούτε μεγαλύτερος από τριακόσιους (300)")
+        #expect(annotate("το εικοστό πέμπτο έτος") == "το εικοστό πέμπτο (25) έτος")
+        #expect(annotate("εκατόν πενήντα ημέρες") == "εκατόν πενήντα (150) ημέρες")
+        // "One", "except" (εκτός) and "week" (εβδομάδα) are not numbers here.
+        #expect(annotate("one of the members, εκτός από μία εβδομάδα") == "one of the members, εκτός από μία εβδομάδα")
+        #expect(annotate("δύο ή τρεις φορές") == "δύο (2) ή τρεις (3) φορές")
+    }
+
+    @Test func gatesBAndCReadNumberWordsInThePassages() async {
+        let age = Self.retrieved(
+            "Article 55 [Άρθρο 55] 1. A Member of Parliament must have completed the twenty-fifth year of age on the day of the election.",
+            score: 0.9, greek: "Βουλευτής δεν μπορεί να εκλεγεί όποιος δεν έχει συμπληρώσει το εικοστό πέμπτο έτος της ηλικίας του.")
+        let gateC = await VerificationGateService().verify(
+            response: "A Member of Parliament must be at least 25 years old on the day of the election [S1].",
+            query: "What is the minimum age to be elected?", retrievedChunks: [age], topScores: [0.9], enforceLegalChecks: true)
+        #expect(gateC.gateResults.first { $0.gate == .numericSanity }?.passed == true)
+
+        let seats = Self.retrieved(
+            "Article 51 [Άρθρο 51] 1. The number of Members of Parliament is set by law and may not be less than two hundred or more than three hundred.",
+            score: 0.9, greek: nil)
+        let gateB = await VerificationGateService().verify(
+            response: "The number of Members of Parliament may not be less than 200. The number of Members of Parliament may not be more than 300.",
+            query: "What is the minimum and maximum number of Members of Parliament?", retrievedChunks: [seats], topScores: [0.9],
+            enforceLegalChecks: true)
+        #expect(gateB.claimResults.allSatisfy { $0.verdict != .unsupported }, "\(gateB.claimResults.map { "\($0.verdict) \($0.details)" })")
+        #expect(gateB.gateResults.first { $0.gate == .numericSanity }?.passed == true)
+        #expect(gateB.gateResults.first { $0.gate == .evidenceCoverage }?.passed == true,
+                "\(gateB.gateResults.first { $0.gate == .evidenceCoverage }?.details ?? "")")
+    }
 }
 
 @Suite("Greek legal review in Response Details")
@@ -676,5 +714,143 @@ struct FragmentTranslationTests {
         #expect(!english.contains("Commission") && !english.contains("European Union"), "\(english)")
         #expect(english.contains("communication between people"), "\(english)")
         #expect(!english.hasPrefix("..."), "\(english)")
+    }
+}
+
+// MARK: - Article lookup in a PDF that draws Greek with Latin glyphs (owner's report, 2026-10-28)
+
+@Suite("Article lookup")
+struct ArticleLookupTests {
+    /// As PDFKit reads the Constitution's PDF: Latin o, T, M, E, P inside Greek words.
+    static let page = "MEPOΣ ΠPΩTO\nBασικές διατάξεις\nTMHMA A’\nMoρφή τoυ πoλιτεύματoς\nΆρθρo 1\n1. To πoλίτευμα της Eλλάδας είναι Πρoεδρευόμενη \nKoινoβoυλευτική Δημoκρατία.\n2. Θεμέλιo τoυ πoλιτεύματoς είναι η λαϊκή  \nκυριαρχία.\nΆρθρo 2\n1. O σεβασμός και η πρoστασία της αξίας τoυ \nανθρώπoυ απoτελoύν την πρωταρχική υπoχρέωση \nτης Πoλιτείας."
+
+    @Test func latinGlyphGreekIsRepaired() {
+        let repaired = GreekLegalEntityMasker.normalizeGreekText(Self.page)
+        #expect(repaired.contains("Μορφή του πολιτεύματος"), "\(repaired)")
+        #expect(repaired.contains("\nΆρθρο 1\n"), "\(repaired)")
+        #expect(repaired.contains("Το πολίτευμα της Ελλάδας"), "\(repaired)")
+        #expect(repaired.hasPrefix("ΜΕΡΟΣ ΠΡΩΤΟ"), "\(repaired)")
+    }
+
+    @Test func headingsSurviveTranslationOnTheirOwnLines() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        let english = try await LocalNeuralTranslator.shared
+            .translateGreekToEnglishPreservingLegalEntities(GreekLegalEntityMasker.normalizeGreekText(Self.page)).textEn
+        let lines = english.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        #expect(lines.contains("Article 1 [Άρθρο 1]"), "\(english)")
+        #expect(lines.contains("Article 2 [Άρθρο 2]"), "\(english)")
+        let chunk = DocumentChunk(
+            documentId: UUID(), content: english, embedding: [], metadata: ChunkMetadata(chunkIndex: 3),
+            legal: LegalChunkMetadata(sourceTextEl: GreekLegalEntityMasker.normalizeGreekText(Self.page), sourceLanguage: "el"))
+        #expect(LegalCrossReferences.definedArticles(of: chunk) == ["ART:1", "ART:2"])
+    }
+
+    @Test func thePassageHoldingTheArticleComesFirst() {
+        let document = UUID()
+        func chunk(_ index: Int, _ greek: String, _ english: String) -> DocumentChunk {
+            DocumentChunk(
+                documentId: document, content: english, embedding: [], metadata: ChunkMetadata(chunkIndex: index),
+                legal: LegalChunkMetadata(sourceTextEl: greek, sourceLanguage: "el"))
+        }
+        let transitional = chunk(90, "Μέχρι να εκδοθεί ο νόμος του άρθρου 86 παρ. 1 εφαρμόζονται οι διατάξεις των άρθρων 49 παρ. 1 και 85.",
+                                 "Until the law of Article 86 [Άρθρο 86] paragraph 1 [παρ. 1] is enacted, the provisions of articles 49 paragraph 1 and 85 apply.")
+        let article1 = chunk(3, GreekLegalEntityMasker.normalizeGreekText(Self.page),
+                             "Form of government\nArticle 1 [Άρθρο 1]\n1. The form of government of Greece is a presidential parliamentary republic.")
+        let toc = chunk(1, "Άρθρο 1. Μορφή του πολιτεύματος .......... 19", "Article 1 [Άρθρο 1]. Form of government .......... 19")
+        let candidates = [transitional, toc].enumerated().map {
+            RetrievedChunk(chunk: $1, similarityScore: 0.6 - Float($0) * 0.1, rank: $0 + 1)
+        }
+        let pinned = LegalCrossReferences.pinningRequestedArticle(
+            query: "What does Article 1 [Άρθρο 1] of the Constitution say?", candidates: candidates,
+            pool: [toc, article1, transitional], sourceDocument: { _ in "syntagma.pdf" })
+        #expect(pinned.first?.chunk.id == article1.id)
+        #expect(pinned.first?.similarityScore == 0.6)
+        #expect(pinned.count == 3)
+        // A question naming no article is left alone.
+        #expect(LegalCrossReferences.pinningRequestedArticle(
+            query: "What is the form of government?", candidates: candidates, pool: [article1], sourceDocument: { _ in "" })
+            .map(\.chunk.id) == candidates.map(\.chunk.id))
+    }
+}
+
+@Suite("Greek keyword arm")
+struct GreekKeywordArmTests {
+    @Test func greekQuestionBecomesStemPrefixes() {
+        let query = SQLiteFullTextService.greekFTSQuery("Ποιο είναι το ανώτατο όριο διάρκειας της προφυλάκισης για τα κακουργήματα;")
+        #expect(query == "\"ανωτα\"* OR \"οριο\"* OR \"διαρκει\"* OR \"προφυλακισ\"* OR \"κακουργημα\"*", "\(query ?? "nil")")
+        #expect(SQLiteFullTextService.greekFTSQuery("Τι είναι;") == nil)
+    }
+
+    @Test func greekChunksAreFoundByTheQuestionsWords() async {
+        let documentId = UUID(), containerId = UUID()
+        let store = SQLiteFullTextService.shared
+        let paragraphs = [
+            "Η τήρηση του Συντάγματος επαφίεται στον πατριωτισμό των Ελλήνων.",
+            "Ο σεβασμός στο Σύνταγμα και τους νόμους αποτελεί θεμελιώδη υποχρέωση.",
+        ]
+        for (index, text) in paragraphs.enumerated() {
+            await store.storeLegalChunkMetadata(
+                chunkId: "\(documentId.uuidString)_\(index)", documentId: documentId, containerId: containerId,
+                metadata: LegalChunkMetadata(sourceTextEl: text, sourceLanguage: "el"))
+        }
+        let hits = await store.searchGreekChunks(
+            question: "Σε ποιον επαφίεται αποκλειστικά η τήρηση του Συντάγματος;", containerId: containerId)
+        #expect(hits.first?.chunkIndex == 0, "\(hits.map(\.chunkIndex))")
+        await store.deleteChunks(for: documentId)
+        #expect(await store.searchGreekChunks(question: "τήρηση Συντάγματος", containerId: containerId).isEmpty)
+    }
+
+    @Test func interleavingKeepsEachChunkOnce() {
+        func hit(_ id: String) -> SQLiteFullTextService.ChunkSearchResult {
+            .init(chunkId: id, documentId: UUID(), containerId: UUID(), chunkIndex: 0, pageNumber: nil,
+                  sectionTitle: nil, sectionPath: nil, content: "", bm25Score: 0)
+        }
+        let merged = HybridSearchService.interleaving([hit("g1"), hit("e1"), hit("g2")], [hit("e1"), hit("e2")], limit: 10)
+        #expect(merged.map(\.chunkId) == ["g1", "e1", "e2", "g2"])
+    }
+
+    @Test func pinnedArticleBringsItsContinuation() {
+        let document = UUID()
+        func chunk(_ index: Int, _ text: String) -> DocumentChunk {
+            DocumentChunk(documentId: document, content: text, embedding: [], metadata: ChunkMetadata(chunkIndex: index))
+        }
+        let heading = chunk(10, "Article 120 [Άρθρο 120]\n1. This Constitution...\n2. Respect for the Constitution...")
+        let continuation = chunk(11, "4. The observance of the Constitution is left to the patriotism of the Greeks...")
+        let next = chunk(12, "Article 121 [Άρθρο 121]\nSomething else.")
+        let pinned = LegalCrossReferences.pinningRequestedArticle(
+            query: "Article 120 [Άρθρο 120]: to whom is the observance of the Constitution entrusted?",
+            candidates: [RetrievedChunk(chunk: next, similarityScore: 0.5, rank: 1)],
+            pool: [heading, continuation, next], sourceDocument: { _ in "" })
+        #expect(pinned.map(\.chunk.metadata.chunkIndex) == [10, 11, 12])
+    }
+}
+
+@Suite("Legal glossary")
+struct LegalGlossaryTests {
+    @Test func termsHaveOneEnglishRendering() {
+        let (masked, entities) = GreekLegalEntityMasker.maskEntities(in: "Το πολίτευμα της Ελλάδας και η Ακροτελεύτια διάταξη (Άρθρο 120).")
+        #expect(entities.map(\.canonicalKey) == ["TERM:form of government", "TERM:final provision", "ART:120"])
+        #expect(GreekLegalEntityMasker.unmaskEntities(in: masked, entities: entities, mode: .bilingualAnchor)
+            == "Το form of government της Ελλάδας και η final provision (Article 120 [Άρθρο 120]).")
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "The maximum pre-trial detention for felonies") == ["TERM:pre-trial detention", "TERM:felonies"])
+        // An institution in capitals is a term, not a person's name.
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "Ποιος είναι ο αρχηγός των Ενόπλων Δυνάμεων της Χώρας;") == ["TERM:Armed Forces"])
+        // A term is not a statutory identifier.
+        #expect(!LegalVerificationPolicy.isLegalQuery("What is the form of government of Greece?"))
+        #expect(LegalVerificationPolicy.unsupportedLegalIdentifiers(response: "The form of government is a republic.", chunks: []).isEmpty)
+    }
+
+    @Test func questionAndDocumentUseTheSameTerm() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish) && LocalNeuralTranslator.isAvailable(.englishToGreek))
+        let question = try await LocalNeuralTranslator.shared
+            .translateGreekToEnglishPreservingLegalEntities("Ποιο είναι το πολίτευμα της Ελλάδας σύμφωνα με το Σύνταγμα;").textEn
+        let document = try await LocalNeuralTranslator.shared
+            .translateGreekToEnglishPreservingLegalEntities("Το πολίτευμα της Ελλάδας είναι Προεδρευόμενη Κοινοβουλευτική Δημοκρατία.").textEn
+        #expect(question.contains("form of government"), "\(question)")
+        #expect(document.contains("form of government"), "\(document)")
+        let greek = try await LocalNeuralTranslator.shared
+            .translateEnglishToGreekPreservingCitations("Pre-trial detention may not exceed one year for felonies [S1].")
+        #expect(greek.contains("κακουργήματα"), "\(greek)")
+        #expect(greek.contains("[S1]"), "\(greek)")
     }
 }

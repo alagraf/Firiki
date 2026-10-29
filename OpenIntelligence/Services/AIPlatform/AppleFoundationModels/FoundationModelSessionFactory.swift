@@ -43,7 +43,7 @@ struct FoundationModelSessionFactory {
         
         switch route {
         case .onDevice:
-            let model = SystemLanguageModel.default
+            let model = greekLegalAwareOnDeviceModel()
             guard case .available = model.availability else { throw LLMError.modelUnavailable }
             if let savedTranscript = pendingTranscript, !disableTools {
                 finalSession = LanguageModelSession(model: model, tools: tools, transcript: savedTranscript)
@@ -59,7 +59,7 @@ struct FoundationModelSessionFactory {
                 // (`SystemLanguageModel.advanced` does not exist — compiler-probe
                 // verified). This route executes the standard on-device model, so
                 // telemetry must report `.onDevice`, not a tier that never ran.
-                let model = SystemLanguageModel.default
+                let model = greekLegalAwareOnDeviceModel()
                 guard case .available = model.availability else { throw LLMError.modelUnavailable }
                 selectedRoute = .onDevice // Telemetry: actual executed route
                 if let savedTranscript = pendingTranscript, !disableTools {
@@ -71,7 +71,7 @@ struct FoundationModelSessionFactory {
                 }
             } else {
                 // Graceful fallback to the standard model for iOS 26 users
-                let model = SystemLanguageModel.default
+                let model = greekLegalAwareOnDeviceModel()
                 guard case .available = model.availability else { throw LLMError.modelUnavailable }
                 selectedRoute = .onDevice // Update selected route for telemetry to reflect fallback
                 if let savedTranscript = pendingTranscript, !disableTools {
@@ -110,7 +110,7 @@ struct FoundationModelSessionFactory {
             throw LLMError.modelUnavailable
             #endif
         case .automatic:
-            let model = SystemLanguageModel.default
+            let model = greekLegalAwareOnDeviceModel()
             guard case .available = model.availability else { throw LLMError.modelUnavailable }
             selectedRoute = .onDevice
             if let savedTranscript = pendingTranscript, !disableTools {
@@ -131,3 +131,15 @@ struct FoundationModelSessionFactory {
     }
 }
 #endif
+
+/// Thesis fork: in Greek legal mode the on-device model reads statutory text the lawyer imported and
+/// answers in plain text, which is the content-transformation case Apple's
+/// `permissiveContentTransformations` guardrails are for. With the default guardrails it refused to
+/// restate Article 120 of the Constitution (the duty to resist anyone abolishing it "by force").
+/// Every other answer keeps the default guardrails.
+@available(iOS 26.0, macOS 26.0, *)
+func greekLegalAwareOnDeviceModel() -> SystemLanguageModel {
+    GreekLegalAnswerContext.isActive
+        ? SystemLanguageModel(guardrails: .permissiveContentTransformations)
+        : .default
+}

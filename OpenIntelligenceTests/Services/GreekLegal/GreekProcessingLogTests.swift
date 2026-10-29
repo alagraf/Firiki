@@ -64,7 +64,7 @@ struct GreekProcessingLogTests {
         let log = events.map { "\($0.title): \($0.detail ?? "")" }
         #expect(log.contains { $0.hasPrefix("Greek OCR: PaddleOCR PP-OCRv5") }, "\(log)")
         #expect(log.contains { $0.hasPrefix("Greek OCR: PaddleOCR (") && $0.contains("its text kept for") }, "\(log)")
-        #expect(log.contains { $0.hasPrefix("Translation: Opus-MT (opus-mt-grk-en, on device) is translating") }, "\(log)")
+        #expect(log.contains { $0.hasPrefix("Translation: Opus-MT (opus-mt-tc-big-el-en, on device) is translating") }, "\(log)")
         #expect(log.contains { $0.hasPrefix("Translation: Opus-MT translated") }, "\(log)")
     }
 

@@ -16,12 +16,23 @@ fi
 echo "** TEST BUILD SUCCEEDED **"
 run_tests() {
   # Stopping xcodebuild can leave the simulator unable to launch the next run ("Invalid
-  # connectionUUID"), so every run starts from a shut-down simulator.
-  xcrun simctl shutdown all >/dev/null 2>&1
+  # connectionUUID"), and a shutdown can stick in "Shutting Down", where xcodebuild waits for
+  # ever. Every run starts from a device that is booted and has finished booting.
+  local name="${DEST##*name=}"
+  if xcrun simctl list devices | grep -F "$name (" | grep -q "Shutting Down"; then
+    killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1
+    sleep 3
+  fi
+  xcrun simctl bootstatus "$name" -b >/dev/null 2>&1
   xcodebuild test-without-building -scheme OpenIntelligence -destination "$DEST" -derivedDataPath "$DD" "$@" > "$LOG" 2>&1 &
   PID=$!
-  for _ in $(seq 1 1800); do
+  # OI_TEST_TIMEOUT_SECONDS: the longest a run may take (default 30 min; a full-corpus evaluation needs more).
+  for i in $(seq 1 "${OI_TEST_TIMEOUT_SECONDS:-1800}"); do
     if ! kill -0 $PID 2>/dev/null; then break; fi
+    # No test has started 5 minutes after launch: the runner is stuck, stop and let the retry run.
+    if [ "$i" -eq 300 ] && ! grep -qE "Test (Case|Suite)|◇ Test|Test run" "$LOG"; then
+      echo "Test runner hung: no test started in 5 minutes" >> "$LOG"; kill $PID 2>/dev/null; break
+    fi
     if grep -qE "Test run with [0-9]+ tests? .*(passed|failed)" "$LOG"; then sleep 5; kill $PID 2>/dev/null; break; fi
     sleep 1
   done
@@ -29,8 +40,10 @@ run_tests() {
   wait $PID 2>/dev/null
 }
 run_tests "$@"
-if grep -q "Failed to prepare device" "$LOG"; then
-  echo "(simulator failed to launch; retrying once)"
+if grep -qiE "Failed to prepare device|test runner hung" "$LOG"; then
+  echo "(simulator failed to launch; restarting the simulator service and retrying once)"
+  xcrun simctl shutdown all >/dev/null 2>&1
+  killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1
   sleep 5
   run_tests "$@"
 fi

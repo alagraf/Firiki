@@ -4,13 +4,15 @@
 //
 //  Thesis fork, plan stages 4b and F: on-device Greek↔English translation. Apple's Translation
 //  framework has no Greek, so text is translated by Helsinki-NLP's Opus-MT Marian models
-//  (`opus-mt-grk-en`, `opus-mt-en-el`, CC-BY 4.0 / Apache-2.0), exported to ONNX as an encoder and a
-//  decoder-with-LM-head and quantized to INT8 (`scripts/thesis_fetch_translation_models.sh`), run
-//  with ONNX Runtime. Nothing leaves the device.
+//  (`opus-mt-tc-big-el-en`, `opus-mt-tc-big-en-el`, CC-BY 4.0), exported to ONNX as an encoder, a
+//  cross-attention graph and a one-token decoder step with a key/value cache, quantized to INT8
+//  (`scripts/thesis_fetch_translation_models.sh`), run with ONNX Runtime. Nothing leaves the device.
 //
 //  Tokenization is SentencePiece unigram (Viterbi over the source model's pieces and scores), ids
-//  from Marian's shared vocabulary; decoding is greedy, one decoder pass per output token (no
-//  key/value cache: simpler, and sentence-length inputs keep it fast enough for ingestion).
+//  from Marian's shared vocabulary. Decoding is greedy: the encoder runs once, `decoder_cross`
+//  turns its output into each layer's cross-attention keys and values once, and `decoder_step`
+//  reads one token at a time with the keys and values of the tokens before it, so a token costs
+//  one token's work (3.5× faster than re-running the whole prefix, measured on the Constitution).
 //
 //  Legal identifiers never go through the model: `GreekLegalEntityMasker` replaces them with
 //  placeholders first and restores them afterwards.
@@ -22,8 +24,8 @@ import OnnxRuntimeBindings
 #endif
 
 nonisolated enum TranslationDirection: String, Sendable, CaseIterable {
-    case greekToEnglish = "opus-mt-grk-en"
-    case englishToGreek = "opus-mt-en-el"
+    case greekToEnglish = "opus-mt-tc-big-el-en"
+    case englishToGreek = "opus-mt-tc-big-en-el"
 }
 
 // MARK: - SentencePiece unigram tokenizer
@@ -37,6 +39,10 @@ nonisolated struct SentencePieceUnigramTokenizer: Sendable {
     let eosId: Int
     let padId: Int
     let decoderStartId: Int
+    /// Decoder shape, for the key/value cache.
+    let decoderLayers: Int
+    let attentionHeads: Int
+    let headDim: Int
     private let unknownScore: Float
 
     private struct File: Decodable {
@@ -45,6 +51,9 @@ nonisolated struct SentencePieceUnigramTokenizer: Sendable {
             let eos_id: Int
             let unk_id: Int?
             let decoder_start_token_id: Int
+            let decoder_layers: Int?
+            let attention_heads: Int?
+            let head_dim: Int?
         }
         let source_pieces: [[PieceField]]
         let vocab: [String: Int]
@@ -78,6 +87,9 @@ nonisolated struct SentencePieceUnigramTokenizer: Sendable {
         self.eosId = file.meta.eos_id
         self.padId = file.meta.pad_id
         self.decoderStartId = file.meta.decoder_start_token_id
+        self.decoderLayers = file.meta.decoder_layers ?? 6
+        self.attentionHeads = file.meta.attention_heads ?? 8
+        self.headDim = file.meta.head_dim ?? 64
         self.unknownScore = (scores.values.min() ?? -20) - 10
     }
 
@@ -168,7 +180,8 @@ actor LocalNeuralTranslator {
         let tokenizer: SentencePieceUnigramTokenizer
         #if canImport(OnnxRuntimeBindings)
         let encoder: ORTSession
-        let decoder: ORTSession
+        let cross: ORTSession
+        let step: ORTSession
         #endif
     }
 
@@ -187,7 +200,8 @@ actor LocalNeuralTranslator {
     nonisolated static func isAvailable(_ direction: TranslationDirection) -> Bool {
         #if canImport(OnnxRuntimeBindings)
         return resourceURL("\(direction.rawValue)_encoder", "onnx") != nil
-            && resourceURL("\(direction.rawValue)_decoder", "onnx") != nil
+            && resourceURL("\(direction.rawValue)_decoder_cross", "onnx") != nil
+            && resourceURL("\(direction.rawValue)_decoder_step", "onnx") != nil
             && resourceURL("\(direction.rawValue)_tokenizer", "json") != nil
         #else
         return false
@@ -198,7 +212,8 @@ actor LocalNeuralTranslator {
         if let model = models[direction] { return model }
         #if canImport(OnnxRuntimeBindings)
         guard let encoderURL = Self.resourceURL("\(direction.rawValue)_encoder", "onnx"),
-              let decoderURL = Self.resourceURL("\(direction.rawValue)_decoder", "onnx"),
+              let crossURL = Self.resourceURL("\(direction.rawValue)_decoder_cross", "onnx"),
+              let stepURL = Self.resourceURL("\(direction.rawValue)_decoder_step", "onnx"),
               let tokenizerURL = Self.resourceURL("\(direction.rawValue)_tokenizer", "json")
         else { throw TranslatorError.modelsMissing(direction) }
         let env = try self.env ?? ORTEnv(loggingLevel: .warning)
@@ -209,7 +224,8 @@ actor LocalNeuralTranslator {
         let model = Model(
             tokenizer: try SentencePieceUnigramTokenizer(jsonData: Data(contentsOf: tokenizerURL)),
             encoder: try ORTSession(env: env, modelPath: encoderURL.path, sessionOptions: options),
-            decoder: try ORTSession(env: env, modelPath: decoderURL.path, sessionOptions: options)
+            cross: try ORTSession(env: env, modelPath: crossURL.path, sessionOptions: options),
+            step: try ORTSession(env: env, modelPath: stepURL.path, sessionOptions: options)
         )
         models[direction] = model
         Log.info("[Translator] Loaded \(direction.rawValue)", category: .ingestion)
@@ -255,7 +271,11 @@ actor LocalNeuralTranslator {
         guard lines.count > 1 else { return text }
         func isBreak(_ line: String) -> Bool {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Blank lines, "[Part N]" labels, a line that is only a masked identifier (an article
+            // heading such as "Άρθρο 1" once masked) and an article heading stay on their own.
             return trimmed.isEmpty || (trimmed.hasPrefix("[") && trimmed.hasSuffix("]"))
+                || trimmed.range(of: #"^(?:_+\s*)?LEX\s*_?\s*ENT\s*_?\s*\d{1,3}(?:\s*_+)?$"#, options: [.regularExpression, .caseInsensitive]) != nil
+                || LegalCrossReferences.isArticleHeading(trimmed)
         }
         func startsItem(_ line: String) -> Bool {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -364,18 +384,33 @@ actor LocalNeuralTranslator {
             outputNames: ["last_hidden_state"], runOptions: nil
         )
         guard let hidden = encoded["last_hidden_state"] else { throw TranslatorError.unexpectedOutput("encoder") }
-        var output = [model.tokenizer.decoderStartId]
+
+        // Cross-attention keys and values, once per sentence; the step graph reads them by name.
+        let tokenizer = model.tokenizer
+        let layers = 0..<tokenizer.decoderLayers
+        let crossNames = layers.flatMap { ["cross_key_\($0)", "cross_value_\($0)"] }
+        let cross = try model.cross.run(
+            withInputs: ["encoder_hidden_states": hidden], outputNames: Set(crossNames), runOptions: nil)
+        // The self-attention cache starts empty: [1, heads, 0, headDim] per layer.
+        let pastNames = layers.flatMap { ["past_key_\($0)", "past_value_\($0)"] }
+        let presentNames = layers.flatMap { ["present_key_\($0)", "present_value_\($0)"] }
+        var past: [String: ORTValue] = [:]
+        for name in pastNames {
+            past[name] = try Self.emptyCacheTensor(heads: tokenizer.attentionHeads, headDim: tokenizer.headDim)
+        }
+
+        var output = [tokenizer.decoderStartId]
         let maxNew = min(512, ids.count * 2 + 10)
         for _ in 0..<maxNew {
-            let logitsValue = try model.decoder.run(
-                withInputs: [
-                    "decoder_input_ids": try Self.int64Tensor(output),
-                    "encoder_hidden_states": hidden,
-                    "encoder_attention_mask": mask,
-                ],
-                outputNames: ["logits"], runOptions: nil
-            )["logits"]
-            guard let logitsValue else { throw TranslatorError.unexpectedOutput("decoder") }
+            var inputs = cross.merging(past) { first, _ in first }
+            inputs["decoder_input_ids"] = try Self.int64Tensor([output[output.count - 1]])
+            let result = try model.step.run(
+                withInputs: inputs, outputNames: Set(["logits"] + presentNames), runOptions: nil)
+            for (index, name) in presentNames.enumerated() {
+                guard let value = result[name] else { throw TranslatorError.unexpectedOutput("decoder step \(name)") }
+                past[pastNames[index]] = value
+            }
+            guard let logitsValue = result["logits"] else { throw TranslatorError.unexpectedOutput("decoder step logits") }
             let data = try logitsValue.tensorData() as Data
             let next: Int = data.withUnsafeBytes { raw in
                 let logits = raw.bindMemory(to: Float.self)
@@ -397,6 +432,15 @@ actor LocalNeuralTranslator {
     }
 
     #if canImport(OnnxRuntimeBindings)
+    /// A [1, heads, 0, headDim] float tensor: the key/value cache before the first token. The data
+    /// buffer is a few bytes rather than none, as ONNX Runtime wants a buffer at least as large as
+    /// the shape needs (zero here) and a non-null one.
+    private static func emptyCacheTensor(heads: Int, headDim: Int) throws -> ORTValue {
+        try ORTValue(
+            tensorData: NSMutableData(bytes: [Float(0)], length: MemoryLayout<Float>.size), elementType: .float,
+            shape: [1, NSNumber(value: heads), 0, NSNumber(value: headDim)])
+    }
+
     private static func int64Tensor(_ values: [Int]) throws -> ORTValue {
         let int64 = values.map(Int64.init)
         let data = int64.withUnsafeBufferPointer { NSMutableData(bytes: $0.baseAddress, length: $0.count * MemoryLayout<Int64>.size) }
@@ -410,8 +454,26 @@ actor LocalNeuralTranslator {
     /// anchors ("Article 38 [Άρθρο 38]").
     func translateGreekToEnglishPreservingLegalEntities(_ textEl: String) async throws -> (textEn: String, entities: [LegalEntityRecord]) {
         let (masked, entities) = GreekLegalEntityMasker.maskEntities(in: textEl)
-        let translated = try await translate(masked, direction: .greekToEnglish)
-        let restored = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: entities, mode: .bilingualAnchor)
+        // Names: in Greek text the model translates them in context (a pair of capitalized words is
+        // as often "Κοινοβουλευτική Δημοκρατία" as a person), and their ELOT 743 transliteration is
+        // added after the text so the document and a question share one spelling ("Andreas
+        // Zervas"). In a text that is not Greek apart from the names ("Who is Ανδρέας Ζέρβας") the
+        // names stay masked, since the Greek model turns such a text into nonsense.
+        let names = entities.filter { $0.type == .properName }
+        var toTranslate = masked
+        var keptMasked = entities
+        var appendedNames: [LegalEntityRecord] = []
+        if !names.isEmpty, !Self.isWithoutGreek(masked) {
+            toTranslate = GreekLegalEntityMasker.unmaskEntities(in: masked, entities: names, mode: .greekVerbatim)
+            keptMasked = entities.filter { $0.type != .properName }
+            var seen = Set<String>()
+            appendedNames = names.filter { seen.insert($0.canonicalKey).inserted }
+        }
+        let translated = try await translate(toTranslate, direction: .greekToEnglish)
+        var restored = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: keptMasked, mode: .bilingualAnchor)
+        if !appendedNames.isEmpty {
+            restored += "\n(" + appendedNames.prefix(5).map(\.bilingualAnchor).joined(separator: "; ") + ")"
+        }
         return (restored, entities)
     }
 
@@ -420,7 +482,12 @@ actor LocalNeuralTranslator {
     /// back in Greek (the source wording when `entities` has the same key).
     func translateEnglishToGreekPreservingCitations(_ textEn: String, entities: [LegalEntityRecord] = []) async throws -> String {
         let collapsed = GreekLegalEntityMasker.collapseBilingualAnchors(textEn)
-        let (masked, found) = GreekLegalEntityMasker.maskEntities(in: collapsed)
+        let (maskedWithTerms, allFound) = GreekLegalEntityMasker.maskEntities(in: collapsed)
+        // Glossary terms go through the model in English: put back as written, the Greek keeps its
+        // grammar ("για τα κακουργήματα"), which a restored lemma would not.
+        let terms = allFound.filter { $0.type == .legalTerm }
+        let masked = GreekLegalEntityMasker.unmaskEntities(in: maskedWithTerms, entities: terms, mode: .verbatim)
+        let found = allFound.filter { $0.type != .legalTerm }
         var greekByKey: [String: String] = [:]
         for entity in entities where GreekLegalEntityMasker.containsGreek(entity.verbatimEl) {
             greekByKey[entity.canonicalKey] = greekByKey[entity.canonicalKey] ?? entity.verbatimEl

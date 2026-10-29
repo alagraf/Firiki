@@ -182,12 +182,14 @@
 				MLModels/GreekOCR/PP-OCRv5_mobile_det.onnx,
 				MLModels/GreekOCR/el_PP-OCRv5_mobile_rec.onnx,
 				MLModels/GreekOCR/el_dict.txt,
-				MLModels/Translation/opus-mt-grk-en_encoder.onnx,
-				MLModels/Translation/opus-mt-grk-en_decoder.onnx,
-				MLModels/Translation/opus-mt-grk-en_tokenizer.json,
-				MLModels/Translation/opus-mt-en-el_encoder.onnx,
-				MLModels/Translation/opus-mt-en-el_decoder.onnx,
-				MLModels/Translation/opus-mt-en-el_tokenizer.json,
+				MLModels/Translation/opus-mt-tc-big-el-en_encoder.onnx,
+				MLModels/Translation/opus-mt-tc-big-el-en_decoder_cross.onnx,
+				MLModels/Translation/opus-mt-tc-big-el-en_decoder_step.onnx,
+				MLModels/Translation/opus-mt-tc-big-el-en_tokenizer.json,
+				MLModels/Translation/opus-mt-tc-big-en-el_encoder.onnx,
+				MLModels/Translation/opus-mt-tc-big-en-el_decoder_cross.onnx,
+				MLModels/Translation/opus-mt-tc-big-en-el_decoder_step.onnx,
+				MLModels/Translation/opus-mt-tc-big-en-el_tokenizer.json,
 			);
 			target = E0A100072F0F5F5F00AABA0C /* OpenIntelligenceEngine */;
 		};

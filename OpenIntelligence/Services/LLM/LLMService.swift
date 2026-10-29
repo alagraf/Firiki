@@ -889,6 +889,11 @@ struct LLMResponse {
                     break
                 }
             }
+            // Thesis fork: Greek legal answers are deterministic (greedy decoding). At temperature 0.2
+            // the same question was answered, refused or answered differently from run to run.
+            if GreekLegalAnswerContext.isActive && benchmarkSampling == nil {
+                effectiveSampling = .greedy
+            }
             let effectiveTemperature = benchmarkTemperature ?? Double(config.temperature)
 
             if benchmarkSampling != nil || benchmarkTemperature != nil {

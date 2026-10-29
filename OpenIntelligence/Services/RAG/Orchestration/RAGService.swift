@@ -3732,8 +3732,14 @@ class RAGService: ObservableObject {
         leadingCandidateWhole: Bool = false,
         numberByUse: Bool = false
     ) async -> SentenceExtractionResult {
+        // Thesis fork: in Greek legal mode a chosen sentence brings the two after it. A provision's
+        // exception or deadline is usually the next sentence ("In entirely exceptional cases … six
+        // more months", "within three days …"), which shares no word with the question and was
+        // dropped. Read here: the detached task below does not inherit task-local values.
+        let followingUnits = GreekLegalAnswerContext.isActive ? 2 : 0
         let extractionTask = Task.detached(priority: .utility) {
             Self.extractRelevantSentencesOffMain(
+                followingUnits: followingUnits,
                 from: candidates,
                 query: query,
                 maxChars: maxChars,
@@ -3777,6 +3783,7 @@ class RAGService: ObservableObject {
     }
 
     private nonisolated static func extractRelevantSentencesOffMain(
+        followingUnits: Int = 0,
         from candidates: [RetrievedChunk],
         query: String,
         maxChars: Int,
@@ -4009,6 +4016,9 @@ class RAGService: ObservableObject {
             // Split into individual lines first (preserve line order for heading tracking). A
             // sentence wrapped over two lines is joined back so it is scored and kept whole.
             let rawLines = EvidenceLineSplitter.lines(in: content)
+            // Every sentence unit of the passage in order, for `followingUnits`.
+            let allUnits = followingUnits > 0 ? rawLines.flatMap { EvidenceLineSplitter.units(in: $0) } : []
+            var unitIndex = -1
 
             // Track the most recent heading-like line for context inheritance.
             // A "heading" is a short line (≤80 chars) without numbers that acts
@@ -4055,6 +4065,7 @@ class RAGService: ObservableObject {
                     if Task.isCancelled {
                         return .empty
                     }
+                    unitIndex += 1
 
                     guard subLine.count > 5 else { continue }
                     // A line the leading passage already gives, from a neighbouring passage.
@@ -4094,9 +4105,15 @@ class RAGService: ObservableObject {
                         effectiveHeading = ""
                     }
 
+                    // The sentence and, in Greek legal mode, the ones that follow it in the passage.
+                    var unitText = subLine
+                    if followingUnits > 0, unitIndex >= 0, unitIndex < allUnits.count {
+                        let following = allUnits[(unitIndex + 1)..<min(allUnits.count, unitIndex + 1 + followingUnits)]
+                        unitText = ([subLine] + following).joined(separator: " ")
+                    }
                     scoredSentences.append(
                         ScoredSentence(
-                            text: subLine,
+                            text: unitText,
                             headingContext: effectiveHeading,
                             score: totalScore,
                             sourceIndex: chunkIdx,
@@ -11559,16 +11576,23 @@ class RAGService: ObservableObject {
         // in every quality mode, and only a verified answer, translated to Greek, or the Greek
         // abstention message reaches the screen.
         let greekLegal = GreekLegalAnswerContext.applies(to: question)
+        // In Greek mode the whole pipeline (retrieval, prompt, gates, agentic steps) runs on the
+        // English translation, so the model answers in English from English passages and gate E
+        // compares English with English. A Greek question in the prompt made the model answer in
+        // Greek, which the English embedding model can't match to the passages.
+        let questionEn = greekLegal ? await Self.greekQueryTranslation(question) : nil
+        let pipelineQuestion = questionEn ?? question
         // Apple's usage for every model call this answer makes is added up (`AnswerUsageTally`, 5.7) and put in
         // its metadata by `finalizeResponse`.
         let assetRecorder = ModelAssetRecorder()
         let run = {
+            try await GreekLegalAnswerContext.$originalQuestion.withValue(greekLegal ? question : nil) {
             try await GreekLegalAnswerContext.$assetRecorder.withValue(greekLegal ? assetRecorder : nil) {
             try await GreekLegalAnswerContext.$isActive.withValue(greekLegal) {
                 try await AnswerUsageTally.$current.withValue(AnswerUsageTally()) {
                     try await LLMStreamingContext.$handler.withValue(greekLegal ? nil : streamHandler) {
                         try await self.queryInternal(
-                            question,
+                            pipelineQuestion,
                             topK: topK,
                             config: config,
                             containerId: containerId,
@@ -11578,6 +11602,7 @@ class RAGService: ObservableObject {
                         )
                     }
                 }
+            }
             }
             }
         }
@@ -11592,7 +11617,8 @@ class RAGService: ObservableObject {
             Log.warning("[GreekLegal] Query failed, abstaining: \(error.localizedDescription)", category: .pipeline)
             return Self.greekLegalAbstentionResponse(reason: error.localizedDescription)
         }
-        return await reviewGreekLegalAnswer(question: question, response: response, assetIDs: assetRecorder.assetIDs)
+        return await reviewGreekLegalAnswer(
+            question: question, queryEn: pipelineQuestion, response: response, assetIDs: assetRecorder.assetIDs)
     }
 
     nonisolated static func greekLegalAbstentionResponse(reason: String) -> RAGResponse {
@@ -11617,8 +11643,7 @@ class RAGService: ObservableObject {
     }
 
     /// Thesis fork: gates A–I on the English draft, then the Greek translation or the Greek abstention.
-    private func reviewGreekLegalAnswer(question: String, response: RAGResponse, assetIDs: [String]) async -> RAGResponse {
-        let queryEn = await Self.greekQueryTranslation(question) ?? question
+    private func reviewGreekLegalAnswer(question: String, queryEn: String, response: RAGResponse, assetIDs: [String]) async -> RAGResponse {
         let intent = QueryEnhancementService().classifyAnswerIntent(question)
         let reviewed = await GreekLegalAnswerFinalizer.review(
             question: question,
@@ -15090,6 +15115,17 @@ class RAGService: ObservableObject {
 
                 // For procedural queries, preserve document order instead of relevance order
                 // This prevents sequence inversions (e.g., "dry before disinfect" errors)
+                // Thesis fork: a question naming an article gets the passage that holds it first.
+                let candidatesBeforePin = contextCandidates.map(\.chunk.id)
+                contextCandidates = LegalCrossReferences.pinningRequestedArticle(
+                    query: question, candidates: contextCandidates,
+                    pool: cachedAllChunks ?? rerankedChunks.map(\.chunk),
+                    sourceDocument: { self.getDocumentName(for: $0.documentId) }
+                )
+                if contextCandidates.map(\.chunk.id) != candidatesBeforePin {
+                    Log.info("[RAG] Article lookup: passage holding the requested article placed first", category: .retrieval)
+                }
+
                 let orderedCandidates: [RetrievedChunk]
                 if isProceduralQuery {
                     // Sort by document ID then chunk index to preserve original document sequence
@@ -16015,7 +16051,15 @@ class RAGService: ObservableObject {
                     || qualityModeRequiresCitations
                 // System prompt already contains citation and format instructions
                 // Don't add conflicting instructions that cause overly brief responses
-                let promptForGeneration: String = historyContext + question
+                // Thesis fork: in Greek legal mode the model is asked for every number, time limit,
+                // condition and exception the excerpts give: it reported "one year" for pre-trial
+                // detention and left out the six-month extension in the same passage. Only the ones the
+                // excerpts give, and with the excerpts' own names: run 8 answered "the document does not
+                // specify a time limit" and named an invented "Chief of the Armed Forces".
+                let legalInstruction = GreekLegalAnswerContext.isActive
+                    ? "\n\n(Answer in English from the excerpts, using their own words for who or what they name. State every number, time limit, condition and exception that the excerpts give for this question; do not mention ones they do not give.)"
+                    : ""
+                let promptForGeneration: String = historyContext + question + legalInstruction
 
                 // Attempt generation with retry on context-overflow
                 var llmResponse: LLMResponse
@@ -16911,6 +16955,14 @@ class RAGService: ObservableObject {
                                     Log.warning(
                                         "   • Gate \(gateResult.gate.rawValue): \(gateResult.details)",
                                         category: .pipeline)
+                                }
+                                // Thesis fork: in Greek legal mode the rejected draft and its claims are
+                                // logged, so an abstention can be traced to the claim a gate did not find.
+                                if GreekLegalAnswerContext.isActive {
+                                    Log.info("[GreekLegal] Rejected draft: \(llmResponse.text.prefix(600))", category: .pipeline)
+                                    for claim in vr.claimResults where claim.verdict != .supported {
+                                        Log.info("[GreekLegal]   claim \(claim.verdict): \(claim.claim.prefix(200)) (\(claim.details))", category: .pipeline)
+                                    }
                                 }
 
                                 let effectiveThreshold = confidencePolicy.verificationPassThreshold

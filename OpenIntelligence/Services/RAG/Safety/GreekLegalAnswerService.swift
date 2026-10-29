@@ -23,6 +23,9 @@ nonisolated enum GreekLegalAnswerContext {
     /// True while a Greek legal question is being answered.
     @TaskLocal static var isActive = false
 
+    /// The question as the user wrote it (in Greek), while the pipeline runs on its translation.
+    @TaskLocal static var originalQuestion: String?
+
     /// Collects the model asset ids `LLMService` reports while a Greek legal question is answered.
     @TaskLocal static var assetRecorder: ModelAssetRecorder?
 
