@@ -688,6 +688,82 @@ struct GreekLegalVerificationTests {
             query: "How long does maternity leave last in Greece?", chunks: [maternity]) == nil)
     }
 
+    @Test func documentStatuteIsReadFromTheTitlePage() {
+        // Openings as the Simulator's import stored them; the law's "NOMOΣ" has Latin N, O, M, O.
+        #expect(GreekLegalIngestion.documentStatuteKey(opening: """
+            ΕΦΗΜΕΡΙΔΑ
+            ΤΗΣ ΚΥΒΕΡΝΗΣΕΩΣ
+            11 Ιουλίου 2025
+            ΤΕΥΧΟΣ ΠΡΩΤΟ
+            ΠΡΟΕΔΡΙΚΟ ΔΙΑΤΑΓΜΑ ΥΠ’ ΑΡΙΘΜ. 62
+            Κώδικας Εργατικού Δικαίου.
+            1. Την παρ. 6 του άρθρου 67 του ν. 4622/2019
+            """) == "PD:62/2025")
+        #expect(GreekLegalIngestion.documentStatuteKey(opening: """
+            NOMOΣ ΥΠ’ ΑΡΙΘΜ. 5239
+            Δίκαιη Εργασία για Όλους
+            17 Οκτωβρίου 2025
+            """) == "LAW:5239/2025")
+        #expect(GreekLegalIngestion.documentStatuteKey(opening: """
+            27 Μαρτίου 2026
+            ΤΕΥΧΟΣ ΔΕΥΤΕΡΟ
+            ΑΠΟΦΑΣΕΙΣ
+            Αριθμ. 8934
+            Καθορισμός νομοθετημένου κατώτατου μισθού
+            α) Του άρθρου 141Α του Κώδικα Εργατικού Δικαίου (π.δ. 62/2025, Α’ 121)
+            """) == "MD:8934")
+        #expect(GreekLegalIngestion.documentStatuteKey(opening: "ΣΥΝΤΑΓΜΑ\nΤΗΣ\nΕΛΛΑΔΑΣ\nΌπως αναθεωρήθηκε\nμε το Ψήφισμα της 27ης Μαΐου 2008") == "CONST")
+        // A text that only cites statutes is none of them.
+        #expect(GreekLegalIngestion.documentStatuteKey(
+            opening: "Σύμφωνα με το άρθρο 22 του Συντάγματος και τον ν. 4808/2021, ο εργοδότης ...") == nil)
+        let tagged = GreekLegalIngestion.withDocumentStatute([nil, LegalChunkMetadata(sourceLanguage: "el")], opening: "ΝΟΜΟΣ ΥΠ' ΑΡΙΘΜ. 5278")
+        #expect(tagged.map { $0?.documentStatuteKey } == ["LAW:5278", "LAW:5278"])
+        #expect(tagged[1]?.sourceLanguage == "el")
+    }
+
+    static func retrieved(_ text: String, document statute: String?) -> RetrievedChunk {
+        let base = retrieved(text, score: 0.9)
+        var legal = base.chunk.legal ?? LegalChunkMetadata()
+        legal.documentStatuteKey = statute
+        let chunk = DocumentChunk(
+            documentId: UUID(), content: text, embedding: [], metadata: ChunkMetadata(chunkIndex: 0), legal: legal)
+        return RetrievedChunk(chunk: chunk, similarityScore: 0.9, rank: 1, sourceDocument: "law.pdf")
+    }
+
+    @Test func namedStatuteIsRefusedUnlessAPassageComesFromOrCitesIt() {
+        let leave = Self.retrieved(
+            "Article 210: the employee is entitled to annual paid leave of twenty (20) working days.", document: "PD:62/2025")
+        let constitution = "What does Article 16 of the Constitution provide for employees' annual leave?"
+        #expect(GreekLegalAnswerFinalizer.preGenerationAbstentionReason(query: constitution, chunks: [leave])?
+            .contains("the Constitution") == true)
+        // A passage of the Constitution, or one that cites it, answers.
+        let article16 = Self.retrieved("Article 16: education is a basic mission of the State.", document: "CONST")
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: constitution, chunks: [leave, article16]) == nil)
+        let citing = Self.retrieved("Under Article 22 of the Constitution, work is a right.", document: "PD:62/2025")
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: constitution, chunks: [citing]) == nil)
+        // "Constitutional" is not the Constitution; imports without document keys are not judged.
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(
+            query: "Is a dismissal for union membership constitutional?", chunks: [leave]) == nil)
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(
+            query: constitution, chunks: [Self.retrieved(leave.chunk.content, score: 0.9)]) == nil)
+        // A law the passage's document is, with or without the year on either side.
+        let law = Self.retrieved("Article 5: the digital work card applies to all employers.", document: "LAW:5239/2025")
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(
+            query: "What does Article 5 of Law 5239/2025 provide?", chunks: [law]) == nil)
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(
+            query: "What does Article 5 of Law 5278/2026 provide?", chunks: [law]) == "Law 5278/2026")
+        #expect(LegalVerificationPolicy.sameStatute("LAW:5239", "LAW:5239/2025"))
+        #expect(!LegalVerificationPolicy.sameStatute("PD:62/2025", "PD:62/2010"))
+        // Gate I: a passage of the named law counts as that law even when it cites only others.
+        let amending = Self.retrieved(
+            "Article 5 of Law 5239/2025 amends Article 38 [Άρθρο 38] of Law 4808/2021 [Ν. 4808/2021].", document: "LAW:5239/2025")
+        let notCiting = Self.retrieved("Paragraph 2 of Law 4808/2021 [Ν. 4808/2021] is replaced.", document: "LAW:5239/2025")
+        #expect(LegalVerificationPolicy.statutoryIsolationViolation(
+            query: "What does Law 5239/2025 change?", chunks: [notCiting.chunk]) == nil)
+        #expect(LegalVerificationPolicy.statutoryIsolationViolation(
+            query: "What does Law 5239/2025 change?", chunks: [amending.chunk]) == nil)
+    }
+
     @Test func draftThatOpensWithMissingEvidenceIsRefused() async {
         let padded = "### Income tax for employees\n\nThe excerpts do not directly specify an income tax rate for employees. However, **financial tax** is mentioned under Article 285 [S1]."
         #expect(GreekLegalAnswerFinalizer.declaresMissingEvidence(padded))

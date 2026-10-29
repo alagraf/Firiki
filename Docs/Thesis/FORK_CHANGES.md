@@ -1456,6 +1456,42 @@ bullet; the same draft for a question about the father's dismissal protection is
 case 46 passed without the repair firing (the model didn't add the bullet; no "Dropped off-topic"
 line in the logs), so the repair is checked by the unit test only so far.
 
+#### 2.11.25 Every passage knows its document's statute; a question naming another one is refused
+
+**Why:** Labour Code test case 69 asks what Article 16 *of the Constitution* says about annual
+leave. Asked of a Labour Code library, retrieval brings the Code's own articles, and gate I
+(`statutoryIsolationViolation`) couldn't object: it only knew the statutes passages *cite* (`LAW:`,
+`PD:`), and the Constitution has no key at all. Checking for "a passage mentions the Constitution"
+would not do, because most of the Constitution's own articles never name it. The library had to
+know which statute each document is. The same gap affected the five-document library (PoC
+capability 1): a passage of Law 5239/2025 that amends other laws cites only them, so gate I counted
+it as "another statute" for a question about Law 5239.
+
+**What:** at import, `GreekLegalIngestion.documentStatuteKey(opening:)` reads the first 1,500
+characters of a document (its title page) and returns `PD:62/2025` (ΠΡΟΕΔΡΙΚΟ ΔΙΑΤΑΓΜΑ ΥΠ' ΑΡΙΘΜ.
+62), `LAW:5239/2025` (ΝΟΜΟΣ ΥΠ' ΑΡΙΘΜ. 5239, with the Gazette date's year), `MD:8934` (ΑΠΟΦΑΣΕΙΣ
+Αριθμ. 8934) or `CONST` (ΣΥΝΤΑΓΜΑ ΤΗΣ ΕΛΛΑΔΑΣ), after look-alike repair, so the Gazette's "NOMOΣ"
+in Latin letters is read too. Every chunk of the document stores it as
+`LegalChunkMetadata.documentStatuteKey`. Gate I counts it among a passage's statutes, and compares
+keys by kind and number, and by year only when both have one (`sameStatute`). Before generation,
+`unsupportedNamedStatute` refuses a question that names a statute (a law, decree or ministerial
+decision key, or "Constitution"/"Σύνταγμα", not "constitutional") when no retrieved passage comes
+from it or cites it. It applies only when some passage carries a document key (imports since this
+change).
+
+**Files:** `DocumentChunk.swift` (`LegalChunkMetadata.documentStatuteKey`), `GreekLegalIngestion.swift`,
+`RAGService.swift` (one call after the chunks' legal metadata is built), `LegalVerificationPolicy.swift`,
+`GreekLegalAnswerService.swift`; `GreekLegalPipelineTests.swift` (`documentStatuteIsReadFromTheTitlePage`,
+with the openings the Simulator's import stored for the Code, Ν. 5239, Υ.Α. 8934 and the Constitution;
+`namedStatuteIsRefusedUnlessAPassageComesFromOrCitesIt`).
+
+**Verification:** Greek suites `✔ Test run with 77 tests in 15 suites passed`, gate suites
+`Executed 67 tests, with 0 failures` (`/private/tmp/oi-logs/greekunit20.log`). Constitution set,
+reimported: 8 of 10 (8 before; `constitution17`), and no question refused by the new rule. Labour dev
+split, reimported: 38 of 46, refusals 5 of 5 (`labour17`; the last runs scored 35 and 36). No dev
+question names another statute, so the rule didn't fire there; the result is within the usual noise.
+Test case 69 is left for the test-split run.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

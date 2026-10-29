@@ -85,4 +85,41 @@ nonisolated enum GreekLegalIngestion {
         await finish()
         return results
     }
+
+    // MARK: The document's own statute
+
+    /// The statute a document is, read from its title page: "PD:62/2025" (ΠΡΟΕΔΡΙΚΟ ΔΙΑΤΑΓΜΑ ΥΠ'
+    /// ΑΡΙΘΜ. 62), "LAW:5239/2025" (ΝΟΜΟΣ ΥΠ' ΑΡΙΘΜ. 5239), "MD:8934" (ΑΠΟΦΑΣΕΙΣ Αριθμ. 8934),
+    /// "CONST" (ΣΥΝΤΑΓΜΑ ΤΗΣ ΕΛΛΑΔΑΣ), or nil. A law or decree takes the year of the Government
+    /// Gazette's date when the page has one. Only the opening is read, so a statute the preamble
+    /// cites is not taken for the document's own.
+    static func documentStatuteKey(opening text: String) -> String? {
+        let folded = SQLiteFullTextService.greekSearchFold(String(text.prefix(openingLength)))
+        func number(_ pattern: String) -> String? {
+            guard let match = folded.firstMatch(of: try! Regex(pattern)), let value = match.output[1].substring else { return nil }
+            return String(value)
+        }
+        let year = number(#"\b\d{1,2}\s+(?:ιανουαριου|φεβρουαριου|μαρτιου|απριλιου|μαιου|ιουνιου|ιουλιου|αυγουστου|σεπτεμβριου|οκτωβριου|νοεμβριου|δεκεμβριου)\s+((?:19|20)\d\d)\b"#)
+        let withYear = { (key: String) in year.map { key + "/" + $0 } ?? key }
+        if let decree = number(#"προεδρικο\s+διαταγμα\s+υπ'?\s*αριθμ\.?\s*(\d+)"#) { return withYear("PD:" + decree) }
+        if let law = number(#"\bνομοσ\s+υπ'?\s*αριθμ\.?\s*(\d+)"#) { return withYear("LAW:" + law) }
+        if let decision = number(#"\bαποφασ(?:η|εισ)\s+αριθμ\.?\s*(\d+)"#) { return "MD:" + decision }
+        if folded.contains(try! Regex(#"\bσυνταγμα\s+τησ\s+ελλαδασ\b"#)) { return "CONST" }
+        return nil
+    }
+
+    /// Characters of a document's opening that `documentStatuteKey` reads.
+    static let openingLength = 1_500
+
+    /// The chunks' legal metadata with `documentStatuteKey` set to the statute the document's
+    /// opening names; unchanged when it names none. A chunk without metadata gets one carrying
+    /// only the key.
+    static func withDocumentStatute(_ legal: [LegalChunkMetadata?], opening: String) -> [LegalChunkMetadata?] {
+        guard let statute = documentStatuteKey(opening: opening) else { return legal }
+        return legal.map { metadata in
+            var metadata = metadata ?? LegalChunkMetadata()
+            metadata.documentStatuteKey = statute
+            return metadata
+        }
+    }
 }

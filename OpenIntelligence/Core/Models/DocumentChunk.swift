@@ -103,17 +103,22 @@ nonisolated struct LegalChunkMetadata: Codable, Hashable, Sendable {
     var legalEntities: [LegalEntityRecord]
     /// The statute the chunk cites most ("LAW:4808/2021"), for gate I.
     var primaryStatuteKey: String?
+    /// The statute the chunk's document is ("PD:62/2025", "CONST"), read from its title page by
+    /// `GreekLegalIngestion.documentStatuteKey`; nil when the title page names none.
+    var documentStatuteKey: String?
 
     init(
         sourceTextEl: String? = nil,
         sourceLanguage: String = "en",
         legalEntities: [LegalEntityRecord] = [],
-        primaryStatuteKey: String? = nil
+        primaryStatuteKey: String? = nil,
+        documentStatuteKey: String? = nil
     ) {
         self.sourceTextEl = sourceTextEl
         self.sourceLanguage = sourceLanguage
         self.legalEntities = legalEntities
         self.primaryStatuteKey = primaryStatuteKey
+        self.documentStatuteKey = documentStatuteKey
     }
 
     /// The canonical keys of the cited identifiers ("ART:38", "LAW:4808/2021").

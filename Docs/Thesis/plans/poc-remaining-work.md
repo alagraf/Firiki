@@ -79,7 +79,10 @@ To finish:
 4. Accept the fixes if both runs are ≥ 35 and neither case got worse; otherwise find out why first.
 5. Commit as two FORK_CHANGES sections (table rows; gate C off-topic figures).
 
-## 2. A question naming a law the library doesn't hold (Labour test case 69)
+## 2. A question naming a law the library doesn't hold (Labour test case 69) (done: 2.11.25)
+
+**Done 2026-10-30 (FORK_CHANGES 2.11.25):** Constitution 8/10, Labour dev 38/46; test case 69 is
+measured with the next test-split run.
 
 **Problem.** "What does Article 16 of the Constitution say …?" asked of a Labour Code library
 retrieves Labour Code Article 16 and answers from it. Gate I (`statutoryIsolationViolation`) only
@@ -180,6 +183,17 @@ of import plus answers).
   METHODS_SUMMARY record one-document and five-document numbers.
 
 ## 5. Capability 4 (owner priority 2): Routing to 10 labour contract templates
+
+**Status 2026-10-29 23:40: router written, compiles (TEST BUILD SUCCEEDED), not yet run.**
+Templates moved (git mv, staged) to `OpenIntelligence/Resources/LabourContractTemplates/`; they are
+in the app bundle. `OpenIntelligence/Services/Legal/LabourContractTemplateRouter.swift`: a Greek
+prompt is translated by Opus-MT, then Apple's on-device model picks one id or "none" through a
+`DynamicGenerationSchema(anyOf:)` (a one-sentence reason first), with keywords as the fallback.
+Tests: `OpenIntelligenceTests/Services/GreekLegal/LabourContractTemplateRouterTests.swift` (unit
+suite `LabourContractTemplateTests`; opt-in evaluation `LabourContractTemplateRoutingEvaluation`,
+`TEST_RUNNER_OI_TEMPLATE_ROUTING=1`, `_SPLIT=dev|test`). Queued after the statute round:
+`/private/tmp/oi-work/router_round.sh` (log `routing1`). The embedding idea below was replaced by
+the model choice; measure keywords alone as the baseline (the evaluation prints both).
 
 - **Templates: drafted (2026-10-29).** The 10 Greek templates are in
   `Benchmarks/LabourContractTemplates/contracts/`, with a README listing each one's articles. Each is

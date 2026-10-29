@@ -64,6 +64,12 @@ streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
 
+- 2026-10-30 00:30 (Claude Code): committed 2.11.25 (per-document statute key, named-statute
+  refusal; Constitution 8/10, Labour dev 38/46). Owner (00:20): don't fix the remaining dev
+  failures (cases 41, 68: diagnosed in the chat, patch at /private/tmp/oi-work/patch_split_refusal.py,
+  not applied); priority is the template router, then the five-document Q&A, then summary and
+  opinion. Router evaluation running (`routing1`).
+
 - 2026-10-29 23:30 (Claude Code): committed 2.11.23 (table rows) and 2.11.24 (gate C off-topic
   figures); dev 36 and 35 of 46. Committed the data for the five-document Q&A and the template
   routing (`0514b17c`); the five-document harness change is written (compiles), not yet run.

@@ -7463,6 +7463,11 @@ class RAGService: ObservableObject {
             } else {
                 chunkLegal = extractedChunks.map { GreekLegalIngestion.untranslatedMetadata(for: $0.text) }
             }
+            // Thesis fork (2.11.25): every chunk records the statute its document is, from the title page.
+            chunkLegal = GreekLegalIngestion.withDocumentStatute(
+                chunkLegal,
+                opening: String(extractedChunks.prefix(3).map(\.text).joined(separator: "\n").prefix(GreekLegalIngestion.openingLength))
+            )
             try Task.checkCancellation()
             let extractionTime = Date().timeIntervalSince(extractionStartTime)
             // The document's own counts, of its text as it was read (5.7). Summing the passages counted

@@ -109,7 +109,47 @@ nonisolated enum GreekLegalAnswerFinalizer {
         if let country = unsupportedForeignJurisdiction(query: query, chunks: chunks) {
             return "the question is about \(country), which no passage mentions"
         }
+        if let statute = unsupportedNamedStatute(query: query, chunks: chunks) {
+            return "the question names \(statute), which no passage comes from or cites"
+        }
         return nil
+    }
+
+    /// A statute the question names ("Article 16 of the Constitution", "Law 4808/2021", "Ministerial
+    /// Decision 8934") that no passage comes from or cites, or nil when one of them does. Applies
+    /// only when some passage records its document's statute (`documentStatuteKey`, imports since
+    /// 2.11.25): without it, a passage of the named law that doesn't cite its own number can't be
+    /// told from one of another law.
+    static func unsupportedNamedStatute(query: String, chunks: [RetrievedChunk]) -> String? {
+        guard chunks.contains(where: { $0.chunk.legal?.documentStatuteKey != nil }) else { return nil }
+        var requested = GreekLegalEntityMasker.canonicalKeys(in: query)
+            .filter { $0.hasPrefix("LAW:") || $0.hasPrefix("PD:") || $0.hasPrefix("MD:") }
+        if namesConstitution(query) { requested.insert("CONST") }
+        guard !requested.isEmpty else { return nil }
+        let supported = chunks.contains { retrieved in
+            let chunk = retrieved.chunk
+            if requested.contains("CONST"),
+               chunk.legal?.documentStatuteKey == "CONST" || namesConstitution(chunk.content + " " + (chunk.sourceTextEl ?? "")) {
+                return true
+            }
+            let cited = LegalVerificationPolicy.statuteKeys(of: chunk)
+                .union(LegalVerificationPolicy.evidenceKeys([retrieved]).filter { $0.hasPrefix("MD:") })
+            return cited.contains { key in requested.contains { LegalVerificationPolicy.sameStatute(key, $0) } }
+        }
+        return supported ? nil : requested.sorted().first.map(statuteName)
+    }
+
+    /// "Constitution" or "Σύνταγμα(τος)" as a word; "constitutional" doesn't count.
+    static func namesConstitution(_ text: String) -> Bool {
+        text.range(of: #"\bconstitution\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+            || SQLiteFullTextService.greekSearchFold(text).range(of: #"\bσυνταγμα(?:τοσ)?\b"#, options: .regularExpression) != nil
+    }
+
+    private static func statuteName(_ key: String) -> String {
+        if key == "CONST" { return "the Constitution" }
+        let names = ["LAW:": "Law ", "PD:": "Presidential Decree ", "MD:": "Ministerial Decision "]
+        for (prefix, name) in names where key.hasPrefix(prefix) { return name + key.dropFirst(prefix.count) }
+        return key
     }
 
     // MARK: Out-of-scope questions

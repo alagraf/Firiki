@@ -86,6 +86,10 @@ fix that stage in a general way; run again and compare.
   name and page is not counted as a number the answer states. When the number check is the only
   failure, sentences with a figure that share no topic word with the question are dropped and the
   rest is checked again, so an unrelated aside no longer refuses a correct answer.
+- Each imported statute records which statute it is, read from its title page. A question that names
+  a statute (a law, a decree, a ministerial decision, the Constitution) that no retrieved passage
+  comes from or cites is refused before generation, rather than answered from another statute's
+  article with the same number.
 - **Refusal instead of guessing.** A fixed Greek refusal is shown when the evidence is weak, when
   the question is about another country's law that no passage covers, when the draft itself says
   the sources do not answer the question, or when a gate fails.
@@ -124,6 +128,7 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-29 | OCR, 10 pages × clean / scan / photo, share of words found | PaddleOCR 96% / 48% / 96%; Vision 5% |
 | 2026-10-29 | OCR after the boxes follow tilted lines: scans / whole scanned PDF / 13 other tilted pages | 48% → 96% / 62% → 98% / 46% → 88% (untilted 88%) |
 | 2026-10-29 | Labour Code, development (46), excerpt, after table rows and the off-topic figure repair (two runs) | 36 and 35 of 46 (35 before) |
+| 2026-10-29 | Constitution (10) and Labour Code development (46), after the per-document statute check | 8 of 10 (8 before); 38 of 46, refusals 5 of 5 |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
 minutes after the faster translation.
@@ -171,6 +176,7 @@ The set is small (16 questions) and its library tiny (11 passages), so finding t
 the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-29: each statute knows which statute it is; a question naming another one is refused.
 - 2026-10-29: tables keep one row a line; an off-topic figure no longer refuses a correct answer.
 - 2026-10-29: OCR boxes follow tilted lines; scans read like clean pages (checked on other pages).
 - 2026-10-29: OCR measured on scans and photos; faster translation at import, one direction in

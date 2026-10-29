@@ -151,6 +151,7 @@ nonisolated enum LegalVerificationPolicy {
     static func statuteKeys(of chunk: DocumentChunk) -> Set<String> {
         var keys = Set<String>()
         if let primary = chunk.legal?.primaryStatuteKey { keys.insert(primary) }
+        if let document = chunk.legal?.documentStatuteKey { keys.insert(document) }
         let all = (chunk.legal?.canonicalKeys ?? []).union(GreekLegalEntityMasker.canonicalKeys(in: chunk.content))
             .union(chunk.sourceTextEl.map(GreekLegalEntityMasker.canonicalKeys(in:)) ?? [])
         keys.formUnion(all.filter { $0.hasPrefix("LAW:") || $0.hasPrefix("PD:") })
@@ -165,7 +166,16 @@ nonisolated enum LegalVerificationPolicy {
         guard !requested.isEmpty else { return nil }
         let citing = chunks.map(statuteKeys(of:)).filter { !$0.isEmpty }
         guard !citing.isEmpty else { return nil }
-        let anyRequested = citing.contains { !$0.isDisjoint(with: requested) }
+        let anyRequested = citing.contains { keys in keys.contains { key in requested.contains { sameStatute(key, $0) } } }
         return anyRequested ? nil : requested.sorted().first
+    }
+
+    /// Two statute keys name the same statute: the same kind and number, and the same year when
+    /// both have one ("LAW:5239" is "LAW:5239/2025"; "PD:62/2025" is not "PD:62/2010").
+    static func sameStatute(_ first: String, _ second: String) -> Bool {
+        let a = first.split(separator: "/", maxSplits: 1)
+        let b = second.split(separator: "/", maxSplits: 1)
+        guard a.first == b.first else { return false }
+        return a.count < 2 || b.count < 2 || a[1] == b[1]
     }
 }
