@@ -861,6 +861,82 @@ correctly. The owner chose to ship only tc-big in both directions and asked for 
 **Verification:** all Greek suites (32 tests) pass on the iPhone 18 Pro simulator with the cached
 decoder; evaluation runs 5–9 and the full suite: see 2.11.9.
 
+#### 2.11.11 Structure-aware chunking of Greek statutes (plan stage 3)
+
+**Why:** the general chunker cut through provisions, and its overlapping "[Part N]" pieces separated
+an article's paragraphs: Constitution Article 120 §4 (the duty to resist) was three passages after
+its heading, so the question about it (Q10) never got §4 into the prompt, and Article 6 §4's
+exception was split from its rule.
+
+**What changed:**
+- New `GreekLegalStructureChunker` (`Services/Document/Localization/`). A text is a Greek statute
+  when at least 30% of its letters are Greek and it has at least three article headings, each a
+  line of its own ("Άρθρο 5", "Άρθρo 5" with a Latin o is repaired first by
+  `GreekLegalEntityMasker.normalizeGreekText`; a table-of-contents line "Άρθρο 16 Σκοπός" is not
+  one). A heading counts only if text follows it and its number is above the last one, so a
+  correlation table's "Άρθρο 1" after the last article stays text of that article.
+- Each article is cut at its numbered paragraphs ("1. ", "2. ", … in order); every passage is one
+  paragraph (a paragraph under 40 words takes the next with it; one over the word cap, 200 or the
+  configured maximum, is split at sentence ends) and starts with the article's heading line and
+  its title, so it says which article it belongs to and `LegalCrossReferences.articleHeadings`
+  finds it. Section title "Άρθρο N"; section path: the book/part/chapter headings above it.
+- Government Gazette pages: running headers ("ΕΦΗΜΕΡΙΔΑ ΤΗΣ ΚΥΒΕΡΝΗΣΕΩΣ", the issue line
+  "Τεύχος A' 121/11.07.2025", page numbers) are dropped, words broken at a line end ("υπο -" +
+  "χρέωση", "εργα-" + "ζόμενο") joined, and a part/chapter heading at the end of an article is moved
+  to the next article's path.
+- `DocumentProcessor` uses it before the structure-aware and semantic paths when the text is a
+  Greek statute (`makeGreekLegalChunks`: page number from the page text ranges, structure type
+  `legal_provision`); every other document is chunked as before.
+- **Token cap:** the embedding tokenizer counts a Greek word as about four and a half tokens, so in
+  run 10 146 of the 323 passages were over the 430-token cap and `enforceTokenLimitOnChunks` cut
+  them again, without their headings (323 → 582 passages). `makeGreekLegalChunks` now cuts such a
+  passage itself at sentence ends, with the same token counter, every piece keeping the heading
+  and title (`GreekLegalStructureChunker.pieces`); run 11: 700 passages, none cut afterwards
+  (`Token limit enforcement complete: 700→700 chunks, split=0, maxTokens=429/430`).
+- **End of the last article:** with no heading after it, the Constitution's Article 120 §4 ran on
+  into the signatures and resolutions printed after the articles, and in run 11 the answer about
+  §4 was drafted from those ("48 acts", "1204 resolutions"). The last article now ends at a
+  sign-off line ("Αθήνα, 27 Ιουνίου 2008"), a block in capitals ("Ο ΠΡΟΕΔΡΟΣ ΤΗΣ ΒΟΥΛΗΣ") or a
+  table ("Πίνακας …", as after the Labour Code's last article); that text becomes passages of its
+  own with no article.
+- **Numbers to Greek as digits:** in run 9 the English draft for Q2 said "three hundred" and the
+  English→Greek translator wrote "τρία εκατοντάδες". `translateEnglishToGreekPreservingCitations`
+  now turns English cardinal number words from 2 to 999 into digits first
+  (`SpelledNumber.digitsForEnglishNumberWords`: "two-hundred" → "200"; ordinals, "one" and "a
+  second" stay words, and so does a fraction: "two-thirds" became "2-τρίτων" in run 10).
+  `SpelledNumber` moved to its own file in `Localization/`, next to the
+  translator that uses it.
+- `scripts/thesis_run_tests.sh` shuts the simulator down and boots it before every run: twice a
+  run waited for ever at launch with the device "Booted" after the previous run was stopped, and
+  the retry alone did not clear it.
+- `legalMetadataRoundTripsThroughSQLite` compares sets (its `filter` gave an array in random
+  order, so it passed or failed by chance).
+
+**Files:** `GreekLegalStructureChunker.swift` (new), `SpelledNumber.swift` (moved out of
+`LegalVerificationPolicy.swift`), `LocalNeuralTranslator.swift`, `DocumentProcessor.swift`,
+`scripts/thesis_run_tests.sh`, `GreekLegalPipelineTests.swift` (suite "Greek statute chunking",
+`englishNumberWordsBecomeDigitsBeforeTranslation`)
+
+**Verification:** Constitution set, whole app path (iPhone 18 Pro simulator, Apple's on-device
+model, re-import each time):
+
+| Run | Change | Passed | Expected article retrieved | Import |
+|---|---|---|---|---|
+| 9 | before this section (reused library) | 7/10 | 7/10 | – |
+| 10 | structure-aware chunking, digits before translation | 7/10 | 9/10 | 356 s |
+| 11 | + token-cap pieces with headings, fractions stay words | 8/10 | 10/10 | 362 s |
+
+Run 11 (`/private/tmp/oi-logs/eval11.log`): PASS 1–7 and 9; Q2 (200/300) and Q5 (President of the
+Republic) pass now. FAIL Q8: the draft gives the three-fifths and later rounds but not the
+two-thirds of the first round (Article 114 was ranked above Article 32); FAIL Q10: drafted from the
+text after §4, fixed afterwards by the end-of-last-article rule (not yet measured on this set).
+Greek unit suites in the same run: `✔ Test run with 60 tests in 16 suites passed after 1335.952
+seconds` (59 unit tests and the evaluation). Full suite with the end-of-last-article rule
+(`/private/tmp/oi-logs/full11.log`): `Executed 1363 tests, with 8 tests skipped and 7 failures`:
+the 3 Greek-region formatting tests and the same 4 issues in 2 `ShortcutsActionTests` as in 2.11.9
+(the Simulator's saved active library was still the leftover "Syntagma 99C669"; reset to "General"
+in the app's preferences afterwards); Swift Testing `✔ Test run with 62 tests in 18 suites passed`.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

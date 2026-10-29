@@ -23,7 +23,17 @@ run_tests() {
     killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1
     sleep 3
   fi
+  # A runner that was stopped can leave the next launch waiting for ever with the device still
+  # "Booted" (2026-10-29, four times; shutting the device down alone did not clear it, restarting
+  # the simulator service did): every run starts from a fresh service and boot.
+  # The Mac's own testmanagerd can be the stuck end: it is restarted by launchd when needed.
+  xcrun simctl shutdown all >/dev/null 2>&1
+  killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1
+  pkill -x -u "$(id -u)" testmanagerd >/dev/null 2>&1
+  sleep 5
   xcrun simctl bootstatus "$name" -b >/dev/null 2>&1
+  # Launching the app right after the boot finished failed with "No such process" (2026-10-29).
+  sleep 20
   xcodebuild test-without-building -scheme OpenIntelligence -destination "$DEST" -derivedDataPath "$DD" "$@" > "$LOG" 2>&1 &
   PID=$!
   # OI_TEST_TIMEOUT_SECONDS: the longest a run may take (default 30 min; a full-corpus evaluation needs more).
@@ -42,8 +52,10 @@ run_tests() {
 run_tests "$@"
 if grep -qiE "Failed to prepare device|test runner hung" "$LOG"; then
   echo "(simulator failed to launch; restarting the simulator service and retrying once)"
+  # The Mac's own testmanagerd can be the stuck end: it is restarted by launchd when needed.
   xcrun simctl shutdown all >/dev/null 2>&1
   killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1
+  pkill -x -u "$(id -u)" testmanagerd >/dev/null 2>&1
   sleep 5
   run_tests "$@"
 fi

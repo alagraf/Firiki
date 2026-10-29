@@ -114,3 +114,7 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   keyword arm, glossary, following sentences, greedy decoding, number words in gates B/C, tc-big with
   decoder cache. Constitution set: run 1 6/10 → run 9 7/10. Full suite: only the 3 Greek-region
   failures (ShortcutsActionTests failed once on a leftover active library, 13/13 on re-run).
+- 2026-10-29 Plan stage 3, structure-aware chunking of Greek statutes, committed (FORK_CHANGES 2.11.11):
+  GreekLegalStructureChunker (article/paragraph passages with headings, token-cap pieces, Gazette
+  headers, end of last article), digits before Greek translation. Constitution run 11: 8/10,
+  retrieval 10/10, import 362 s. test script restarts the simulator service before every run.

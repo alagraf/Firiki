@@ -1112,6 +1112,17 @@ class DocumentProcessor {
                 totalPages: nil)
             Log.info(
                 "[DocumentProcessor] Created \(processedChunks.count) JSON record passages", category: .ingestion)
+        } else if GreekLegalStructureChunker.applies(to: chunkableText) {
+            // Thesis fork (plan stage 3): a Greek statute is cut along its articles and numbered
+            // paragraphs, each passage starting with its article heading.
+            processedChunks = makeGreekLegalChunks(
+                in: chunkableText, maxWords: min(chunkerConfig.maxSize, 200), pageInfo: pageInfo,
+                documentCategory: documentCategory)
+            emitProgress(
+                stage: "chunking", detail: "✅ Created \(processedChunks.count) article passages", page: nil, totalPages: nil)
+            Log.info(
+                "[DocumentProcessor] Created \(processedChunks.count) Greek legal passages (article and paragraph)",
+                category: .ingestion)
         } else if usedStructuredParsing && !structuredElements.isEmpty {
             // HUD telemetry: Chunking is CPU-intensive NaturalLanguage processing
             Task { @MainActor in
@@ -6579,6 +6590,45 @@ class DocumentProcessor {
     /// Preserves context prefix and section path on each chunk for retrieval coherence.
     /// For tables: repeats the header row at the top of each continuation chunk
     /// so that every chunk has column labels for its numeric values.
+    /// Thesis fork: passages of a Greek statute from `GreekLegalStructureChunker`, with the metadata
+    /// the general chunker's passages get (page from the text ranges, section title "Άρθρο N").
+    private func makeGreekLegalChunks(
+        in text: String, maxWords: Int, pageInfo: PageInfo, documentCategory: DocumentSemanticCategory?
+    ) -> [ProcessedChunk] {
+        // A passage over the embedding token cap is cut here, each piece keeping its heading;
+        // `enforceTokenLimitOnChunks` would cut it without.
+        let passages = GreekLegalStructureChunker.passages(in: text, maxWords: maxWords).flatMap { passage in
+            GreekLegalStructureChunker.pieces(of: passage) { self.countTokens($0) <= Self.safeTokenLimit }.map { piece in
+                GreekLegalStructureChunker.Passage(
+                    text: piece, header: passage.header, article: passage.article, sectionPath: passage.sectionPath,
+                    paragraphs: passage.paragraphs, range: passage.range)
+            }
+        }
+        return passages.enumerated().map { index, passage in
+            let words = passage.text.split(whereSeparator: { $0.isWhitespace }).count
+            let page = pageInfo.pageTextRanges.first { $0.value.contains(passage.range.lowerBound) }?.key
+            let start = text.distance(from: text.startIndex, to: passage.range.lowerBound)
+            let references = GraphIndexService.extractReferenceTargets(from: passage.text)
+            let metadata = ChunkMetadata(
+                chunkIndex: index,
+                startPosition: start,
+                endPosition: start + text.distance(from: passage.range.lowerBound, to: passage.range.upperBound),
+                pageNumber: page,
+                sectionTitle: passage.article,
+                hasNumericData: passage.text.rangeOfCharacter(from: .decimalDigits) != nil,
+                wordCount: words,
+                characterCount: passage.text.count,
+                structureType: "legal_provision",
+                sectionPath: passage.sectionPath.isEmpty ? nil : passage.sectionPath,
+                documentCategory: documentCategory,
+                chunkType: .prose,
+                hasCrossReferences: !references.isEmpty,
+                resolvedReferences: references
+            )
+            return ProcessedChunk(text: passage.text, parentText: nil, metadata: metadata)
+        }
+    }
+
     private func splitOversizedAtomicChunk(
         text: String,
         contextPrefix: String,

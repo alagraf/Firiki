@@ -481,7 +481,8 @@ actor LocalNeuralTranslator {
     /// identifier, identifiers and `[C#]` markers are kept out of the model, and identifiers come
     /// back in Greek (the source wording when `entities` has the same key).
     func translateEnglishToGreekPreservingCitations(_ textEn: String, entities: [LegalEntityRecord] = []) async throws -> String {
-        let collapsed = GreekLegalEntityMasker.collapseBilingualAnchors(textEn)
+        // Numbers in words go to Greek as digits ("three hundred" came back "τρία εκατοντάδες").
+        let collapsed = SpelledNumber.digitsForEnglishNumberWords(GreekLegalEntityMasker.collapseBilingualAnchors(textEn))
         let (maskedWithTerms, allFound) = GreekLegalEntityMasker.maskEntities(in: collapsed)
         // Glossary terms go through the model in English: put back as written, the Greek keeps its
         // grammar ("για τα κακουργήματα"), which a restored lemma would not.

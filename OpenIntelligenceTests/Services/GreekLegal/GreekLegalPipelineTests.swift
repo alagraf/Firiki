@@ -161,7 +161,8 @@ struct BilingualChunkStorageTests {
         #expect(read[chunkId] == metadata)
         #expect(read[chunkId]?.primaryStatuteKey == "LAW:4808/2021")
         // The legal glossary adds "TERM:termination of the employment contract" for the phrase.
-        #expect(read[chunkId]?.canonicalKeys.filter { !$0.hasPrefix("TERM:") } == ["ART:66", "LAW:4808/2021"])
+        // `filter` here is the array one, so the comparison is between sets.
+        #expect(read[chunkId].map { Set($0.canonicalKeys.filter { !$0.hasPrefix("TERM:") }) } == ["ART:66", "LAW:4808/2021"])
 
         await store.deleteChunks(for: documentId)
         #expect(await store.legalChunkMetadata(for: documentId).isEmpty)
@@ -561,6 +562,16 @@ struct GreekLegalVerificationTests {
         #expect(annotate("δύο ή τρεις φορές") == "δύο (2) ή τρεις (3) φορές")
     }
 
+    @Test func englishNumberWordsBecomeDigitsBeforeTranslation() {
+        let digits = SpelledNumber.digitsForEnglishNumberWords
+        #expect(digits("not less than **two-hundred** nor more than **three hundred** [S3]")
+            == "not less than **200** nor more than **300** [S3]")
+        #expect(digits("one hundred and fifty hours a year, five days") == "150 hours a year, 5 days")
+        // Fractions, ordinals, "one" and "a second" stay words.
+        #expect(digits("a two-thirds majority, then three fifths, then one half") == "a two-thirds majority, then three fifths, then one half")
+        #expect(digits("the twenty-fifth year, one month, a second notice") == "the twenty-fifth year, one month, a second notice")
+    }
+
     @Test func gatesBAndCReadNumberWordsInThePassages() async {
         let age = Self.retrieved(
             "Article 55 [Άρθρο 55] 1. A Member of Parliament must have completed the twenty-fifth year of age on the day of the election.",
@@ -852,5 +863,125 @@ struct LegalGlossaryTests {
             .translateEnglishToGreekPreservingCitations("Pre-trial detention may not exceed one year for felonies [S1].")
         #expect(greek.contains("κακουργήματα"), "\(greek)")
         #expect(greek.contains("[S1]"), "\(greek)")
+    }
+}
+
+@Suite("Greek statute chunking")
+struct GreekLegalStructureChunkerTests {
+    /// A Government Gazette page as PDFKit reads it: running headers, words broken at line ends,
+    /// a table of contents, titles under the headings, a part heading between articles, and a
+    /// correlation table after the last article.
+    static let gazette = """
+    ΕΦΗΜΕΡΙΔΑ TΗΣ ΚΥΒΕΡΝΗΣΕΩΣ
+    2866
+    Τεύχος A’ 121/11.07.2025
+    Άρθρο 1 Σύμβαση εργασίας
+    Άρθρο 2 Δοκιμαστική περίοδος - Δόκιμος εργαζόμενος
+    Άρθρο 3 Αμοιβή
+    Άρθρο 1
+    Σύμβαση εργασίας
+    Με τη σύμβαση εργασίας ο εργαζόμενος έχει υπο -
+    χρέωση να παρέχει, για ορισμένο ή αόριστο χρόνο, την
+    εργασία του στον εργοδότη και αυτός να καταβάλλει το
+    συμφωνημένο μισθό.
+    Άρθρο 2
+    Δοκιμαστική περίοδος - Δόκιμος εργαζόμενος
+    1. Ο εργοδότης δύναται να συμφωνήσει με τον εργα-
+    ζόμενο δοκιμαστική περίοδο έως έξι (6) μηνών.
+    ΕΦΗΜΕΡΙΔΑ TΗΣ ΚΥΒΕΡΝΗΣΕΩΣ
+    2867
+    Τεύχος A’ 121/11.07.2025
+    2. Αν ο εργοδότης κρίνει ότι η δοκιμαστική υπηρεσία είναι επιτυχής, ως χρόνος έναρξης της σύμβασης λογίζεται η αρχική ημερομηνία πρόσληψης.
+    3. Η καταγγελία της σύμβασης κατά τη δοκιμαστική περίοδο γίνεται χωρίς προειδοποίηση και χωρίς αποζημίωση.
+    ΜΕΡΟΣ Β’
+    ΙΣΗ ΜΕΤΑΧΕΙΡΙΣΗ ΚΑΙ ΑΞΙΟΠΡΕΠΗΣ ΕΡΓΑΣΙΑ
+    Άρθρο 3
+    Αμοιβή
+    Ο μισθός καταβάλλεται στο τέλος κάθε μήνα, εκτός αν συμφωνηθεί διαφορετικά.
+    Πίνακας κωδικοποιούμενων διατάξεων
+    Άρθρο 1
+    άρθρο 648 Α.Κ.
+    """
+
+    @Test func gazettePagesAreCutByArticleAndParagraph() {
+        #expect(GreekLegalStructureChunker.applies(to: Self.gazette))
+        let passages = GreekLegalStructureChunker.passages(in: Self.gazette, maxWords: 200, minWords: 1)
+        let articles = passages.filter { $0.article != nil }
+        #expect(articles.map(\.article) == ["Άρθρο 1", "Άρθρο 2", "Άρθρο 2", "Άρθρο 2", "Άρθρο 3"])
+        // The table of contents is text before the first article.
+        #expect(passages.first?.article == nil)
+        #expect(passages.filter { $0.article == nil }.contains { $0.text.contains("Άρθρο 2 Δοκιμαστική") })
+        let first = articles[0].text
+        #expect(first.hasPrefix("Άρθρο 1\nΣύμβαση εργασίας\nΜε τη σύμβαση"), "\(first)")
+        #expect(first.contains("έχει υποχρέωση να παρέχει"), "\(first)")
+        // Each paragraph keeps its article's heading, and no running header is left.
+        #expect(articles[1].text == "Άρθρο 2\nΔοκιμαστική περίοδος - Δόκιμος εργαζόμενος\n1. Ο εργοδότης δύναται να συμφωνήσει με τον εργαζόμενο δοκιμαστική περίοδο έως έξι (6) μηνών.")
+        #expect(articles.map(\.paragraphs) == [[], [1], [2], [3], []])
+        #expect(!passages.contains { $0.text.contains("ΕΦΗΜΕΡΙΔΑ") || $0.text.contains("Τεύχος") || $0.text.contains("2867") })
+        // The part heading goes with the next article, not into Article 2's last paragraph.
+        #expect(!articles[3].text.contains("ΜΕΡΟΣ"))
+        #expect(articles[4].sectionPath == ["ΜΕΡΟΣ Β'", "ΙΣΗ ΜΕΤΑΧΕΙΡΙΣΗ ΚΑΙ ΑΞΙΟΠΡΕΠΗΣ ΕΡΓΑΣΙΑ", "Άρθρο 3"])
+        // The correlation table after the last article, with its "Άρθρο 1", is not an article.
+        #expect(!articles[4].text.contains("Πίνακας"))
+        #expect(passages.last?.article == nil && passages.last?.text.contains("άρθρο 648 Α.Κ.") == true)
+        // Every passage is found as its article by the article lookup.
+        for passage in articles {
+            let chunk = DocumentChunk(documentId: UUID(), content: passage.text, embedding: [], metadata: ChunkMetadata(chunkIndex: 0))
+            #expect(LegalCrossReferences.definedArticles(of: chunk).first == "ART:" + passage.article!.dropFirst(6))
+        }
+    }
+
+    @Test func constitutionWithLookAlikeGlyphsKeepsEveryParagraph() {
+        let paragraph4 = "4. Η τήρηση του Συντάγματος επαφίεται στον πατριωτισμό των Ελλήνων, που δικαιούνται και υποχρεούνται να αντιστέκονται με κάθε μέσο εναντίον οποιουδήποτε επιχειρεί να το καταλύσει με τη βία."
+        let text = """
+        Άρθρo 119
+        Η διάταξη ισχύει από τη δημοσίευση του παρόντος Συντάγματος σε όλη την επικράτεια.
+        Άρθρo 120
+        1. Το Σύνταγμα αυτό, που ψηφίστηκε από την Ε' Αναθεωρητική Βουλή των Ελλήνων, υπογράφεται από τον Πρόεδρό της.
+        2. Ο σεβασμός στο Σύνταγμα και τους νόμους που συμφωνούν με αυτό και η αφοσίωση στην Πατρίδα και τη Δημοκρατία αποτελούν θεμελιώδη υποχρέωση όλων των Ελλήνων.
+        3. Ο σφετερισμός, με οποιονδήποτε τρόπο, της λαϊκής κυριαρχίας και των εξουσιών που απορρέουν από αυτή διώκεται.
+        \(paragraph4)
+        Αθήνα, 27 Ιουνίου 2008
+        Ο ΠΡΟΕΔΡΟΣ ΤΗΣ ΒΟΥΛΗΣ
+        ΔΗΜΗΤΡΙΟΣ Γ. ΣΙΟΥΦΑΣ
+        Ψήφισμα της 6ης Μαρτίου 1986 για την αναθεώρηση διατάξεων του Συντάγματος.
+        """
+        let passages = GreekLegalStructureChunker.passages(in: text, maxWords: 40, minWords: 10)
+        let article120 = passages.filter { $0.article == "Άρθρο 120" }
+        #expect(article120.count >= 2)
+        #expect(article120.allSatisfy { $0.text.hasPrefix("Άρθρο 120\n") })
+        let holder = article120.first { $0.paragraphs.contains(4) }
+        #expect(holder?.text.contains(paragraph4) == true, "\(article120.map(\.text))")
+        #expect(passages.map(\.article).compactMap { $0 } .first == "Άρθρο 119")
+        // The signatures and resolutions after the last article are not part of §4.
+        #expect(holder?.text.hasSuffix("με τη βία.") == true, "\(holder?.text ?? "")")
+        #expect(passages.last?.article == nil)
+        #expect(passages.last?.text.contains("Ψήφισμα της 6ης Μαρτίου 1986") == true)
+    }
+
+    @Test func longParagraphIsSplitAtSentenceEnds() {
+        let sentence = "Ο εργοδότης οφείλει να χορηγεί στον εργαζόμενο άδεια με αποδοχές κάθε ημερολογιακό έτος."
+        let pieces = GreekLegalStructureChunker.split(Array(repeating: sentence, count: 6).joined(separator: " "), maxWords: 30)
+        #expect(pieces.count == 3)
+        #expect(pieces.allSatisfy { $0.hasSuffix("έτος.") && $0.split(separator: " ").count <= 30 })
+    }
+
+    @Test func passageOverTheTokenCapIsCutWithItsHeading() throws {
+        let sentence = "Ο εργοδότης οφείλει να χορηγεί στον εργαζόμενο άδεια με αποδοχές κάθε ημερολογιακό έτος."
+        let text = "Άρθρο 221\nΔικαίωμα άδειας με αποδοχές\n1. " + Array(repeating: sentence, count: 8).joined(separator: " ")
+            + "\nΆρθρο 222\nΑποδοχές άδειας\nΚατά τη διάρκεια της άδειας ο εργαζόμενος δικαιούται τις συνήθεις αποδοχές.\nΆρθρο 223\nΕπίδομα άδειας\nΟι εργαζόμενοι δικαιούνται κάθε έτος επίδομα άδειας."
+        let passage = try #require(GreekLegalStructureChunker.passages(in: text).first { $0.article == "Άρθρο 221" })
+        // A stand-in for the token counter: at most 40 words a piece.
+        let pieces = GreekLegalStructureChunker.pieces(of: passage) { $0.split(whereSeparator: \.isWhitespace).count <= 40 }
+        #expect(pieces.count >= 3)
+        #expect(pieces.allSatisfy { $0.hasPrefix("Άρθρο 221\nΔικαίωμα άδειας με αποδοχές\n") && $0.split(whereSeparator: \.isWhitespace).count <= 40 })
+        #expect(pieces.joined().components(separatedBy: "ημερολογιακό έτος.").count - 1 == 8)
+    }
+
+    @Test func otherDocumentsAreLeftToTheGeneralChunker() {
+        #expect(!GreekLegalStructureChunker.applies(to: "Article 1\nThe tenant pays rent.\nArticle 2\nThe landlord repairs.\nArticle 3\nNotice is given."))
+        #expect(!GreekLegalStructureChunker.applies(to: "Η συνταγή για μουσακά.\nΥλικά: μελιτζάνες, κιμάς.\nΒήμα 1. Τηγανίζουμε."))
+        // Only a table of contents: no heading on a line of its own.
+        #expect(!GreekLegalStructureChunker.applies(to: "Άρθρο 1 Σκοπός\nΆρθρο 2 Ορισμοί\nΆρθρο 3 Πεδίο εφαρμογής\nΆρθρο 4 Κυρώσεις"))
     }
 }
