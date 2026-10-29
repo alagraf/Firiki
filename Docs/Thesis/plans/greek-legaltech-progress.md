@@ -138,7 +138,14 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
 - Model errors with the right article in the prompt: run 7 still mixes "18 months"/"18 years"
   (case 34) and drifts off topic (46); consider a smaller context per question.
 - OCR test set from scanned PDFs and photographed pages (the developer: a ΦΕΚ with a text layer
-  mostly tests translation and search, not OCR).
+  mostly tests translation and search, not OCR). **Done 2026-10-29 (FORK_CHANGES 2.11.19):** word
+  recall PaddleOCR 0.96 clean and photo, 0.48 scan; Vision 0.05 (no Greek).
+- **Tilted scans (from the OCR benchmark, 2026-10-29):** PaddleOCR's word recall on scans falls with
+  the page's tilt (0.88 at 0.5°, 0.10 at 1.5°). The detector's boxes are axis-aligned
+  (`GreekPaddleOCRService.dbBoxes`), so tilted lines probably merge into one box. Fix: estimate the
+  skew from the detector's probability map and straighten the page (or crop each line along its
+  angle); confirm the mechanism first, then rerun `GreekOCRBenchmarkTests` (scan recall should
+  approach the clean 0.96) and the Greek unit suites.
 - **EU labour-law holdout evaluation (owner, 2026-10-29) — HOLDOUT, never tune on it.** Folder
   `/Users/alagra/Documents/thesis/rag-tests/` (the app developer's test: `eu_data.json` = 11 articles
   of three EU labour directives in the official English and Greek, 16 questions: 13 answered by the
@@ -164,6 +171,10 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   record the numbers and never change the app, the prompts, the glossary or any threshold because
   of what a holdout answer says. Don't open the questions or answers to diagnose failures. Any
   change made after a holdout run is tuned on the Labour Code dev split only.
+- **Done 2026-10-29 (FORK_CHANGES 2.11.17):** translator memory and faster import, below. One
+  direction loaded at a time and released after import; next token picked with Accelerate (excerpt
+  import 307 → 131 s). Batching was built and measured but not shipped (it changed the
+  translations and the evaluations dropped). More threads: no gain one sentence at a time.
 - Translator memory on the iPhone (owner, 2026-10-29): each translation direction loads three ONNX
   sessions (encoder, cross and step decoder, about 360 MB on disk), and the app keeps both
   directions loaded once used. Next to Apple's model, that could get the app killed on an 8 GB
@@ -182,6 +193,8 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   import time of the 37-page excerpt and the full Labour Code before and after; the Labour Code dev
   split and the Constitution set again, to show answers didn't get worse. The Neural Engine
   (native Core ML conversion) stays a later, device-only step.
+- **Done 2026-10-29 (FORK_CHANGES 2.11.18, 2.11.20):** file names masked, "passage/excerpt" →
+  «απόσπασμα»; gate C no longer reads a file-name source reference as figures.
 - Document names translated as words in Greek answers (owner, 2026-10-29; noticed while reading the
   EU holdout answers, so fix it generally and verify on unit tests and the Labour Code dev split,
   never by rerunning the holdout): the model cites a source by file name ("Article 5 of EU passage

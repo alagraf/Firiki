@@ -1206,6 +1206,135 @@ and of the 3 questions the text doesn't answer:
 
 The grader knew which app wrote each answer (not blind).
 
+#### 2.11.17 Translator: faster next-token pick, one direction loaded and released; batching tried and dropped
+
+**Why:** the full Labour Code took 29 minutes to import in the Simulator, almost all of it
+translation, and both translation directions stayed loaded (about 720 MB) for the rest of the
+session, a risk on an 8 GB iPhone.
+
+**What:**
+- The next token is picked with Accelerate (`vDSP_maxvi`) instead of a Swift loop over the
+  58,829-word vocabulary, which was most of the translation time in Debug builds (the Simulator
+  tests run Debug builds; a Release build optimizes the loop, so the gain on a device is smaller).
+- Only one direction's sessions are loaded at a time, and they are released at the end of an import
+  and on a memory warning (`releaseModels()`; the memory-warning observer in `RAGService`).
+- **Batching, tried and not shipped.** Models exported with a batch axis and an encoder mask on the
+  decoder step (`scripts/thesis/convert_opus_mt_batched.py`) decode the Greek sentences of 256
+  chunks together, sorted by length (`pretranslateGreekChunks`, batch size `importBatchSize`).
+  The app ships the one-sentence models, for which this is a no-op, because:
+  the INT8 activations are quantized per batch, so a batch rewords about a third of its sentences
+  (taking finished sentences out of a batch reworded the others too, and a unit test's sentence
+  ended after half its words); the evaluations dropped with batched import; and the batched step
+  graph was 2.7× slower than the one-sentence graph at batch 1.
+
+**Files:** `LocalNeuralTranslator.swift`, `GreekLegalIngestion.swift`, `RAGService.swift` (memory
+warning), `scripts/thesis/convert_opus_mt_batched.py` (new, experiment), `GreekLegalPipelineTests.swift`
+(`importPretranslatesAndReleasesTheModels`, `importPretranslatesEveryWindowAndFinishesOnce`,
+opt-in `batchedTranslationSpeed`, which needs the batched models).
+
+**Verification:**
+- Import of the 37-page Labour Code excerpt (691 passages, all translated), Simulator, Debug build:
+
+  | Translation | Import |
+  |---|---|
+  | Before (one-sentence models, Swift loop) | 307 s |
+  | **One-sentence models, Accelerate (shipped)** | **131 s** |
+  | Batched models: batch 1 | 347–349 s |
+  | Batched models: batch 4 / 8 / 16 | 274 / 268 / 316 s |
+
+- Translation quality against the uncompressed fp32 model, 160 Labour Code sentences: one at a
+  time chrF 96.6, batches of 16 chrF 95.9 (103 and 102 sentences identical to fp32).
+- Evaluations with batched import (one run each): labour dev split (excerpt) 35 of 46 at batch 16
+  and 34 at batch 4, against 37 one sentence at a time (run 7) and 38 with the batched models at
+  batch 1; Constitution 6 of 10 at batch 4 (article 51's passage no longer retrieved for question 2)
+  against 8 at batch 1 and 9 in runs 12 and 13.
+- Shipped setup, Greek unit suites: `✔ Test run with 70 tests in 15 suites passed`
+  (`greekunit15.log`). Full Labour Code (260 pages, 4,218 passages): import 1757 → 924 s.
+  Evaluations, one run each (`labour11`, `constitution15`, `labourtest3`, `labourfull3`): labour dev
+  35 of 46 (run 7: 37), Constitution 7 of 10 (runs 12, 13: 9), labour test split 16 of 23 on the
+  excerpt (before 14) and 12 of 23 on the full Code (before 11). The passages are translated as
+  before, so these differences come from the model's drafts, which differ between runs (question
+  4's draft cited "[S2]" in Constitution run 13 and "[Άρθρο 6 – syntagma1_1-2.pdf p.23]" here,
+  which gate C refused, as in the batch-1 run; fixed in 2.11.20).
+
+#### 2.11.18 Document names kept as written in Greek answers; "passage" in the glossary
+
+**Why:** the English→Greek translator translated file names cited in an answer as words
+("passage 3-2.txt" → «διόδου 3-2.txt», «πέρασμα 1-2.txt»), and "passage" itself became «δίοδος» or
+«πέρασμα» (a way through). Noticed in the EU holdout's answers; fixed generally (no holdout text
+used) and checked on the Labour Code dev split and unit tests.
+
+**What:** before an answer is translated, the names of the retrieved documents (also without their
+extension when that leaves a number, "passage 3-2") and any other `name.ext` file name are replaced
+with placeholders numbered after the legal identifiers' and put back as written
+(`GreekLegalEntityMasker.maskDocumentNames`, new entity type `DOC`). The glossary renders
+"passage(s)" as «απόσπασμα / αποσπάσματα», which the answer then keeps in the glossary's words
+(2.11.14). The Labour Code text doesn't contain «απόσπασμα», so imports are unchanged.
+
+**Files:** `GreekLegalEntityMasker.swift`, `LocalNeuralTranslator.swift`
+(`translateEnglishToGreekPreservingCitations(_:entities:documentNames:)`), `RAGService.swift`
+(passes the retrieved documents' names), `GreekLegalPipelineTests.swift`
+(`documentNamesAreMaskedAsWritten`, `englishToGreekKeepsDocumentNamesAndSaysPassage`).
+
+**Verification:** both new tests passed in the 70-test run above; the translator test checks that
+"As stated in Article 5 of passage 3-2.txt …" comes back with `passage 3-2.txt` and «απόσπασμα»
+and without «διόδ» or «πέρασμ» (`greekunit15.log`, `✔ Test run with 70 tests in 15 suites passed`).
+"excerpt(s)" was added to the same glossary entries afterwards (2.11.20's test run). Labour dev
+split and Constitution set: see 2.11.17 and 2.11.20; no dev case changed because of this (the
+graded facts are in the Greek answer, and none of the failures involved a file name).
+
+#### 2.11.19 Greek OCR benchmark: clean, scanned and photographed pages
+
+**Why:** the thesis needs a measured answer to how well the app reads Greek legal text from scans
+and phone photos, and which reader does it. (Test set and suite written by Antigravity from the
+plan `Docs/Thesis/plans/ocr-test-set.md`; run, checked and recorded by Claude Code.)
+
+**What:** no app code changed.
+- `scripts/thesis/make_ocr_testset.py` builds `Benchmarks/GreekOCR/` (14.4 MB) from 10 pages of
+  the Labour Code excerpt (Π.Δ. 62/2025): each page clean (200 dpi), as a scan (180 dpi, rotated
+  −1.5° to +1.5°, noise, less contrast) and as a phone photo (perspective, uneven light, blur),
+  with reference texts and an image-only `scan_pages.pdf`; fixed seed. `photos/` takes the owner's
+  own phone photos.
+- Opt-in `GreekOCRBenchmarkTests` (`TEST_RUNNER_OI_OCR_BENCH=1`): Vision alone, PaddleOCR alone
+  and the app's own path on every image (CER, WER, word recall and precision, legal identifier
+  recall, number recall, seconds per page), and a whole import of `scan_pages.pdf`.
+
+**Files:** `scripts/thesis/make_ocr_testset.py`, `Benchmarks/GreekOCR/`,
+`OpenIntelligenceTests/Services/GreekLegal/GreekOCRBenchmarkTests.swift`,
+`Docs/Thesis/plans/ocr-test-set.md`, `Docs/Thesis/plans/ocr-test-set-results.md` (full tables).
+
+**Verification:** `/private/tmp/oi-logs/ocrbench2.log`, `✔ Test run with 2 tests in 1 suite passed
+after 712.972 seconds`. Word recall (10 pages each): Vision 0.05 on every version (it reads no
+Greek); PaddleOCR 0.96 clean, 0.96 photo, 0.48 scan; the app path equals PaddleOCR on all 30 images.
+On scans, recall falls with the page's tilt, 0.88 at 0.5° to 0.10 at 1.5°; the detector's boxes
+are axis-aligned, so tilted lines probably merge (to be confirmed by the fix). Whole import of the
+scanned PDF: 195 Greek passages, word recall 0.62, legal identifier recall 0.69. CER and WER stay
+near 0.73 / 0.85 even where 96% of the words are read, most likely because of the two-column
+reading order, so they are not reported as accuracy. The first run ended with an unexpected app
+exit after page 12's scan (no crash report); the rerun passed.
+
+#### 2.11.20 Gate C: source references by file name are not figures
+
+**Why:** a Constitution draft cited its source as "[Άρθρο 6 – syntagma1_1-2.pdf p.23]", and gate C
+(numeric sanity) counted "syntagma1_1-2.pdf" and "23" as figures the passages don't state, so a
+correct answer was refused (question 4, in two runs). Labour drafts cite "[pd_62_2025_excerpt.pdf,
+p.30]" the same way.
+
+**What:** the numbers an answer states (`NumericValueExtractor.mentions(inAnswer:)`) now leave out
+a bracketed source reference that names a file (with its page), and any file name, as they already
+left out citation labels ("[S2]") and list numbers. App-wide, not only in Greek legal mode.
+
+**Files:** `NumericValueExtractor.swift`, `NumericSanityGateTests.swift`
+(`testSourceReferencesAndFileNamesAreNotNumbersTheAnswerStates`).
+
+**Verification:** `/private/tmp/oi-logs/greekunit16.log`: claim and numeric gate suites `Executed 67
+tests, with 0 failures`, Greek suites `✔ Test run with 70 tests in 15 suites passed`. Constitution
+set (`constitution16`): 8 of 10, question 4 passes (questions 3 and 8 fail as before: a padded
+draft refused by gate B, and the first round's two-thirds left out). Labour dev split (`labour12`):
+35 of 46, as before this change; the failing cases differ from run 7 by 1, 58 and 68 failing and
+34 passing, which are a draft saying the passages don't answer, a figure left out, and an
+abstention case answered (1 and 68 failed in the run before this change as well).
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

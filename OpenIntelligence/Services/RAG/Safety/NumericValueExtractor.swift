@@ -84,8 +84,10 @@ nonisolated enum NumericValueExtractor {
 
     // MARK: - Reading
 
-    /// The numbers an answer states. Citation labels ("[S2]", "[3]") and list numbers at the start
-    /// of a line are not numbers the answer states, and are left out.
+    /// The numbers an answer states. Citation labels ("[S2]", "[3]"), source references that name
+    /// a file ("[Άρθρο 6 – syntagma1_1-2.pdf p.23]", "[pd_62_2025_excerpt.pdf, p.30]"), file names,
+    /// and list numbers at the start of a line are not numbers the answer states, and are left out
+    /// (thesis fork: a draft citing its source by file name and page was refused by gate C).
     static func mentions(inAnswer text: String) -> [Mention] {
         let stripped = strippingAnswerMarkup(text)
         return scan(stripped, forEvidence: false).mentions + spelledAmounts(in: stripped)
@@ -450,6 +452,12 @@ nonisolated enum NumericValueExtractor {
         pattern: #"\d{1,3}(?:,\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?"#)
     private static let citationPattern = try! NSRegularExpression(
         pattern: #"\[\^?[A-Za-z]{0,3}\d+(?:\s*[,;]\s*\^?[A-Za-z]{0,3}\d+)*\]"#)
+    private static let sourceReferencePattern = try! NSRegularExpression(
+        pattern: #"\[[^\[\]\n]{0,120}?\.(?:pdf|txt|md|markdown|rtf|docx?|pages|html?|csv|jpe?g|png|heic)\b[^\[\]\n]{0,40}\]"#,
+        options: [.caseInsensitive])
+    private static let fileNamePattern = try! NSRegularExpression(
+        pattern: #"[\p{L}\p{N}_()\-]+\.(?:pdf|txt|md|markdown|rtf|docx?|pages|html?|csv|jpe?g|png|heic)\b"#,
+        options: [.caseInsensitive])
     private static let listMarkerPattern = try! NSRegularExpression(
         pattern: #"^[ \t]*\d{1,3}[.)][ \t]+"#, options: [.anchorsMatchLines])
     /// A grade code: letters against the first number or leading the run, a hyphen, a bare number.
@@ -481,7 +489,7 @@ nonisolated enum NumericValueExtractor {
 
     private static func strippingAnswerMarkup(_ text: String) -> String {
         var result = text
-        for pattern in [citationPattern, listMarkerPattern] {
+        for pattern in [sourceReferencePattern, citationPattern, fileNamePattern, listMarkerPattern] {
             result = pattern.stringByReplacingMatches(
                 in: result, range: NSRange(result.startIndex..., in: result), withTemplate: " ")
         }

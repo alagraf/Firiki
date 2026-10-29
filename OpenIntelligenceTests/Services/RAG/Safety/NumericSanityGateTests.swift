@@ -231,6 +231,17 @@ final class NumericSanityGateTests: XCTestCase {
         XCTAssertTrue(Numbers.mentions(inAnswer: "No numbers here [S1].").isEmpty)
     }
 
+    /// A draft citing its source by file name and page was refused: "syntagma1_1-2.pdf" and "23"
+    /// were read as figures the passages don't state (Constitution set, question 4).
+    func testSourceReferencesAndFileNamesAreNotNumbersTheAnswerStates() {
+        XCTAssertEqual(
+            supported("The limit is 12 months [Άρθρο 6 – syntagma1_1-2.pdf p.23].", by: ["Η προφυλάκιση δεν μπορεί να υπερβεί τους 12 μήνες."]),
+            [true])
+        XCTAssertTrue(Numbers.mentions(inAnswer: "Leave is set by the Code [pd_62_2025_excerpt.pdf, p.30].").isEmpty)
+        XCTAssertTrue(Numbers.mentions(inAnswer: "See passage 3-2.txt for the rule.").isEmpty)
+        XCTAssertEqual(Numbers.mentions(inAnswer: "It lasts 20 days [S1].").map(\.digits), ["20"])
+    }
+
     func testAMentionReadsBackAsWritten() {
         XCTAssertEqual(
             Numbers.mentions(inAnswer: "about 2.5 billion and Qwen-2.5-3B").map(\.written),

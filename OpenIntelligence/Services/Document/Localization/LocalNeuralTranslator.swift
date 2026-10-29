@@ -14,10 +14,20 @@
 //  reads one token at a time with the keys and values of the tokens before it, so a token costs
 //  one token's work (3.5× faster than re-running the whole prefix, measured on the Constitution).
 //
+//  The next token is picked with Accelerate: a Swift loop over the 58,829-word vocabulary was most
+//  of the import time in Debug builds (Labour Code excerpt 307 s, now 131 s in the Simulator).
+//  Models exported with a batch axis (`scripts/thesis/convert_opus_mt_batched.py`, an experiment)
+//  can decode the sentences of many chunks together (`pretranslateGreekChunks`); the app ships the
+//  one-sentence models, for which that is a no-op: the INT8 activations are quantized per batch,
+//  so a batch rewords about a third of its sentences and the evaluations dropped, and the batched
+//  step graph ran 2.7x slower at batch 1. Only one direction's sessions (about 360 MB) stay loaded,
+//  and none after an import or a memory warning.
+//
 //  Legal identifiers never go through the model: `GreekLegalEntityMasker` replaces them with
 //  placeholders first and restores them afterwards.
 //
 
+import Accelerate
 import Foundation
 #if canImport(OnnxRuntimeBindings)
 import OnnxRuntimeBindings
@@ -183,7 +193,25 @@ actor LocalNeuralTranslator {
         let cross: ORTSession
         let step: ORTSession
         #endif
+        /// The step graph takes `encoder_attention_mask`, i.e. batches of sentences (models exported
+        /// before batching take one sentence at a time).
+        let batched: Bool
     }
+
+    /// Sentences decoded together at import: one, since batches change the translations (see the
+    /// file comment). Kept as a setting for a device test, where batches may pay off.
+    static let importBatchSize = 1
+    /// Batch translation since the last release: sentences, seconds, seconds inside ONNX Runtime.
+    private var batchStats: (sentences: Int, seconds: Double, modelSeconds: Double) = (0, 0, 0)
+    private var modelSeconds = 0.0
+
+    /// Forgets every translated sentence (benchmarks).
+    func clearCache() {
+        cache.removeAll()
+        cacheOrder.removeAll()
+    }
+    /// ONNX Runtime threads per session: one sentence at a time ran as fast with 4 threads as with 2.
+    static let threadCount = 2
 
     #if canImport(OnnxRuntimeBindings)
     private var env: ORTEnv?
@@ -208,8 +236,30 @@ actor LocalNeuralTranslator {
         #endif
     }
 
+    /// Releases the translation sessions (about 360 MB per direction); the next translation loads
+    /// them again (about 0.3 s per direction on an M3). Called after an import and on a memory
+    /// warning.
+    func releaseModels() {
+        if batchStats.sentences > 0 {
+            Log.info(String(format: "[Translator] Batch-translated %d sentences in %.1f s (ONNX Runtime %.1f s)",
+                            batchStats.sentences, batchStats.seconds, batchStats.modelSeconds), category: .ingestion)
+            batchStats = (0, 0, 0)
+        }
+        guard !models.isEmpty else { return }
+        models.removeAll()
+        Log.info("[Translator] Released translation models", category: .ingestion)
+    }
+
+    /// Whether the installed models of `direction` translate batches (exported with
+    /// `encoder_attention_mask`).
+    func takesBatches(_ direction: TranslationDirection) throws -> Bool {
+        try model(direction).batched
+    }
+
     private func model(_ direction: TranslationDirection) throws -> Model {
         if let model = models[direction] { return model }
+        // One direction at a time: a question loads el→en, its answer en→el.
+        models.removeAll()
         #if canImport(OnnxRuntimeBindings)
         guard let encoderURL = Self.resourceURL("\(direction.rawValue)_encoder", "onnx"),
               let crossURL = Self.resourceURL("\(direction.rawValue)_decoder_cross", "onnx"),
@@ -220,12 +270,14 @@ actor LocalNeuralTranslator {
         self.env = env
         let options = try ORTSessionOptions()
         try options.setGraphOptimizationLevel(.all)
-        try options.setIntraOpNumThreads(2)
+        try options.setIntraOpNumThreads(Int32(Self.threadCount))
+        let step = try ORTSession(env: env, modelPath: stepURL.path, sessionOptions: options)
         let model = Model(
             tokenizer: try SentencePieceUnigramTokenizer(jsonData: Data(contentsOf: tokenizerURL)),
             encoder: try ORTSession(env: env, modelPath: encoderURL.path, sessionOptions: options),
             cross: try ORTSession(env: env, modelPath: crossURL.path, sessionOptions: options),
-            step: try ORTSession(env: env, modelPath: stepURL.path, sessionOptions: options)
+            step: step,
+            batched: (try? step.inputNames())?.contains("encoder_attention_mask") ?? false
         )
         models[direction] = model
         Log.info("[Translator] Loaded \(direction.rawValue)", category: .ingestion)
@@ -238,6 +290,15 @@ actor LocalNeuralTranslator {
     // MARK: Plain translation
 
     /// Translates `text` line by line and sentence by sentence, keeping line breaks.
+    /// The segments `translate` sends to the model, in order.
+    static func translatableSegments(_ text: String) -> [String] {
+        reflow(text).components(separatedBy: "\n").flatMap { line -> [String] in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, trimmed.contains(where: \.isLetter) else { return [] }
+            return segments(trimmed)
+        }
+    }
+
     func translate(_ text: String, direction: TranslationDirection) async throws -> String {
         var lines: [String] = []
         for line in Self.reflow(text).components(separatedBy: "\n") {
@@ -327,38 +388,97 @@ actor LocalNeuralTranslator {
         return GreekLegalEntityMasker.greekLetterRatio(unmasked) < 0.3
     }
 
-    private func translateSegment(_ segment: String, direction: TranslationDirection) throws -> String {
-        if direction == .greekToEnglish, Self.isWithoutGreek(segment) { return segment }
-        let key = "\(direction.rawValue)\u{1}\(segment)"
-        if let cached = cache[key] { return cached }
-        let model = try model(direction)
+    private static func cacheKey(_ segment: String, _ direction: TranslationDirection) -> String {
+        "\(direction.rawValue)\u{1}\(segment)"
+    }
+
+    /// The model input of a segment, or nil for a very long sentence, which is translated as its
+    /// comma-separated parts.
+    private static func modelInput(_ segment: String, tokenizer: SentencePieceUnigramTokenizer) -> [Int]? {
         // A chunk can start in mid-sentence. Opus-MT, trained largely on EU proceedings, turns such
         // a fragment into an invented sentence ("The Commission has been able to…"); marked as a
         // continuation with "… " it translates the fragment, and the ellipsis is dropped again.
-        let fragment = Self.isSentenceFragment(segment)
-        var ids = model.tokenizer.encode(fragment ? "… " + segment : segment)
-        var output: String
-        if ids.count > Self.maxSegmentTokens, segment.contains(", ") {
-            // A very long sentence: translate its comma-separated parts.
-            output = try segment.components(separatedBy: ", ")
-                .map { try translateSegment($0, direction: direction) }
-                .joined(separator: ", ")
-        } else {
-            if ids.count > Self.maxSegmentTokens {
-                ids = Array(ids.prefix(Self.maxSegmentTokens - 1)) + [model.tokenizer.eosId]
-            }
-            output = model.tokenizer.decode(try generate(ids: ids, model: model))
-            if fragment {
-                output = output.replacingOccurrences(of: #"^\s*(?:\.\.\.|…)\s*"#, with: "", options: .regularExpression)
-            }
-            output = Self.restoreCitationMarkers(source: segment, translation: output)
+        let ids = tokenizer.encode(isSentenceFragment(segment) ? "… " + segment : segment)
+        guard ids.count > maxSegmentTokens else { return ids }
+        if segment.contains(", ") { return nil }
+        return Array(ids.prefix(maxSegmentTokens - 1)) + [tokenizer.eosId]
+    }
+
+    private static func finished(_ segment: String, tokens: [Int], tokenizer: SentencePieceUnigramTokenizer) -> String {
+        var output = tokenizer.decode(tokens)
+        if isSentenceFragment(segment) {
+            output = output.replacingOccurrences(of: #"^\s*(?:\.\.\.|…)\s*"#, with: "", options: .regularExpression)
         }
+        return restoreCitationMarkers(source: segment, translation: output)
+    }
+
+    private func store(_ output: String, key: String) {
         cache[key] = output
         cacheOrder.append(key)
         if cacheOrder.count > Self.cacheCapacity {
             cache.removeValue(forKey: cacheOrder.removeFirst())
         }
+    }
+
+    private func translateSegment(_ segment: String, direction: TranslationDirection) throws -> String {
+        if direction == .greekToEnglish, Self.isWithoutGreek(segment) { return segment }
+        let key = Self.cacheKey(segment, direction)
+        if let cached = cache[key] { return cached }
+        let model = try model(direction)
+        let output: String
+        if let ids = Self.modelInput(segment, tokenizer: model.tokenizer) {
+            output = Self.finished(segment, tokens: try generate(batch: [ids], model: model)[0], tokenizer: model.tokenizer)
+        } else {
+            // A very long sentence: translate its comma-separated parts.
+            output = try segment.components(separatedBy: ", ")
+                .map { try translateSegment($0, direction: direction) }
+                .joined(separator: ", ")
+        }
+        store(output, key: key)
         return output
+    }
+
+    /// Import: translates the Greek sentences of `texts` (chunks as `translateGreekToEnglish…`
+    /// receives them) in batches into the cache, so the per-chunk calls that follow only assemble
+    /// them. Does nothing with models that take one sentence at a time.
+    func pretranslateGreekChunks(_ texts: [String], batchSize: Int = importBatchSize) {
+        guard let model = try? model(.greekToEnglish), model.batched else { return }
+        let started = Date()
+        modelSeconds = 0
+        var pending: [(segment: String, ids: [Int])] = []
+        var seen = Set<String>()
+        func collect(_ segment: String) {
+            guard !Self.isWithoutGreek(segment), cache[Self.cacheKey(segment, .greekToEnglish)] == nil,
+                  seen.insert(segment).inserted else { return }
+            if let ids = Self.modelInput(segment, tokenizer: model.tokenizer) {
+                pending.append((segment, ids))
+            } else {
+                segment.components(separatedBy: ", ").forEach(collect)
+            }
+        }
+        for text in texts {
+            Self.translatableSegments(Self.greekInput(text).text).forEach(collect)
+        }
+        // Stable by length, so batches pad little and follow the text.
+        let ordered = pending.enumerated().sorted { ($0.element.ids.count, $0.offset) < ($1.element.ids.count, $1.offset) }.map(\.element)
+        var start = 0
+        while start < ordered.count {
+            let batch = Array(ordered[start..<min(start + max(1, batchSize), ordered.count)])
+            start += batch.count
+            do {
+                let tokens = try generate(batch: batch.map(\.ids), model: model)
+                for (item, output) in zip(batch, tokens) {
+                    store(Self.finished(item.segment, tokens: output, tokenizer: model.tokenizer),
+                          key: Self.cacheKey(item.segment, .greekToEnglish))
+                }
+            } catch {
+                // The per-chunk calls translate these one at a time.
+                Log.warning("[Translator] Batch translation failed: \(error.localizedDescription)", category: .ingestion)
+            }
+        }
+        batchStats.sentences += ordered.count
+        batchStats.seconds += Date().timeIntervalSince(started)
+        batchStats.modelSeconds += modelSeconds
     }
 
     /// `[C1]`-style citation markers the model dropped are appended to the translated sentence.
@@ -375,10 +495,25 @@ actor LocalNeuralTranslator {
         return output
     }
 
-    private func generate(ids: [Int], model: Model) throws -> [Int] {
+    /// Greedy decoding of each sentence of `batch` (one sentence unless `model.batched`); shorter
+    /// sentences are padded, and the encoder mask keeps attention off the padding.
+    private func generate(batch: [[Int]], model: Model) throws -> [[Int]] {
         #if canImport(OnnxRuntimeBindings)
-        let inputIds = try Self.int64Tensor(ids)
-        let mask = try Self.int64Tensor([Int](repeating: 1, count: ids.count))
+        let tokenizer = model.tokenizer
+        let rows = batch.count
+        let width = batch.map(\.count).max() ?? 0
+        var flatIds: [Int] = []
+        var flatMask: [Int] = []
+        for ids in batch {
+            flatIds += ids + [Int](repeating: tokenizer.padId, count: width - ids.count)
+            flatMask += [Int](repeating: 1, count: ids.count) + [Int](repeating: 0, count: width - ids.count)
+        }
+        let inputIds = try Self.int64Tensor(flatIds, shape: [rows, width])
+        let mask = try Self.int64Tensor(flatMask, shape: [rows, width])
+        // Time inside ONNX Runtime: the whole decoding less the Swift work after each step.
+        let modelStart = Date()
+        var swiftSeconds = 0.0
+        defer { modelSeconds += Date().timeIntervalSince(modelStart) - swiftSeconds }
         let encoded = try model.encoder.run(
             withInputs: ["input_ids": inputIds, "attention_mask": mask],
             outputNames: ["last_hidden_state"], runOptions: nil
@@ -386,65 +521,79 @@ actor LocalNeuralTranslator {
         guard let hidden = encoded["last_hidden_state"] else { throw TranslatorError.unexpectedOutput("encoder") }
 
         // Cross-attention keys and values, once per sentence; the step graph reads them by name.
-        let tokenizer = model.tokenizer
         let layers = 0..<tokenizer.decoderLayers
         let crossNames = layers.flatMap { ["cross_key_\($0)", "cross_value_\($0)"] }
         let cross = try model.cross.run(
             withInputs: ["encoder_hidden_states": hidden], outputNames: Set(crossNames), runOptions: nil)
-        // The self-attention cache starts empty: [1, heads, 0, headDim] per layer.
+        // The self-attention cache starts empty: [rows, heads, 0, headDim] per layer.
         let pastNames = layers.flatMap { ["past_key_\($0)", "past_value_\($0)"] }
         let presentNames = layers.flatMap { ["present_key_\($0)", "present_value_\($0)"] }
         var past: [String: ORTValue] = [:]
         for name in pastNames {
-            past[name] = try Self.emptyCacheTensor(heads: tokenizer.attentionHeads, headDim: tokenizer.headDim)
+            past[name] = try Self.emptyCacheTensor(rows: rows, heads: tokenizer.attentionHeads, headDim: tokenizer.headDim)
         }
 
-        var output = [tokenizer.decoderStartId]
-        let maxNew = min(512, ids.count * 2 + 10)
-        for _ in 0..<maxNew {
+        var outputs = [[Int]](repeating: [], count: rows)
+        let limits = batch.map { min(512, $0.count * 2 + 10) }
+        var done = [Bool](repeating: false, count: rows)
+        // The batch's rows. Finished sentences stay in the batch, fed padding: taking them out
+        // changes the INT8 activation scales the other sentences are decoded with (a sentence of
+        // the masker test then ended after half its words), so batches are kept to sentences of
+        // about the same length instead (`pretranslateGreekChunks` sorts by length).
+        let active = Array(0..<rows)
+        var last = [Int](repeating: tokenizer.decoderStartId, count: rows)
+        for step in 0..<(limits.max() ?? 0) {
             var inputs = cross.merging(past) { first, _ in first }
-            inputs["decoder_input_ids"] = try Self.int64Tensor([output[output.count - 1]])
+            inputs["decoder_input_ids"] = try Self.int64Tensor(active.map { last[$0] }, shape: [active.count, 1])
+            if model.batched { inputs["encoder_attention_mask"] = mask }
             let result = try model.step.run(
                 withInputs: inputs, outputNames: Set(["logits"] + presentNames), runOptions: nil)
+            let swiftStart = Date()
+            defer { swiftSeconds += Date().timeIntervalSince(swiftStart) }
             for (index, name) in presentNames.enumerated() {
                 guard let value = result[name] else { throw TranslatorError.unexpectedOutput("decoder step \(name)") }
                 past[pastNames[index]] = value
             }
             guard let logitsValue = result["logits"] else { throw TranslatorError.unexpectedOutput("decoder step logits") }
-            let data = try logitsValue.tensorData() as Data
-            let next: Int = data.withUnsafeBytes { raw in
-                let logits = raw.bindMemory(to: Float.self)
-                var best = 0
-                var bestValue = -Float.infinity
-                for (index, value) in logits.enumerated() where index != model.tokenizer.padId && value > bestValue {
-                    best = index
-                    bestValue = value
-                }
-                return best
+            // The best token of each row, never padding (vDSP_maxvi takes the first of equal maxima,
+            // as the loop it replaced did).
+            let logits = try logitsValue.tensorData()
+            let vocabulary = logits.length / MemoryLayout<Float>.size / active.count
+            let scores = logits.mutableBytes.assumingMemoryBound(to: Float.self)
+            for (position, row) in active.enumerated() where !done[row] {
+                let rowScores = scores + position * vocabulary
+                rowScores[tokenizer.padId] = -.infinity
+                var best: Float = 0
+                var index: vDSP_Length = 0
+                vDSP_maxvi(rowScores, 1, &best, &index, vDSP_Length(vocabulary))
+                outputs[row].append(Int(index))
+                last[row] = Int(index)
+                done[row] = Int(index) == tokenizer.eosId || step + 1 >= limits[row]
             }
-            output.append(next)
-            if next == model.tokenizer.eosId { break }
+            // A finished sentence is fed padding until it leaves the batch; its output is complete.
+            for row in active where done[row] { last[row] = tokenizer.padId }
+            if !done.contains(false) { break }
         }
-        return Array(output.dropFirst())
+        return outputs
         #else
         throw TranslatorError.runtimeUnavailable
         #endif
     }
 
     #if canImport(OnnxRuntimeBindings)
-    /// A [1, heads, 0, headDim] float tensor: the key/value cache before the first token. The data
-    /// buffer is a few bytes rather than none, as ONNX Runtime wants a buffer at least as large as
-    /// the shape needs (zero here) and a non-null one.
-    private static func emptyCacheTensor(heads: Int, headDim: Int) throws -> ORTValue {
+    /// A [rows, heads, 0, headDim] float tensor: the key/value cache before the first token. The
+    /// data buffer is a few bytes rather than none, as ONNX Runtime wants a buffer at least as large
+    /// as the shape needs (zero here) and a non-null one.
+    private static func emptyCacheTensor(rows: Int, heads: Int, headDim: Int) throws -> ORTValue {
         try ORTValue(
             tensorData: NSMutableData(bytes: [Float(0)], length: MemoryLayout<Float>.size), elementType: .float,
-            shape: [1, NSNumber(value: heads), 0, NSNumber(value: headDim)])
+            shape: [NSNumber(value: rows), NSNumber(value: heads), 0, NSNumber(value: headDim)])
     }
 
-    private static func int64Tensor(_ values: [Int]) throws -> ORTValue {
+    private static func int64Tensor(_ values: [Int], shape: [Int]) throws -> ORTValue {
         let int64 = values.map(Int64.init)
         let data = int64.withUnsafeBufferPointer { NSMutableData(bytes: $0.baseAddress, length: $0.count * MemoryLayout<Int64>.size) }
-        return try ORTValue(tensorData: data, elementType: .int64, shape: [1, NSNumber(value: values.count)])
+        return try ORTValue(tensorData: data, elementType: .int64, shape: shape.map { NSNumber(value: $0) })
     }
     #endif
 
@@ -453,6 +602,18 @@ actor LocalNeuralTranslator {
     /// Stage 4: mask the legal identifiers, translate el→en, put the identifiers back as bilingual
     /// anchors ("Article 38 [Άρθρο 38]").
     func translateGreekToEnglishPreservingLegalEntities(_ textEl: String) async throws -> (textEn: String, entities: [LegalEntityRecord]) {
+        let input = Self.greekInput(textEl)
+        let translated = try await translate(input.text, direction: .greekToEnglish)
+        var restored = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: input.keptMasked, mode: .bilingualAnchor)
+        if !input.appendedNames.isEmpty {
+            restored += "\n(" + input.appendedNames.prefix(5).map(\.bilingualAnchor).joined(separator: "; ") + ")"
+        }
+        return (restored, input.entities)
+    }
+
+    /// The text the Greek→English model receives for `textEl`, and how its identifiers come back.
+    nonisolated static func greekInput(_ textEl: String)
+        -> (text: String, entities: [LegalEntityRecord], keptMasked: [LegalEntityRecord], appendedNames: [LegalEntityRecord]) {
         let (masked, entities) = GreekLegalEntityMasker.maskEntities(in: textEl)
         // Names: in Greek text the model translates them in context (a pair of capitalized words is
         // as often "Κοινοβουλευτική Δημοκρατία" as a person), and their ELOT 743 transliteration is
@@ -469,12 +630,7 @@ actor LocalNeuralTranslator {
             var seen = Set<String>()
             appendedNames = names.filter { seen.insert($0.canonicalKey).inserted }
         }
-        let translated = try await translate(toTranslate, direction: .greekToEnglish)
-        var restored = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: keptMasked, mode: .bilingualAnchor)
-        if !appendedNames.isEmpty {
-            restored += "\n(" + appendedNames.prefix(5).map(\.bilingualAnchor).joined(separator: "; ") + ")"
-        }
-        return (restored, entities)
+        return (toTranslate, entities, keptMasked, appendedNames)
     }
 
     /// Phase F: translate a verified English answer to Greek. Bilingual anchors collapse to one
@@ -489,13 +645,15 @@ actor LocalNeuralTranslator {
         return s
     }
 
-    func translateEnglishToGreekPreservingCitations(_ textEn: String, entities: [LegalEntityRecord] = []) async throws -> String {
+    func translateEnglishToGreekPreservingCitations(_ textEn: String, entities: [LegalEntityRecord] = [], documentNames: [String] = []) async throws -> String {
         // Numbers in words go to Greek as digits ("three hundred" came back "τρία εκατοντάδες"), and
         // the answer goes as plain text: the translator returned "**δώδεκα (12)** μήνες",
         // "8 (****) εβδομάδες" and "# #" headings from the draft's markdown (labour run 1).
         let collapsed = SpelledNumber.digitsForEnglishNumberWords(
             Self.withoutMarkdown(GreekLegalEntityMasker.collapseBilingualAnchors(textEn)))
-        let (maskedWithTerms, allFound) = GreekLegalEntityMasker.maskEntities(in: collapsed)
+        // File names stay as written: "passage 3-2.txt" came back «διόδου 3-2.txt».
+        let (withoutNames, names) = GreekLegalEntityMasker.maskDocumentNames(in: collapsed, names: documentNames)
+        let (maskedWithTerms, allFound) = GreekLegalEntityMasker.maskEntities(in: withoutNames)
         // Glossary terms go through the model in English: put back as written, the Greek keeps its
         // grammar ("για τα κακουργήματα"), which a restored lemma would not.
         let terms = allFound.filter { $0.type == .legalTerm }
@@ -514,7 +672,8 @@ actor LocalNeuralTranslator {
         }
         let translated = try await translate(masked, direction: .englishToGreek)
         let greek = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: resolved, mode: .greekVerbatim)
-        return await restoringGlossaryGreek(greek, terms: terms)
+        let withTerms = await restoringGlossaryGreek(greek, terms: terms)
+        return GreekLegalEntityMasker.unmaskEntities(in: withTerms, entities: names, mode: .verbatim)
     }
 
     /// The model's renderings of glossary terms, by English term ("serious reason" → «σοβαρός λόγος»).

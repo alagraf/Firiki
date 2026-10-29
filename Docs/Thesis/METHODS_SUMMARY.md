@@ -25,6 +25,10 @@ fix that stage in a general way; run again and compare.
   look-alike letters, as Vision produces for a short Greek stamp). Every OCR path of the import
   (scanned pages, images and stamps inside PDFs, table regions, multi-column layouts) goes through
   this router.
+- **Measured on scans and photos.** A test set of 10 Labour Code pages, each clean, as a simulated
+  scan and as a simulated phone photo: PaddleOCR finds 96% of the words on clean pages and photos,
+  Vision 5% (it reads no Greek). On scans PaddleOCR finds 48%, and the loss grows with the page's
+  tilt (88% at 0.5°, 10% at 1.5°), so straightening a page before OCR is the next step.
 - **Text clean-up.** Unicode normalisation; repair of Latin letters that look Greek (a Latin "A"
   in "ΦΕΚ A'"); quality filters that recognise Greek instead of discarding it as noise; rejoining
   words broken across lines; removal of the Government Gazette's running headers.
@@ -41,7 +45,11 @@ fix that stage in a general way; run again and compare.
   verified answer is translated back to Greek.
 - **Translation models.** Opus-MT (Helsinki-NLP's Greek↔English transformer-big models), converted
   to compact INT8 ONNX models with a key/value cache in the decoder (about 3.5× faster decoding),
-  so whole documents can be translated at import time on the device.
+  so whole documents can be translated at import time on the device. Only one direction is kept
+  in memory, and none after an import. Translating several sentences at once was tried and
+  dropped: with the compressed models it changed the translations and lowered accuracy.
+- **File names kept.** Document names cited in an answer stay as written ("passage 3-2.txt" had
+  become «διόδου 3-2.txt»), and "passage/excerpt" is rendered «απόσπασμα».
 - **Protected legal identifiers.** Laws, decrees, articles, paragraphs, Gazette (ΦΕΚ) references
   and court decisions are recognised by rules, replaced by placeholders before translation and
   restored afterwards, so the translator cannot distort them. Personal names are transliterated
@@ -68,7 +76,8 @@ fix that stage in a general way; run again and compare.
 ## 6. Verification and refusal
 - **Verification gates** check each English draft before it is shown: the evidence supports its
   claims; its numbers (also when the source writes them as words) and its legal citations appear
-  in the retrieved passages; it relies on the law the question names.
+  in the retrieved passages; it relies on the law the question names. A source reference by file
+  name and page is not counted as a number the answer states.
 - **Refusal instead of guessing.** A fixed Greek refusal is shown when the evidence is weak, when
   the question is about another country's law that no passage covers, when the draft itself says
   the sources do not answer the question, or when a gate fails.
@@ -103,8 +112,16 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-29 | Labour Code, test (23), excerpt / full 260-page Code | 14 of 23 / 11 of 23 |
 | 2026-10-29 | Labour Code, development (46), excerpt, after the out-of-scope refusals | 37 of 46; all 5 questions that must be refused were refused |
 | 2026-10-29 | EU holdout (16), Greek passages and Greek questions, graded by hand | original app 0 of 13 in Greek (9 right but in English), 0 of 3 refused; this fork 13 of 13, 3 of 3 refused |
+| 2026-10-29 | After faster translation, file names kept, citation fix: Labour dev / Constitution / Labour test excerpt / full Code | 35 of 46 / 8 of 10 / 16 of 23 / 12 of 23 |
+| 2026-10-29 | OCR, 10 pages × clean / scan / photo, share of words found | PaddleOCR 96% / 48% / 96%; Vision 5% |
 
-Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages).
+Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
+minutes after the faster translation.
+
+The answers vary from run to run: on the same passages, the model's drafts differ (one cites a
+source as "[S2]", another by file name and page), and 2 to 8 of the 46 development questions flip
+between pass and fail across runs. Each figure above is one run, so differences of 2–3 questions
+are within this variation.
 
 ## 9. Known limitations
 - Refusal of off-topic questions has been measured on the development set (5 of 5 refused) but
@@ -114,8 +131,8 @@ Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,21
 - A question naming a different law than the library holds (e.g. "Article 16 of the
   Constitution" in a Labour Code library) is not yet recognised when the article number exists in
   both.
-- OCR quality has so far been measured on rendered pages; scanned PDFs and photographed pages are
-  the next OCR test set.
+- Tilted scans lose half their words in OCR (above); simulated phone photos read well, real phone
+  photos are not yet measured.
 - No device measurements yet (speed, memory, answer quality on an iPhone).
 
 ## Holdout evaluation (before/after)
@@ -140,6 +157,9 @@ The set is small (16 questions) and its library tiny (11 passages), so finding t
 the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-29: OCR measured on scans and photos; faster translation at import, one direction in
+  memory; batch translation tried and dropped; file names kept in Greek answers; source references
+  not read as figures; run-to-run variation noted.
 - 2026-10-29: EU holdout graded by hand (final numbers).
 - 2026-10-29: EU holdout grading corrected for both apps (refusals, English answers to Greek
   questions, a question without expected terms).

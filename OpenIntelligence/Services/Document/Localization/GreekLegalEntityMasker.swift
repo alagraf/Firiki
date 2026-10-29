@@ -23,6 +23,7 @@ nonisolated enum GreekLegalEntityType: String, Codable, Sendable, CaseIterable {
     case euDirective = "EU_DIR"         // Οδηγία (ΕΕ) 2019/1152
     case properName = "NAME"            // Ανδρέας Ζέρβας (two or more capitalized Greek words)
     case legalTerm = "TERM"             // πολίτευμα → "form of government" (GreekLegalGlossary)
+    case documentName = "DOC"           // passage 3-2.txt: a library file's name, kept as written
 }
 
 nonisolated struct LegalEntityRecord: Codable, Hashable, Sendable {
@@ -249,6 +250,10 @@ nonisolated enum GreekLegalEntityMasker {
         // "notice"; "σπουδαίος λόγος" became "good reason".
         ("προειδοποίησ(?:η|ης)", "(?:prior )?notice|warning", "notice", "προειδοποίηση"),
         ("σπουδαί(?:ος|ου|ο) λόγ(?:ος|ου|ο)", "(?:serious|good|important) (?:reason|cause)", "serious reason", "σπουδαίος λόγος"),
+        // Answers that name "the passage" or "excerpt" of the context: the translator wrote
+        // «δίοδος» and «πέρασμα» (a way through).
+        ("απόσπασμ(?:α|ατος)", "passage|excerpt", "passage", "απόσπασμα"),
+        ("αποσπάσματ(?:α|ων)|αποσπασμάτων", "passages|excerpts", "passages", "αποσπάσματα"),
     ]
 
     nonisolated(unsafe) private static let glossaryRules: [Rule] = glossary.map { term in
@@ -417,6 +422,43 @@ nonisolated enum GreekLegalEntityMasker {
 
     static func placeholder(_ index: Int) -> String {
         String(format: "__LEX_ENT_%03d__", index)
+    }
+
+    /// A file name: letters, digits, "_", "-" or "()" ending in a document extension ("report_2024.pdf").
+    private static let fileNamePattern = #"[\p{L}\p{N}_()\-]+\.(?:txt|pdf|md|markdown|rtf|docx?|pages|html?|csv|jpe?g|png|heic)"#
+
+    /// Thesis fork: replaces document names with placeholders numbered from `firstNumber` (after
+    /// any legal identifier's), so the translator leaves them as written: "passage 3-2.txt" came
+    /// back «διόδου 3-2.txt», the file name translated as words. `names` are the library's file
+    /// names (also matched without an extension when that leaves a number, "passage 3-2"); any
+    /// other file name in the text is masked too.
+    static func maskDocumentNames(in text: String, names: [String], firstNumber: Int = 900) -> (maskedText: String, entities: [LegalEntityRecord]) {
+        var known = Set<String>()
+        for name in names {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.count >= 3 else { continue }
+            known.insert(trimmed)
+            let stem = (trimmed as NSString).deletingPathExtension
+            if stem != trimmed, stem.rangeOfCharacter(from: .decimalDigits) != nil { known.insert(stem) }
+        }
+        let alternatives = known.sorted { $0.count > $1.count }.map(NSRegularExpression.escapedPattern(for:)) + [fileNamePattern]
+        let regex = NSRegularExpression.unsafe(start + "(?:" + alternatives.joined(separator: "|") + ")" + end)
+        let ns = text as NSString
+        var output = ""
+        var cursor = 0
+        var entities: [LegalEntityRecord] = []
+        for result in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let name = ns.substring(with: result.range)
+            let id = placeholder(firstNumber + entities.count)
+            output += ns.substring(with: NSRange(location: cursor, length: result.range.location - cursor)) + id
+            cursor = result.range.location + result.range.length
+            entities.append(LegalEntityRecord(
+                id: id, type: .documentName, verbatimEl: name,
+                canonicalEn: name, canonicalEl: name, canonicalKey: "DOC:" + name.lowercased()
+            ))
+        }
+        output += ns.substring(from: cursor)
+        return (output, entities)
     }
 
     /// Replaces every identifier with a numbered placeholder. The text is normalized first.

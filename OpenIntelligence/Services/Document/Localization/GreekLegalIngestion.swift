@@ -29,18 +29,32 @@ nonisolated enum GreekLegalIngestion {
         )
     }
 
+    /// Greek chunks whose sentences are translated together, ahead of the chunks themselves: enough
+    /// that sorting by length gives batches of sentences of about the same length.
+    static let pretranslationWindow = 256
+
     /// One result per text: the English text and the metadata for a Greek chunk, the text itself
     /// and identifier-only metadata (or nil) otherwise. A translation failure keeps the Greek text.
+    /// Every `pretranslationWindow` Greek chunks are first batch-translated by `pretranslate`; the
+    /// translator's sessions are released at the end (`finish`).
     static func translateChunks(
         _ texts: [String],
         translate: (String) async throws -> (textEn: String, entities: [LegalEntityRecord]) = {
             try await LocalNeuralTranslator.shared.translateGreekToEnglishPreservingLegalEntities($0)
-        }
+        },
+        pretranslate: ([String]) async -> Void = { await LocalNeuralTranslator.shared.pretranslateGreekChunks($0) },
+        finish: () async -> Void = { await LocalNeuralTranslator.shared.releaseModels() }
     ) async -> [(text: String, legal: LegalChunkMetadata?)] {
         var results: [(text: String, legal: LegalChunkMetadata?)] = []
         results.reserveCapacity(texts.count)
         var translatedCount = 0
-        for text in texts {
+        let greekIndices = texts.indices.filter { isGreekChunk(texts[$0]) }
+        var windowStarts = Set(stride(from: 0, to: greekIndices.count, by: pretranslationWindow).map { greekIndices[$0] })
+        for (index, text) in texts.enumerated() {
+            if windowStarts.remove(index) != nil, let position = greekIndices.firstIndex(of: index) {
+                let window = greekIndices[position..<min(position + pretranslationWindow, greekIndices.count)]
+                await pretranslate(window.map { GreekLegalEntityMasker.normalizeGreekText(texts[$0]) })
+            }
             guard isGreekChunk(text) else {
                 results.append((text, untranslatedMetadata(for: text)))
                 continue
@@ -68,6 +82,7 @@ nonisolated enum GreekLegalIngestion {
         if translatedCount > 0 {
             Log.info("[GreekIngestion] Translated \(translatedCount)/\(texts.count) Greek chunks to English (Opus-MT)", category: .ingestion)
         }
+        await finish()
         return results
     }
 }

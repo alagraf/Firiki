@@ -22,58 +22,50 @@ changes and to commit and push the thesis branch to `origin`, https://github.com
 - Record every change in `Docs/Thesis/FORK_CHANGES.md`, the 5.7 section of `CHANGELOG.md`, and
   results in `Docs/Thesis/METHODS_SUMMARY.md`; show the test output that proves a claim.
 
-## State (2026-10-29, 13:15)
+## State (2026-10-29, 18:30)
 
-Committed and pushed: everything up to `7ef19654` (EU holdout final, hand-graded; see FORK_CHANGES
-2.11.15–2.11.16).
+Committed and pushed: FORK_CHANGES 2.11.17–2.11.20 (faster translation and translator memory;
+batching tried and dropped; document names kept in Greek answers; OCR benchmark; gate C and file
+names). Nothing in progress.
 
-**Uncommitted, in progress: batched translation and translator memory** (to become FORK_CHANGES
-2.11.17):
-- `LocalNeuralTranslator.swift`: batches of up to 16 sentences at import (`pretranslateGreekChunks`),
-  4 threads, next-token pick with Accelerate (`vDSP_maxvi`), one direction loaded at a time,
-  `releaseModels()` after an import and on a memory warning, batch timing logged.
-- `GreekLegalIngestion.swift`: pretranslates every 32 Greek chunks, releases the models at the end.
-- `RAGService.swift`: memory-warning observer also releases the translator.
-- `scripts/thesis/convert_opus_mt.py`: exports the models with a batch axis and
-  `encoder_attention_mask`. The batched models are installed in
-  `OpenIntelligence/Resources/MLModels/Translation/` (git-ignored); copies: batched
-  `/private/tmp/oi-work/models-batched/`, the previous one-sentence models `/private/tmp/oi-work/models-batch1/`.
-  `scripts/thesis_fetch_translation_models.sh` rebuilds the batched ones.
-- Tests in `GreekLegalPipelineTests.swift`: `importTranslatesInBatchesAndReleasesTheModels`,
-  `importPretranslatesEveryWindowAndFinishesOnce`, opt-in `batchedTranslationSpeed`
-  (`TEST_RUNNER_OI_TRANSLATE_BENCH=1`).
+Translation models: the app ships the **one-sentence** Opus-MT export
+(`scripts/thesis/convert_opus_mt.py`, via `scripts/thesis_fetch_translation_models.sh`).
+`scripts/thesis/convert_opus_mt_batched.py` is the batched experiment; with its models,
+`pretranslateGreekChunks` batches at import (`importBatchSize`, now 1) and the opt-in
+`batchedTranslationSpeed` test runs. Don't install those models for normal work: batches reword
+the INT8 translations and lowered the evaluations (FORK_CHANGES 2.11.17).
 
-Measured so far:
-- Greek unit suites: `✔ Test run with 67 tests in 15 suites passed` (before the Accelerate change).
-- Python (M3, 64 Labour Code sentences): batch 16 at 4 threads 3.7× faster; 4 threads alone no gain.
-- In the app, back to back (`translatebench2.log`): 117 chunks, one sentence at a time 21.3 s,
-  batched 9.3 s (2.3×); ONNX Runtime 8.1 of 8.9 s.
-- Translation quality vs the uncompressed fp32 model (160 sentences): one at a time chrF 96.6,
-  batched chrF 95.9 (identical sentences 103 vs 102).
-- Excerpt import: 307 s with the old models; 579 s with batching BEFORE the Accelerate change (the
-  per-token Swift loop is slow in Debug test builds); being re-timed (`/private/tmp/oi-logs/import_after2.log`).
-- Labour dev split with batching (`labour8.log`): 35/46 (run 7 before: 37/46); 8 cases flipped both
-  ways (3 new passes, 5 new fails: 1, 8, 19, 40, 68), retrieval unchanged 39/41. Looks like
-  wording-driven variation, not worse translation (see quality above), but it is one run.
+Latest numbers (Simulator, one run each; 2–8 of 46 dev cases flip between runs): Labour dev 35 of
+46, Constitution 8 of 10, Labour test 16 of 23 (excerpt) and 12 of 23 (full Code); excerpt import
+131–148 s, full Code 924 s. OCR word recall: PaddleOCR 0.96 clean/photo, 0.48 scan; Vision 0.05.
 
 ## Next, in order
 
-1. Read the import re-timing; then run the Greek unit suites again (list in
-   `/private/tmp/oi-work/greek_suites.txt`, or every suite in `GreekLegalPipelineTests.swift` and
-   `GreekProcessingLogTests.swift`) and the Constitution set (`TEST_RUNNER_OI_GREEK_EVAL=1`, default
-   set). Record 2.11.17 and commit the batched translation (by file name), push.
-2. Run the OCR benchmark Antigravity prepared: `Docs/Thesis/plans/ocr-test-set-results.md` says how
-   (`TEST_RUNNER_OI_OCR_BENCH=1`, suite `GreekOCRBenchmarkTests`). Fill in its results, merge its
-   draft doc text, commit its files (`Benchmarks/GreekOCR/`, `scripts/thesis/make_ocr_testset.py`,
-   the test file, the results file).
-3. Full Labour Code: import time with batching (was 1757 s) and the test split (23) on excerpt and
-   full corpus (`TEST_RUNNER_OI_GREEK_EVAL_SPLIT=test`, `_CORPUS=full`).
-4. The "Next (2026-10-29)" items of `greek-legaltech-progress.md`: document names translated as
-   words (mask file names before English→Greek), wrong-case figures (dev 34, 46), refusal over the
-   full Code, the named-statute mismatch (test case 69). Tune on the dev split only.
-5. Device check on an iPhone (needs the owner).
+1. **Tilted scans** (progress file): PaddleOCR loses words on scans in proportion to the page's
+   tilt; its boxes are axis-aligned (`GreekPaddleOCRService.dbBoxes`). Confirm the mechanism (dump
+   the boxes for a 1.5° page), then deskew or crop along each line's angle; rerun
+   `GreekOCRBenchmarkTests` and the Greek unit suites.
+2. The accuracy items of `greek-legaltech-progress.md` "Next (2026-10-29)": wrong-case figures
+   (dev 34, 46), refusal over the full Code (2 of 3 in `labourfull3`), named-statute mismatch (test
+   case 69). Tune on the dev split only; run it twice before claiming a gain of 1–3 cases.
+3. Device check on an iPhone (needs the owner): import time, memory with one direction loaded,
+   answer quality.
+4. EU holdout: rerun only at the next milestone (evaluation only, AGENTS.md step 5).
 
 ## Log
 
+- 2026-10-29 18:30 (Claude Code): batching settled. Batch 4/8/16 import 274/268/316 s against
+  307 s, but evaluations dropped (Constitution 6 of 10 at batch 4); the batched export at batch 1
+  ran 347 s, while the original models with the Accelerate argmax ran 131 s. Shipped the original
+  models. Added file-name masking, "passage/excerpt" glossary, gate C file-name fix; ran the OCR
+  benchmark (first attempt exited unexpectedly after page 12, the rerun passed). All recorded and
+  committed.
+
+- 2026-10-29 13:40 (Claude Code): excerpt import with batching and the Accelerate fix: 355 s (batch
+  translation 300 s for 964 sentences) against 307 s before, so batches still waste work. Added:
+  finished sentences leave the batch (`rows(_:of:)` copies the remaining rows), and pretranslation
+  sorts over 256 chunks instead of 32. Running `/private/tmp/oi-work/batch_round2.sh` (Greek unit
+  suites, then the excerpt import → `import_after3.log`). Dropping finished rows changed translations (INT8 scales are per batch) and was removed; the 256-chunk sort stays. If batching still isn't faster than 307 s,
+  set `importBatchSize` to 1 or remove the pretranslation call and record why.
 - 2026-10-29 13:15 (Claude Code): file created; batched translation measured in the app (2.3×),
   quality equal; import re-timing running.

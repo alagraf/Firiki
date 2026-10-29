@@ -10,6 +10,7 @@ import CoreGraphics
 import CoreImage
 import CoreText
 import Foundation
+import PDFKit
 import Testing
 
 @testable import OpenIntelligence
@@ -128,6 +129,16 @@ struct GreekLegalEntityMaskerTests {
     @Test func ordinaryWordsAreNotIdentifiers() {
         let text = "Ο εργαζόμενος απολύθηκε από την εργασία του το 2021 χωρίς αποζημίωση 1.200,50 ευρώ."
         #expect(GreekLegalEntityMasker.extractEntities(from: text).isEmpty)
+    }
+
+    @Test func documentNamesAreMaskedAsWritten() {
+        let text = "Article 5 of passage 3-2.txt and passage 1-2 [C1]; see also report_2024.pdf."
+        let (masked, names) = GreekLegalEntityMasker.maskDocumentNames(in: text, names: ["passage 3-2.txt", "passage 1-2.txt"])
+        #expect(names.map(\.verbatimEl) == ["passage 3-2.txt", "passage 1-2", "report_2024.pdf"])
+        #expect(masked == "Article 5 of __LEX_ENT_900__ and __LEX_ENT_901__ [C1]; see also __LEX_ENT_902__.")
+        #expect(GreekLegalEntityMasker.unmaskEntities(in: masked, entities: names, mode: .verbatim) == text)
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "the passage and the passages") == ["TERM:passage", "TERM:passages"])
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: "the excerpts") == ["TERM:passages"])
     }
 
     @Test func primaryStatuteIsTheMostCited() {
@@ -346,6 +357,17 @@ struct GreekTranslationRetrievalTests {
         #expect(GreekLegalEntityMasker.greekLetterRatio(greek) > 0.8, "\(greek)")
     }
 
+    @Test func englishToGreekKeepsDocumentNamesAndSaysPassage() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.englishToGreek))
+        let answer = "As stated in Article 5 of passage 3-2.txt, the employer must give notice in writing [C1]. The passage also sets the severance pay [C2]."
+        let greek = try await LocalNeuralTranslator.shared
+            .translateEnglishToGreekPreservingCitations(answer, documentNames: ["passage 3-2.txt"])
+        #expect(greek.contains("passage 3-2.txt"), "\(greek)")
+        #expect(greek.contains("απόσπασμα"), "\(greek)")
+        #expect(!greek.lowercased().contains("διόδ") && !greek.lowercased().contains("πέρασμ"), "\(greek)")
+        #expect(greek.contains("[C1]") && greek.contains("[C2]"), "\(greek)")
+    }
+
     @Test func bilingualAnchorsCollapse() {
         #expect(GreekLegalEntityMasker.collapseBilingualAnchors("Article 38 [Άρθρο 38] of Law 4808/2021 [Ν. 4808/2021] [C1]")
             == "Article 38 of Law 4808/2021 [C1]")
@@ -409,6 +431,72 @@ struct GreekTranslationRetrievalTests {
         )
         #expect(results.first?.chunk.metadata.chunkIndex == 2, "R@1: \(results.map { $0.chunk.content.prefix(40) })")
         #expect(results.first?.chunk.sourceTextEl?.hasPrefix("Άρθρο 66") == true)
+    }
+
+    @Test func importPretranslatesAndReleasesTheModels() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        let translator = LocalNeuralTranslator.shared
+        // Sentences of all three articles pretranslated (a no-op with the one-sentence models the
+        // app ships), then assembled chunk by chunk.
+        let texts = Self.articles.map { GreekLegalEntityMasker.normalizeGreekText($0) }
+        await translator.pretranslateGreekChunks(texts)
+        for text in texts {
+            let (english, _) = try await translator.translateGreekToEnglishPreservingLegalEntities(text)
+            #expect(english.contains("[Ν. 4808/2021]") && GreekLegalEntityMasker.greekLetterRatio(english) < 0.3, "\(english)")
+        }
+        // Released models load again on the next translation.
+        await translator.releaseModels()
+        let again = try await translator.translate("Ο εργοδότης καταγράφει τις υπερωρίες.", direction: .greekToEnglish)
+        #expect(again.lowercased().contains("overtime"), "\(again)")
+    }
+
+    /// Opt-in (`TEST_RUNNER_OI_TRANSLATE_BENCH=1`): the same Labour Code text translated one
+    /// sentence at a time and in batches, back to back in one process, so both see the same load.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["OI_TRANSLATE_BENCH"] == "1"))
+    func batchedTranslationSpeed() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        try #require(try await LocalNeuralTranslator.shared.takesBatches(.greekToEnglish), "needs models from scripts/thesis/convert_opus_mt_batched.py")
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Benchmarks/GreekLabourCode/pd_62_2025_excerpt.pdf")
+        let pdf = try #require(PDFDocument(url: url))
+        let lines = (2..<min(pdf.pageCount, 8)).compactMap { pdf.page(at: $0)?.string }.joined(separator: "\n")
+            .components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let chunks = stride(from: 0, to: lines.count, by: 6)
+            .map { lines[$0..<min($0 + 6, lines.count)].joined(separator: "\n") }
+            .filter(GreekLegalIngestion.isGreekChunk).map(GreekLegalEntityMasker.normalizeGreekText)
+        let translator = LocalNeuralTranslator.shared
+        _ = try await translator.translate("Ο εργοδότης.", direction: .greekToEnglish)  // loads the model
+        await translator.clearCache()
+        var started = Date()
+        var alone: [String] = []
+        for chunk in chunks { alone.append(try await translator.translateGreekToEnglishPreservingLegalEntities(chunk).textEn) }
+        let aloneSeconds = Date().timeIntervalSince(started)
+        await translator.clearCache()
+        started = Date()
+        await translator.pretranslateGreekChunks(chunks, batchSize: 16)
+        var batched: [String] = []
+        for chunk in chunks { batched.append(try await translator.translateGreekToEnglishPreservingLegalEntities(chunk).textEn) }
+        let batchedSeconds = Date().timeIntervalSince(started)
+        await translator.releaseModels()
+        let same = zip(alone, batched).filter { $0 == $1 }.count
+        print(String(format: "[TranslateBench] %d chunks: one sentence at a time %.1f s, batched %.1f s (%.1fx), identical chunks %d", chunks.count, aloneSeconds, batchedSeconds, aloneSeconds / batchedSeconds, same))
+        #expect(batched.allSatisfy { GreekLegalEntityMasker.greekLetterRatio($0) < 0.3 })
+    }
+
+    @Test func importPretranslatesEveryWindowAndFinishesOnce() async {
+        let greek = "Ο εργοδότης καταγράφει τις υπερωρίες στο ψηφιακό σύστημα."
+        let texts = (0..<330).map { $0 % 10 == 0 ? "An English line \($0)." : greek + " \($0)" }
+        var windows: [Int] = []
+        var finished = 0
+        let results = await GreekLegalIngestion.translateChunks(
+            texts,
+            translate: { (textEn: "Translated: " + $0, entities: []) },
+            pretranslate: { windows.append($0.count) },
+            finish: { finished += 1 })
+        #expect(windows == [256, 41])  // 297 Greek chunks
+        #expect(finished == 1)
+        #expect(results.count == 330 && results[0].text == "An English line 0." && results[1].text.hasPrefix("Translated: "))
     }
 
     @Test func articleReferencesResolveToTheArticle() {

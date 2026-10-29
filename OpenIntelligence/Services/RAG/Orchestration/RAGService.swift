@@ -2416,6 +2416,8 @@ class RAGService: ObservableObject {
                     object: nil,
                     queue: .main
                 ) { [weak self] _ in
+                    // Thesis fork: the translation sessions hold about 360 MB per direction.
+                    Task { await LocalNeuralTranslator.shared.releaseModels() }
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         let count = self.corpusVocabularyCache.count
@@ -11658,7 +11660,9 @@ class RAGService: ObservableObject {
             },
             translate: { draft, entities in
                 guard LocalNeuralTranslator.isAvailable(.englishToGreek) else { return draft }
-                return try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations(draft, entities: entities)
+                return try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations(
+                    draft, entities: entities, documentNames: response.retrievedChunks.map(\.sourceDocument)
+                )
             },
             assetIDs: assetIDs
         )
