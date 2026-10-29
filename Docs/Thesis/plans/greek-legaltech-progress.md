@@ -182,4 +182,11 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   import time of the 37-page excerpt and the full Labour Code before and after; the Labour Code dev
   split and the Constitution set again, to show answers didn't get worse. The Neural Engine
   (native Core ML conversion) stays a later, device-only step.
+- Document names translated as words in Greek answers (owner, 2026-10-29; noticed while reading the
+  EU holdout answers, so fix it generally and verify on unit tests and the Labour Code dev split,
+  never by rerunning the holdout): the model cites a source by file name ("Article 5 of EU passage
+  3-2.txt") and the English→Greek translator renders the name as text («της διόδου 3-2.txt»,
+  «στο πέρασμα 1-2.txt»: "passage" as a corridor or crossing). Fix: mask document names (the
+  library's file names, and any token ending in a file extension) before translation and restore
+  them verbatim; add "passage"/"excerpt" → «απόσπασμα» to the glossary.
 - Device check of all of this on the M3 Mac / iPhone (only the Simulator was used).
