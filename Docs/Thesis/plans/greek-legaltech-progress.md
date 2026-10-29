@@ -101,13 +101,15 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   Greek-region failures; 33 Greek Swift tests pass.
 - 2026-10-29 EU holdout measured (FORK_CHANGES 2.11.15): Greek passages + Greek questions, original
   app 5/13 and 0/3 refused, fork 13/13 and 3/3. Harness committed; data stays in rag-tests.
+- 2026-10-29 Owner removed two items from the list: Greek translation for PDFs over 10 MB (the
+  streamed import path, `importLargePDFStreamed`, still has none) and measuring OCR on real phone
+  photos and scans. Don't add them back unless the owner asks. The decoder KV cache item was
+  removed as done (`decoder_step` in `LocalNeuralTranslator`).
 
 ## Next (outside the plan's checklist)
 - Device check (M3 Mac / iPhone): import a Greek PDF and a scan, ask Greek questions in each quality
   mode, read `[OCRBenchmark]`, `[GreekLegal] Review`, `[ModelAsset]` logs; calibrate the 0.20/0.30 and
   0.5 thresholds.
-- Hook Greek translation into `importLargePDFStreamed` (PDFs > 10 MB).
-- Decoder KV cache for faster ingestion translation.
 - 2026-10-28 Review UI: GreekLegalReviewCard under Response Details (gates, English draft, asset ids); committed.
 - Owner reports the app partly works on device; improvements and bug fixes come next.
 - 2026-10-28 Fix (FORK_CHANGES 2.11.7): Greek name questions; names transliterated, reflow, fragments, gate A only for legal questions. Note: documents imported before this fix must be re-imported to get the new translations.
@@ -145,7 +147,13 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   (`GreekPaddleOCRService.dbBoxes`), so tilted lines probably merge into one box. Fix: estimate the
   skew from the detector's probability map and straighten the page (or crop each line along its
   angle); confirm the mechanism first, then rerun `GreekOCRBenchmarkTests` (scan recall should
-  approach the clean 0.96) and the Greek unit suites.
+  approach the clean 0.96) and the Greek unit suites. **Done 2026-10-29 (FORK_CHANGES 2.11.22):**
+  confirmed (the boxes of tilted lines were up to twice a line's height and took in neighbouring
+  lines); boxes now follow each line's angle. Benchmark scans 0.48 → 0.96, whole scanned import 0.62 → 0.98; 13 other
+  pages (`scripts/thesis/ocr_tilt_check.py`) 0.46 → 0.88, the same as untilted.
+- Constitution pages read worse than Labour Code pages even untilted (word recall 0.61–0.79 against
+  0.95–0.97 in `ocr_tilt_check.py`; seen 2026-10-29, not investigated). Check what the misses are
+  (reference text from the PDF's text layer, layout, accents) before calling it an OCR problem.
 - **EU labour-law holdout evaluation (owner, 2026-10-29) — HOLDOUT, never tune on it.** Folder
   `/Users/alagra/Documents/thesis/rag-tests/` (the app developer's test: `eu_data.json` = 11 articles
   of three EU labour directives in the official English and Greek, 16 questions: 13 answered by the
@@ -203,3 +211,31 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   library's file names, and any token ending in a file extension) before translation and restore
   them verbatim; add "passage"/"excerpt" → «απόσπασμα» to the glossary.
 - Device check of all of this on the M3 Mac / iPhone (only the Simulator was used).
+
+## PoC capabilities (owner, 2026-10-29)
+
+Finish the open items above first (tilted-scan commit, wrong-case figures, named-law mismatch,
+full-Code refusals; iPhone check with the owner; holdout last). Then, one capability at a time:
+implement, test, commit, and only then start the next.
+
+1. **Document Q&A, one document then five.** Optimise Q&A over a single document (the Labour Code
+   dev split already measures this), then scale retrieval and the model's context to five
+   documents imported together. Five documents: public Greek **labour** laws (owner's choice; all
+   five must be labour law, so not the Constitution). The Labour Code (Π.Δ. 62/2025) is in
+   `Benchmarks/`; the other four are labour statutes not already codified in it, downloaded from
+   official sources only after the owner approves each file (name, source, size). New question set for the
+   five-document library, with a dev and a test split, written from the statutes; tune on dev only.
+2. **Summarisation of one legal document.** A complete summary of one statute (structure, main
+   rules, figures and deadlines, with article references), in Greek. Test: checklist of the key
+   provisions each summary must cover, figures checked against the source (gate C), no article
+   that isn't in the document (gate F).
+3. **Legal opinion from five documents.** A coherent opinion on a question that draws on several of
+   the five documents (which law applies, what each says, how they combine, conclusion), every claim
+   cited to its document and article. Test: a set of opinion questions with the documents and
+   articles each must cite; citations checked against the passages.
+4. **Template routing.** Recognise from a user's prompt which of 10 labour contract templates fits
+   (owner's choice: Claude Code drafts the 10 templates from the Labour Code, marked as PoC drafts,
+   not legal advice). Test: a labelled set of prompts in Greek and English, accuracy and confusion
+   between templates, with a dev and a test split.
+
+The EU holdout stays evaluation only for all of these.

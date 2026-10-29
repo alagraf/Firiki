@@ -1349,6 +1349,55 @@ installation and model setup steps, usage, empirical evaluation summary, and ups
 
 **Verification:** markdown verified; links and model paths aligned with thesis scripts.
 
+#### 2.11.22 Greek OCR: text boxes follow tilted lines
+
+**Why:** on simulated scans PaddleOCR found 48% of the words, falling with the page's tilt (88% at
+0.5°, 10% at 1.5°; 2.11.19). Mechanism, observed with a Python copy of the app's detection steps on
+the benchmark images: the detector still finds every line (116 regions on page 24, clean and tilted
+by 1.5°), but each box was the axis-aligned rectangle around its region. A line tilted by 1.5° rises
+by more than its own height across a column, so the box was 11 px high for a 6.7 px line (at the
+detector's scale; 6 px on the clean page), the crop took in parts of the lines above and below, and
+the recogniser, which reads one line 48 px high, returned fragments. Reading the same regions along
+their own angle: page 24 scan 0.128 → 0.969 of the words (clean 0.967), page 12 0.153 → 0.968.
+
+**What:** `GreekPaddleOCRService.dbBoxes` returns each region as a rectangle along its principal
+axis (`TextLineBox`: centre, direction, length, thickness), grown by PaddleOCR's unclip rule as
+before; `RGBPixels.sampled(along:)` cuts the rectangle out level with bilinear sampling, and the
+recogniser reads that. The angle is kept only for an elongated region (twice as long as thick)
+within 15°, and only where the line rises by at least a quarter of its thickness: the principal axis
+of a level line leans by a few tenths of a degree because of the letter shapes, and such lines keep
+the exact axis-aligned crop used before, so clean pages read as before. A line's `OCRTextLine.box`
+(used for reading order) is the axis-aligned rectangle around the new box.
+
+**Choosing the threshold, and checking it on other pages:** the quarter-thickness rule was set on
+the benchmark images (largest rise on clean pages 0.23 of the thickness; lines on 0.5° scans about
+a third), so the benchmark's gain is in-sample. `scripts/thesis/ocr_tilt_check.py` checks it on 13
+pages the benchmark doesn't use (9 Labour Code excerpt pages, 4 Constitution pages; random tilt
+within ±2.5°, same degradation, fixed seed) with the Python copy of the app's steps: word recall on
+the tilted scans 0.464 → 0.875, against 0.879 on the same pages untilted; untilted pages 0.879 →
+0.880. With a half-thickness rule the scans reached 0.855 (pages tilted 0.6–0.8° kept part of the
+loss). The Constitution pages read worse even untilted (0.61–0.79, against 0.95–0.97 for the Labour
+Code); that is not about tilt and is not investigated here.
+
+**Files:** `GreekPaddleOCRService.swift`; `GreekLegalPipelineTests.swift` (`tiltedPageIsReadLineByLine`:
+closely spaced lines on a page turned by 2°, WER below 0.1; `textBoxesFollowTheLine`: a level band
+gives PaddleOCR's axis-aligned box exactly, a band at 3° a box along it); `scripts/thesis/ocr_tilt_check.py`.
+
+**Verification:** the new page test fails on the code before this change
+(`/private/tmp/oi-work/tilt_before.log`: `WER 0.65`, only «Άρθρο 66» read) and passes after it.
+Greek OCR suite `✔ Test run with 7 tests in 1 suite passed` (`greekocr1.log`); Greek suites and
+the gate suites before the last test correction (`greekunit17.log`): `Executed 67 tests, with 0
+failures`, and of 72 Greek tests only `textBoxesFollowTheLine` failed, on its own thickness limit
+(the drawn band is 7 px thick across, not 6, and the growth rises with it), corrected and passing
+in `greekocr1`. OCR benchmark (`ocrbench3.log`, `ocrbench4.log`, the same text in both),
+PaddleOCR word recall clean / photo / scan 0.96 / 0.96 / **0.96** (scan was 0.48), legal
+identifier recall on scans 0.92 (was 0.61), numbers 0.94 (was 0.66); the app path equals PaddleOCR
+on every image. Whole import of `scan_pages.pdf`: word recall 0.98 (was 0.62), legal identifiers
+0.96 (was 0.69), 207 passages. Time: the line sampler first ran at 8.4 s per scan page against
+6.8 s for a clean page; written on raw buffers (same arithmetic, same output) it runs 7.0 s against
+6.6 s (Simulator, Debug build), and the OCR of the scanned PDF takes 204 s (120 s before the fix,
+when most crops read as fragments).
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

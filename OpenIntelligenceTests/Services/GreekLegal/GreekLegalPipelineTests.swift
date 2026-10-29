@@ -214,7 +214,8 @@ func wordErrorRate(reference: String, hypothesis: String) -> Double {
 }
 
 /// Black text on white, drawn with Core Text, top line first.
-func renderPage(_ lines: [String], width: Int = 1240, lineHeight: Int = 80, fontSize: CGFloat = 36) -> CGImage {
+/// `degrees` turns the text about the page's centre, as on a page laid crooked on a scanner.
+func renderPage(_ lines: [String], width: Int = 1240, lineHeight: Int = 80, fontSize: CGFloat = 36, degrees: CGFloat = 0) -> CGImage {
     let height = lineHeight * (lines.count + 1)
     let context = CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -222,6 +223,9 @@ func renderPage(_ lines: [String], width: Int = 1240, lineHeight: Int = 80, font
     )!
     context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.translateBy(x: CGFloat(width) / 2, y: CGFloat(height) / 2)
+    context.rotate(by: degrees * .pi / 180)
+    context.translateBy(x: -CGFloat(width) / 2, y: -CGFloat(height) / 2)
     let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
     for (index, line) in lines.enumerated() {
         let attributed = NSAttributedString(string: line, attributes: [
@@ -259,6 +263,50 @@ struct GreekOCRTests {
         let (cleaned, lowQuality) = StructuredDocumentParser.shared.validateAndCleanOCR(paragraph)
         #expect(cleaned == paragraph)
         #expect(!lowQuality)
+    }
+
+    /// Closely spaced lines on a page turned by 2°: a straight box around one line also takes in
+    /// the lines above and below, a box along the line doesn't.
+    @Test func tiltedPageIsReadLineByLine() async throws {
+        let engine = GreekPaddleOCRService.shared
+        try #require(engine.isAvailable, "ONNX Runtime and the Greek OCR models must be in the app")
+        let lines = try await engine.recognizeLines(in: renderPage(Self.page, lineHeight: 50, degrees: 2))
+        let text = GreekLegalEntityMasker.repairGreekHomoglyphs(OCRRouterService.joinLines(lines))
+        let wer = wordErrorRate(reference: Self.page.joined(separator: "\n"), hypothesis: text)
+        #expect(wer < 0.1, "WER \(wer): \(text)")
+        #expect(GreekLegalEntityMasker.canonicalKeys(in: text).isSuperset(of: ["ART:66", "LAW:4808/2021"]))
+    }
+
+    @Test func textBoxesFollowTheLine() throws {
+        // A band 6 px thick, 360 px long, drawn level and at 3° on a 400 by 100 probability map.
+        func band(degrees: Double) -> [Float] {
+            var map = [Float](repeating: 0, count: 400 * 100)
+            let slope = tan(degrees * .pi / 180)
+            for x in 20..<380 {
+                let top = 40 + Int((Double(x - 200) * slope).rounded())
+                for y in top..<(top + 6) { map[y * 400 + x] = 0.9 }
+            }
+            return map
+        }
+        let level = GreekPaddleOCRService.dbBoxes(probabilities: band(degrees: 0), width: 400, height: 100)
+        #expect(level.count == 1)
+        #expect(level.first?.direction == CGVector(dx: 1, dy: 0))
+        // The level box is PaddleOCR's axis-aligned box: 360 by 6, grown by 360·6·1.5 / (2·366).
+        let grow = 360.0 * 6 * 1.5 / (2 * 366)
+        let rect = try #require(level.first).boundingRect
+        #expect(abs(rect.minX - (20 - grow)) < 1e-6 && abs(rect.minY - (40 - grow)) < 1e-6)
+        #expect(abs(rect.width - (360 + 2 * grow)) < 1e-6 && abs(rect.height - (6 + 2 * grow)) < 1e-6)
+
+        let tilted = GreekPaddleOCRService.dbBoxes(probabilities: band(degrees: 3), width: 400, height: 100)
+        #expect(tilted.count == 1)
+        let box = try #require(tilted.first)
+        let angle = atan2(box.direction.dy, box.direction.dx) * 180 / .pi
+        #expect(abs(angle - 3) < 0.3, "angle \(angle)")
+        // Across the line the box stays near the band's own thickness (drawn in whole-pixel steps,
+        // the band is about 7 px thick across, and the growth rises with it: about 17.3 px in all),
+        // while an axis-aligned box spans the band's whole 25 px height plus growth.
+        #expect(box.thickness < 6 + 2 * grow + 3, "thickness \(box.thickness)")
+        #expect(box.boundingRect.height > 6 + 2 * grow + 15)
     }
 
     @Test func mixedEnglishGreekPageKeepsGreekLines() {

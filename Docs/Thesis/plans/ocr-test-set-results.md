@@ -144,6 +144,29 @@ Whole import of `scan_pages.pdf` (`wholeImportScanPages`, passed in 353.8 s):
 - Processing Log: "PaddleOCR (paddle-el-v5) read 21 images, its text kept for 21, 71906
   characters, in 120.2 s".
 
+### After the boxes follow tilted lines (FORK_CHANGES 2.11.22, 2026-10-29)
+
+The cause above was confirmed, with one correction: the lines don't merge (the detector finds the
+same 116 regions on page 24 clean and tilted), but each region's upright box is up to twice a line's
+height, so the crop takes in parts of the neighbouring lines. Boxes now follow each line's angle.
+
+Runs `ocrbench3.log` and `ocrbench4.log` (the second after a faster sampler with the same
+arithmetic; the text read is identical in both), PaddleOCR (the app path is the same on every page):
+
+| Version | Word recall | Word precision | Legal ID recall | Number recall | s / page (run 4) |
+|---|---|---|---|---|---|
+| clean | 0.96 | 0.94 | 0.92 | 0.94 | 6.6 |
+| scan | **0.96** (was 0.48) | 0.94 (was 0.59) | 0.92 (was 0.61) | 0.94 (was 0.66) | 7.0 |
+| photo | 0.96 | 0.94 | 0.92 | 0.95 | 6.6 |
+
+Per scan page, word recall is now 0.93–0.97 at every tilt (was 0.10–0.88). Whole import of
+`scan_pages.pdf`: 207 passages, word recall 0.98 (was 0.62), precision 0.55 (was 0.44), legal
+identifiers 0.96 (was 0.69), numbers 1.00 (was 0.85); OCR 204 s for 20 images.
+
+The angle threshold was chosen on these pages, so these numbers are in-sample.
+`scripts/thesis/ocr_tilt_check.py` checks it on 13 other pages (Labour Code excerpt and
+Constitution, random tilts within ±2.5°): scans 0.46 → 0.88 of the words, untilted 0.88.
+
 ## 4. Draft Text for Repository Documentation
 
 ### Draft for `Docs/Thesis/FORK_CHANGES.md`

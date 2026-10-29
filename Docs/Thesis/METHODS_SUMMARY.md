@@ -27,8 +27,11 @@ fix that stage in a general way; run again and compare.
   this router.
 - **Measured on scans and photos.** A test set of 10 Labour Code pages, each clean, as a simulated
   scan and as a simulated phone photo: PaddleOCR finds 96% of the words on clean pages and photos,
-  Vision 5% (it reads no Greek). On scans PaddleOCR finds 48%, and the loss grows with the page's
-  tilt (88% at 0.5°, 10% at 1.5°), so straightening a page before OCR is the next step.
+  Vision 5% (it reads no Greek). On scans PaddleOCR first found 48%, losing more the more the page
+  was tilted (88% at 0.5°, 10% at 1.5°): each line's box was an upright rectangle, which on a tilted
+  page takes in parts of the lines above and below. The boxes now follow each line's angle, and
+  scans read like clean pages (96%). The angle rule was set on these pages, so it was checked on 13
+  other tilted pages as well: 46% → 88% of the words, the same as untilted.
 - **Text clean-up.** Unicode normalisation; repair of Latin letters that look Greek (a Latin "A"
   in "ΦΕΚ A'"); quality filters that recognise Greek instead of discarding it as noise; rejoining
   words broken across lines; removal of the Government Gazette's running headers.
@@ -114,6 +117,7 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-29 | EU holdout (16), Greek passages and Greek questions, graded by hand | original app 0 of 13 in Greek (9 right but in English), 0 of 3 refused; this fork 13 of 13, 3 of 3 refused |
 | 2026-10-29 | After faster translation, file names kept, citation fix: Labour dev / Constitution / Labour test excerpt / full Code | 35 of 46 / 8 of 10 / 16 of 23 / 12 of 23 |
 | 2026-10-29 | OCR, 10 pages × clean / scan / photo, share of words found | PaddleOCR 96% / 48% / 96%; Vision 5% |
+| 2026-10-29 | OCR after the boxes follow tilted lines: scans / whole scanned PDF / 13 other tilted pages | 48% → 96% / 62% → 98% / 46% → 88% (untilted 88%) |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
 minutes after the faster translation.
@@ -131,8 +135,9 @@ are within this variation.
 - A question naming a different law than the library holds (e.g. "Article 16 of the
   Constitution" in a Labour Code library) is not yet recognised when the article number exists in
   both.
-- Tilted scans lose half their words in OCR (above); simulated phone photos read well, real phone
-  photos are not yet measured.
+- OCR is measured on simulated scans and photos only; real scans and phone photos are not yet
+  measured. Constitution pages read worse than Labour Code pages even untilted (61–79% of the
+  words, not yet investigated).
 - No device measurements yet (speed, memory, answer quality on an iPhone).
 
 ## Holdout evaluation (before/after)
@@ -157,6 +162,7 @@ The set is small (16 questions) and its library tiny (11 passages), so finding t
 the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-29: OCR boxes follow tilted lines; scans read like clean pages (checked on other pages).
 - 2026-10-29: OCR measured on scans and photos; faster translation at import, one direction in
   memory; batch translation tried and dropped; file names kept in Greek answers; source references
   not read as figures; run-to-run variation noted.

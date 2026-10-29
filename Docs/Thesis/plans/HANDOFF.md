@@ -22,37 +22,46 @@ changes and to commit and push the thesis branch to `origin`, https://github.com
 - Record every change in `Docs/Thesis/FORK_CHANGES.md`, the 5.7 section of `CHANGELOG.md`, and
   results in `Docs/Thesis/METHODS_SUMMARY.md`; show the test output that proves a claim.
 
-## State (2026-10-29, 18:30)
+## State (2026-10-29, 21:30)
 
-Committed and pushed: FORK_CHANGES 2.11.17–2.11.20 (faster translation and translator memory;
+Committed and pushed: FORK_CHANGES 2.11.17–2.11.22 (faster translation and translator memory;
 batching tried and dropped; document names kept in Greek answers; OCR benchmark; gate C and file
-names). Nothing in progress.
+names; README by Antigravity as 2.11.21; OCR boxes that follow tilted lines as 2.11.22).
 
 Translation models: the app ships the **one-sentence** Opus-MT export
 (`scripts/thesis/convert_opus_mt.py`, via `scripts/thesis_fetch_translation_models.sh`).
-`scripts/thesis/convert_opus_mt_batched.py` is the batched experiment; with its models,
-`pretranslateGreekChunks` batches at import (`importBatchSize`, now 1) and the opt-in
-`batchedTranslationSpeed` test runs. Don't install those models for normal work: batches reword
-the INT8 translations and lowered the evaluations (FORK_CHANGES 2.11.17).
+`scripts/thesis/convert_opus_mt_batched.py` is the batched experiment; don't install its models for
+normal work: batches reword the INT8 translations and lowered the evaluations (2.11.17).
 
 Latest numbers (Simulator, one run each; 2–8 of 46 dev cases flip between runs): Labour dev 35 of
 46, Constitution 8 of 10, Labour test 16 of 23 (excerpt) and 12 of 23 (full Code); excerpt import
-131–148 s, full Code 924 s. OCR word recall: PaddleOCR 0.96 clean/photo, 0.48 scan; Vision 0.05.
+131–148 s, full Code 924 s. OCR word recall (PaddleOCR): clean, photo and scan 0.96; Vision 0.05.
 
 ## Next, in order
 
-1. **Tilted scans** (progress file): PaddleOCR loses words on scans in proportion to the page's
-   tilt; its boxes are axis-aligned (`GreekPaddleOCRService.dbBoxes`). Confirm the mechanism (dump
-   the boxes for a 1.5° page), then deskew or crop along each line's angle; rerun
-   `GreekOCRBenchmarkTests` and the Greek unit suites.
-2. The accuracy items of `greek-legaltech-progress.md` "Next (2026-10-29)": wrong-case figures
-   (dev 34, 46), refusal over the full Code (2 of 3 in `labourfull3`), named-statute mismatch (test
-   case 69). Tune on the dev split only; run it twice before claiming a gain of 1–3 cases.
+The owner's list is `greek-legaltech-progress.md`: the open items under "Next (2026-10-29)", then
+the section "PoC capabilities (owner, 2026-10-29)", one capability at a time (implement, test,
+commit, then the next).
+
+1. Accuracy items: wrong-case figures (dev 34, 46), a question naming another law whose article
+   number exists in the library (test case 69), refusal rate over the full Code. Tune on the dev
+   split only; run it twice before claiming a gain of 1–3 cases.
+2. PoC capabilities 1–4 (five-document Q&A, summary, legal opinion, template routing). The five
+   documents are Greek **labour** laws only: the Labour Code plus four labour statutes not already
+   codified in it, each downloaded only after the owner approves it (name, source, size). The 10
+   contract templates are drafted by Claude Code from the Labour Code, marked as PoC drafts.
 3. Device check on an iPhone (needs the owner): import time, memory with one direction loaded,
-   answer quality.
-4. EU holdout: rerun only at the next milestone (evaluation only, AGENTS.md step 5).
+   answer quality, the refusal thresholds.
+4. EU holdout: rerun only at the end (evaluation only, AGENTS.md step 5).
+
+Removed by the owner (don't add back unless asked): Greek translation for PDFs over 10 MB (the
+streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
+
+- 2026-10-29 21:30 (Claude Code): tilted scans fixed (2.11.22): boxes follow each line's angle;
+  scans 0.48 → 0.96 word recall, 13 other pages 0.46 → 0.88 (`scripts/thesis/ocr_tilt_check.py`).
+  The owner added the PoC capabilities to the progress file and removed two items.
 
 - 2026-10-29 18:30 (Claude Code): batching settled. Batch 4/8/16 import 274/268/316 s against
   307 s, but evaluations dropped (Constitution 6 of 10 at batch 4); the batched export at batch 1
