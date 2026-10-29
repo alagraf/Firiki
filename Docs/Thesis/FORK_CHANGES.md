@@ -1158,6 +1158,43 @@ Limits: 13 + 3 questions; a library of 11 short passages, of which Standard hand
 finding the passage is easy compared with the 4,218-passage Labour Code; grading by expected terms,
 not yet read by a person; Simulator, not a device.
 
+#### 2.11.16 EU holdout: grading fixed and graded again
+
+**Why:** reading the answers side by side (`rag-tests/results/holdout_comparison_2026-10-29.md`,
+outside the repository) showed that the developer's automatic grading, used in 2.11.15, misjudged
+answers of both apps: a Greek question answered correctly in English failed because only Greek
+terms were accepted; a question whose expected-terms list is empty passed any answer; refusals
+behind the app's "[Needs Verification]" banner ("The requested topic … is not explicitly addressed
+in the provided excerpts") counted as answers; and a term mentioned anywhere passed an answer whose
+main claim was wrong. Only the grading changed; nothing in the app was changed because of the
+holdout, and `eu_data.json` is unchanged.
+
+**What:** `scripts/thesis/holdout/regrade_holdout.py` grades the runs again from their logs, the same
+way for every system (it holds no questions or answers and prints counts only): a Greek question
+also accepts the English expected terms, and English answers to Greek questions are counted as a
+language mismatch; a question without expected terms is left ungraded; a refusal is recognized
+after the banner when the answer opens by saying the passages don't address the topic (unless it
+goes on with "but/however"). It also writes `rag-tests/results/holdout_grading_sheet.csv`, one row
+per answer with both automatic grades and a column for the owner's own grade, which is the final
+one (a "first paragraph only" check is included as a hint; it is too crude to report, failing half
+of the correct English answers).
+
+**Files:** `scripts/thesis/holdout/regrade_holdout.py` (new).
+
+**Verification:** grading of `holdout_stock2.log` and `holdout_fork3.log` (all 48 answers of each
+matched). Right answers of 12 graded (Q09 has no expected terms), unanswerable questions refused of 3:
+
+| System | English passages, English questions | Greek passages, English questions | Greek passages, Greek questions |
+|---|---|---|---|
+| Original app | 12/12, refused 3/3 | 8/12, refused 3/3, 2 answerable refused | 9/12, refused 0/3; all 16 answers in English |
+| This fork | 12/12, refused 3/3 | 12/12, refused 3/3 | 12/12, refused 3/3; answers in Greek |
+
+The fork's advantage stays; it is smaller than in 2.11.15 where the developer's grading counted the
+original app's correct English answers to Greek questions as wrong, and larger in that the original
+app answers a Greek user in English and answers every unanswerable Greek question. The bare-model
+row of 2.11.15 is the developer's own grading and was not graded again (its raw output has another
+format). Still to do: the owner's grade of each answer (the sheet).
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):
