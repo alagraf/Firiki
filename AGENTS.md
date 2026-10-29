@@ -37,8 +37,17 @@ those documents only as background when a task needs it.
    and the lines of its output that prove it, such as the test summary (`Executed N tests, with M
    failures`) or `** BUILD SUCCEEDED **`. If something wasn't run, say so.
 4. **Record the change.** Every change to the code is added to `Docs/Thesis/FORK_CHANGES.md` (why,
-   what, files, verification) and to the 5.7 section of `CHANGELOG.md`, in the same task.
-5. **Commit only when the owner asks.** Never run `git add .`. Add files by name. Never use
+   what, files, verification) and to the 5.7 section of `CHANGELOG.md`, in the same task. A change
+   to a method, or a new measured result, also updates the owner's thesis summary
+   `Docs/Thesis/METHODS_SUMMARY.md` (high level, no file names; results table and revision
+   history).
+5. **Holdout test set.** The 16 EU labour-law questions in `/Users/alagra/Documents/thesis/rag-tests/`
+   (`eu_data.json`) are a holdout for the thesis's before/after evaluation. Never tune anything on
+   them: don't read their questions or answers to diagnose a failure, don't change code, prompts,
+   glossary, patterns or thresholds because of a holdout result, and don't copy them into the
+   repository or into another question set. Run them only as a final measurement and record the
+   numbers. Tuning uses the Labour Code dev split only.
+6. **Commit only when the owner asks.** Never run `git add .`. Add files by name. Never use
    destructive git commands (`reset --hard`, `push --force`, deleting branches) without being asked.
 
 ## Files that need the owner's explicit approval

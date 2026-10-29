@@ -8,6 +8,8 @@
 //    at most, and is not streamed to the screen;
 //  - weak evidence is refused before generation, and the reliability-mode fallbacks (a second
 //    generation attempt, raw passages as the answer) are off;
+//  - out-of-scope questions are refused: one about another country's law that no passage
+//    names before generation, and one whose draft opens by saying the passages don't answer it;
 //  - when the pipeline returns, gates A–I run on the English draft in every quality mode
 //    (Standard, Deep Think and Maximum alike), and a draft that fails a critical gate or scores
 //    below the composite threshold is replaced by a fixed Greek abstention message;
@@ -104,8 +106,76 @@ nonisolated enum GreekLegalAnswerFinalizer {
            !hasOverlap(query: query, chunk: top.chunk) {
             return String(format: "top passage score %.2f < %.2f with no overlap", top.similarityScore, LegalVerificationPolicy.minimumTopScoreWithoutOverlap)
         }
+        if let country = unsupportedForeignJurisdiction(query: query, chunks: chunks) {
+            return "the question is about \(country), which no passage mentions"
+        }
         return nil
     }
+
+    // MARK: Out-of-scope questions
+
+    /// A country other than Greece that the question asks about ("… in Germany", "the law of
+    /// France") and that no passage names, or nil. The library holds Greek law, so its passages
+    /// can't answer for another country, however close their topic is.
+    static func unsupportedForeignJurisdiction(query: String, chunks: [RetrievedChunk]) -> String? {
+        let lower = query.lowercased()
+        for country in foreignCountries {
+            let name = NSRegularExpression.escapedPattern(for: country.english.lowercased())
+            let asked = #"\b(?:in|of|from|under|for|to)\s+(?:the\s+)?"# + name + #"\b"#
+            guard lower.range(of: asked, options: .regularExpression) != nil else { continue }
+            let named = chunks.contains { retrieved in
+                if retrieved.chunk.content.lowercased().range(of: #"\b"# + name + #"\b"#, options: .regularExpression) != nil {
+                    return true
+                }
+                guard let stem = country.greekStem, let source = retrieved.chunk.sourceTextEl else { return false }
+                return SQLiteFullTextService.greekSearchFold(source).contains(stem)
+            }
+            if !named { return country.english }
+        }
+        return nil
+    }
+
+    private struct Country {
+        let english: String
+        /// The folded Greek name without its ending ("γερμαν" for Γερμανία, Γερμανίας), nil when
+        /// it would be too short to be specific.
+        let greekStem: String?
+    }
+
+    /// Every ISO country but Greece, named in English and Greek by the system locale data, plus
+    /// a few common English names the region list doesn't use.
+    private static let foreignCountries: [Country] = {
+        let english = Locale(identifier: "en_US")
+        let greek = Locale(identifier: "el_GR")
+        var countries: [Country] = Locale.Region.isoRegions.compactMap { region in
+            let code = region.identifier
+            guard code.count == 2, code.allSatisfy(\.isLetter), code != "GR",
+                  let name = english.localizedString(forRegionCode: code) else { return nil }
+            let folded = greek.localizedString(forRegionCode: code).map(SQLiteFullTextService.greekSearchFold)
+            let stem = folded.flatMap { $0.count >= 6 && !$0.contains(" ") ? String($0.dropLast(2)) : nil }
+            return Country(english: name, greekStem: stem)
+        }
+        countries += ["England", "Turkey", "Holland", "America"].map { Country(english: $0, greekStem: nil) }
+        return countries
+    }()
+
+    /// The draft's opening sentence says the passages don't answer the question ("The excerpts do
+    /// not specify …", "Insufficient evidence …") without qualifying it in the same sentence ("…,
+    /// but …"). What follows is then padding from loosely related passages, not an answer.
+    static func declaresMissingEvidence(_ draft: String) -> Bool {
+        let body = draft.components(separatedBy: .newlines)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
+            .joined(separator: " ")
+            .replacingOccurrences(of: "**", with: "")
+            .trimmingCharacters(in: CharacterSet.letters.inverted)
+        guard !body.isEmpty else { return false }
+        let opening = body.range(of: #"[.!?](\s|$)"#, options: .regularExpression)
+            .map { String(body[..<$0.lowerBound]) } ?? body
+        let qualified = opening.range(of: #"\b(but|however|although|though|yet|except)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+        return !qualified && opening.range(of: missingEvidenceOpening, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static let missingEvidenceOpening = #"^(?:there (?:is|are) )?(?:insufficient evidence|not enough (?:evidence|information)|no (?:information|mention|details?|data) (?:is |are )?(?:provided |given |available )?(?:about|on|regarding|concerning|for|of)|(?:the |these |provided )?(?:documents?|excerpts?|sources?|text|passages?|context)(?: provided)? (?:does|do) not (?:directly |explicitly |specifically )?(?:specify|mention|contain|provide|state|address|include|cover|give|discuss|indicate|define|say)|(?:i|we) (?:cannot|can't|could not|couldn't) (?:find|answer|determine))"#
 
     /// The pipeline's own failure and not-found texts, which must never be translated and shown
     /// as an answer.
@@ -155,6 +225,8 @@ nonisolated enum GreekLegalAnswerFinalizer {
             reason = "empty draft"
         } else if response.structuredAnswer?.refuse == true || isPipelineFailureText(draft) {
             reason = "the pipeline returned a refusal or failure text instead of an answer"
+        } else if declaresMissingEvidence(draft) {
+            reason = "the draft says the passages don't answer the question"
         } else if let preReason = preGenerationAbstentionReason(query: queryEn, chunks: chunks) {
             reason = preReason
         } else {

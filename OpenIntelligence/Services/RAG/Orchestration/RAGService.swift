@@ -16055,9 +16055,11 @@ class RAGService: ObservableObject {
                 // condition and exception the excerpts give: it reported "one year" for pre-trial
                 // detention and left out the six-month extension in the same passage. Only the ones the
                 // excerpts give, and with the excerpts' own names: run 8 answered "the document does not
-                // specify a time limit" and named an invented "Chief of the Armed Forces".
+                // specify a time limit" and named an invented "Chief of the Armed Forces". Each number with
+                // the case it is for: with the right article in the prompt, labour dev run 3 gave the
+                // six-day week's leave for a five-day week and the mother's period for the father.
                 let legalInstruction = GreekLegalAnswerContext.isActive
-                    ? "\n\n(Answer in English from the excerpts, using their own words for who or what they name. State every number, time limit, condition and exception that the excerpts give for this question; do not mention ones they do not give.)"
+                    ? "\n\n(Answer in English from the excerpts, using their own words for who or what they name. State every number, time limit, condition and exception that the excerpts give for this question; do not mention ones they do not give. Say which case or person each number applies to, and when the excerpts give different numbers for different cases, give the one for the case the question asks about.)"
                     : ""
                 let promptForGeneration: String = historyContext + question + legalInstruction
 

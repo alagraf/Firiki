@@ -193,6 +193,11 @@ struct GreekConstitutionEvaluationTests {
             print("[GreekEval] reusing the imported library \(libraryName)")
         }
         let libraryId = try #require(library?.id)
+        // Standard reuses a question's cached search until the documents or the app's version and
+        // build change, so a reused library would get the passages an earlier build found: every
+        // run searches afresh.
+        let cleared = await SQLiteFullTextService.shared.deleteAllCachedQueries()
+        print("[GreekEval] cleared \(cleared) cached searches")
 
         let wanted = environment["OI_GREEK_EVAL_IDS"]?
             .split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }

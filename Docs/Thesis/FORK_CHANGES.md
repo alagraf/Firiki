@@ -1026,6 +1026,86 @@ before the signatures; Q8 still leaves out the first round's two-thirds. Full su
 (the 3 Greek-region formatting tests; `ShortcutsActionTests` pass with the active library reset);
 Swift Testing `✔ Test run with 64 tests in 18 suites passed`.
 
+#### 2.11.14 Out-of-scope refusals, glossary Greek in answers, figures tied to their case
+
+**Why:** the progress file's next steps after 2.11.13. Off-code questions (income tax, pensions,
+unemployment benefit, maternity leave in Germany) were answered from loosely related passages: the
+model wrote "The excerpts do not specify …" or "Insufficient evidence …" and padded the rest with
+whatever the passages held, and the review only knew a few fixed failure texts, so the padding
+was translated and shown; a question about another country got the Greek figures. With the right
+article in the prompt the model gave the six-day week's leave for a five-day week and the mother's
+period for the father. «σπουδαίος λόγος» came back from English→Greek as «σοβαρός λόγος» (test
+case 42). The app's developer also pointed out that Standard reuses a question's cached search
+until the documents or the app's version and build change.
+
+**What:**
+- **Draft that says the passages don't answer** (`GreekLegalAnswerFinalizer.declaresMissingEvidence`):
+  when the draft's opening sentence (headings and bold removed) starts with such a statement and
+  doesn't qualify it in the same sentence ("…, but …"), the Greek abstention is shown. Checked
+  against every English draft of the earlier runs (Constitution runs 1–12, labour runs 1, 3, 4,
+  5) before writing it: it would have refused 63, 65 and 68 and drafts that failed anyway, and no
+  draft that passed (without the "but/however" rule it would have refused Constitution run 1's
+  Q9). Note: test-split drafts (runs 4 and 5) were among those read, so the test split's refusal
+  numbers after this change are not a clean held-out measurement.
+- **Another country's law** (`unsupportedForeignJurisdiction`, part of the pre-generation check):
+  a question naming a country other than Greece after "in/of/from/under/for/to" is refused before
+  generation unless a retrieved passage names that country (English text, or the Greek source by
+  the country's Greek stem). Countries come from the system's region list in English and Greek.
+- **Glossary Greek in answers** (`LocalNeuralTranslator.restoringGlossaryGreek`): when a glossary
+  term of the English answer is not in the Greek translation in the glossary's words, the model's
+  own rendering of the term alone is looked for and each of its words gets the glossary word's
+  stem with the ending the sentence gave it (σοβαρό λόγο → σπουδαίο λόγο).
+- **Figures tied to their case:** the Greek-mode instruction adds "Say which case or person each
+  number applies to, and when the excerpts give different numbers for different cases, give the
+  one for the case the question asks about." (general; no example from the dataset).
+- **Evaluation clears cached searches** (`GreekConstitutionEvaluationTests`): every run starts with
+  `deleteAllCachedQueries`, so a reused library cannot hand back an earlier build's passages. Of
+  the earlier runs only Constitution run 8 reused cached searches (16, from run 7, whose retrieval
+  code was the same); every other run re-imported, which empties the cache.
+- **Greek stamps and short image text misread as Cyrillic** (`OCRRouterService.visionTextNeedsGreekEngine`):
+  the developer noted that low-text pages and large annotations (stamps) of a PDF with a text
+  layer are read by `ImageUnderstandingService`. Every OCR call of the import (`extractTextFromImage`
+  for document images, stamps and standalone images; the page parser; region and table rescue;
+  the multi-column extractor) already went through `OCRRouterService`, but a new test showed the
+  router kept Vision's text for a rendered Greek stamp: «ΑΚΡΙΒΕΣ ΑΝΤΙΓΡΑΦΟ / Ο Προϊστάμενος της
+  Διεύθυνσης» came back as "АКРІВЕТ АТІГРАФО / Проїотнаос ins Alaúduvons" (log:
+  `site=imageUnderstanding engine=vision chars=44 greekLetters=0 used=true`). The misread detector
+  only looked for Latin look-alikes in texts of 20+ characters and 6+ words. Now any Cyrillic
+  letter in Vision's text sends the image to PaddleOCR (whose text is kept only when it has Greek
+  letters); after the fix the same stamp logs `engine=paddle-el-v5 chars=47 greekLetters=42
+  used=true`. New tests `imageUnderstandingReadsGreekWithPaddleOCR` (whole service, rendered stamp)
+  and a Cyrillic case in `routerReplacesMisreadVisionTextWithGreek`.
+
+**Files:** `GreekLegalAnswerService.swift`, `LocalNeuralTranslator.swift`, `RAGService.swift`
+(instruction), `GreekLegalPipelineTests.swift`, `GreekConstitutionEvaluationTests.swift`,
+`Docs/Thesis/METHODS_SUMMARY.md` (new: the owner's high-level thesis summary), `AGENTS.md`
+(keep that summary current).
+
+**Verification:** Labour dev split, excerpt corpus, reused library (iPhone 18 Pro simulator,
+Apple's on-device model):
+
+| Run | Change | Passed | Refusals correct | Answerable questions refused |
+|---|---|---|---|---|
+| 3 (2.11.13) | – | 31/46 | 3/5 | – |
+| 6 | + missing-evidence and foreign-jurisdiction refusals | 36/46 | 4/5 (65 refused now; 68 still answered) | 7, 22, 26, 47, 50 |
+| 7 | + glossary Greek, figures tied to their case, cache cleared, Cyrillic stamps | 37/46 (answers 32/41, expected article retrieved 39/41) | 5/5 | 26, 46, 50 |
+
+In run 6 the new check refused one answerable question, 26, whose draft opened "The excerpts do not
+directly address …" and listed unrelated notice periods; 7, 47 and 50 were refused by the
+pipeline's own grounding check and 22 by gate F, as before. Case 68 (unemployment benefit, «ΔΥΠΑ»
+translated "IDP") was answered with the special maternity protection benefit.
+
+Run 7 against run 6: 8, 58 and 68 now pass (68 refused: the draft opened by saying the passages
+don't give the benefit's amount); 34 and 46 fail. 34 is not a regression of this change: both
+runs' drafts mix up "18 months" and "18 years" for the 16-years-and-over band (run 6's Greek
+answer happened to carry "12 μηνών"). 46 (harassment) drifted to working time ("forty-eight (48)
+hours") and gate C refused it, where run 6 answered from Article 60. Greek unit suites
+(`/private/tmp/oi-logs/greekunit10.log`): `✔ Test run with 65 tests in 15 suites passed`.
+Constitution set, run 13 (reused library, cached searches cleared): 9 of 10, as in run 12 (Q8
+still leaves out the first round's two-thirds). Full suite (`/private/tmp/oi-logs/full14.log`):
+`Executed 1363 tests, with 8 tests skipped and 3 failures` (the 3 Greek-region formatting tests);
+Swift Testing `✔ Test run with 68 tests in 18 suites passed`.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

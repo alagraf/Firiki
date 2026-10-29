@@ -513,6 +513,81 @@ actor LocalNeuralTranslator {
             )
         }
         let translated = try await translate(masked, direction: .englishToGreek)
-        return GreekLegalEntityMasker.unmaskEntities(in: translated, entities: resolved, mode: .greekVerbatim)
+        let greek = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: resolved, mode: .greekVerbatim)
+        return await restoringGlossaryGreek(greek, terms: terms)
+    }
+
+    /// The model's renderings of glossary terms, by English term ("serious reason" → «σοβαρός λόγος»).
+    private var termRenderings: [String: String] = [:]
+
+    /// The Greek answer with each glossary term in the glossary's own words. A term goes through
+    /// the model in English and comes back in whatever words the model knows («σοβαρός λόγος»
+    /// where the Labour Code says «σπουδαίος λόγος», labour test case 42): when the glossary's
+    /// Greek isn't in the answer, the model's rendering of the term alone is looked for, and each
+    /// of its words gets the glossary word's stem with the ending the sentence gave it.
+    func restoringGlossaryGreek(_ greek: String, terms: [LegalEntityRecord]) async -> String {
+        var result = greek
+        var seen = Set<String>()
+        for term in terms where seen.insert(term.canonicalKey).inserted {
+            if GreekLegalEntityMasker.extractEntities(from: result).contains(where: { $0.canonicalKey == term.canonicalKey && GreekLegalEntityMasker.containsGreek($0.verbatimEl) }) {
+                continue
+            }
+            let rendering: String
+            if let cached = termRenderings[term.canonicalEn] {
+                rendering = cached
+            } else {
+                guard let fresh = try? await translate(term.canonicalEn, direction: .englishToGreek) else { continue }
+                rendering = fresh.trimmingCharacters(in: CharacterSet.letters.inverted)
+                termRenderings[term.canonicalEn] = rendering
+            }
+            result = Self.replacingRendering(rendering, with: term.canonicalEl, in: result)
+        }
+        return result
+    }
+
+    /// Greek noun and adjective endings, longest first.
+    private static let greekEnding = #"(?:ους|ούς|εις|είς|εων|έων|ος|ός|ου|ού|οι|οί|ων|ών|ας|άς|ης|ής|ες|ές|α|ά|η|ή|ο|ό|ε|έ)$"#
+
+    /// Every occurrence of `rendering` (word for word, any endings, any accents on the stems) in
+    /// `text` replaced by `lemma`'s words with the endings found; unchanged when the two phrases
+    /// have different word counts.
+    nonisolated static func replacingRendering(_ rendering: String, with lemma: String, in text: String) -> String {
+        let renderingWords = rendering.split(separator: " ").map(String.init)
+        let lemmaWords = lemma.split(separator: " ").map(String.init)
+        guard !renderingWords.isEmpty, renderingWords.count == lemmaWords.count,
+              rendering.lowercased() != lemma.lowercased() else { return text }
+        func stem(_ word: String) -> String {
+            word.range(of: greekEnding, options: .regularExpression).map { String(word[..<$0.lowerBound]) } ?? word
+        }
+        let accents: [Character: String] = ["α": "αά", "ε": "εέ", "η": "ηή", "ι": "ιίϊΐ", "ο": "οό", "υ": "υύϋΰ", "ω": "ωώ"]
+        let pattern = renderingWords.map { word -> String in
+            let folded = stem(word).lowercased().folding(options: .diacriticInsensitive, locale: Locale(identifier: "el"))
+            let stemPattern = folded.map { char in accents[char].map { "[\($0)\($0.uppercased())]" } ?? "[\(char)\(String(char).uppercased())]" }.joined()
+            return "(\(stemPattern))(\\p{L}{0,4})"
+        }.joined(separator: "\\s+")
+        guard let regex = try? NSRegularExpression(pattern: "(?<!\\p{L})" + pattern + "(?!\\p{L})") else { return text }
+        let ns = text as NSString
+        var output = ""
+        var cursor = 0
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            output += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            var words: [String] = []
+            for (index, lemmaWord) in lemmaWords.enumerated() {
+                let found = ns.substring(with: match.range(at: index * 2 + 1))
+                var ending = ns.substring(with: match.range(at: index * 2 + 2))
+                let lemmaStem = stem(lemmaWord)
+                // One accent per word: the glossary word's own when its stem has it.
+                if lemmaStem.folding(options: .diacriticInsensitive, locale: nil) != lemmaStem {
+                    ending = ending.folding(options: .diacriticInsensitive, locale: nil)
+                }
+                var word = lemmaStem + ending
+                if found.first?.isUppercase == true { word = word.prefix(1).uppercased() + word.dropFirst() }
+                words.append(word)
+            }
+            output += words.joined(separator: " ")
+            cursor = match.range.location + match.range.length
+        }
+        output += ns.substring(from: cursor)
+        return output
     }
 }

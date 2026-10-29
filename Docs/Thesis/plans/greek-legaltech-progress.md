@@ -123,13 +123,40 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   `Benchmarks/GreekLabourCode/`), fixes from the dev runs (contents headings, markdown before
   translation, glossary). Labour dev (excerpt): 24 → 31/46; test (excerpt, once): 14/23; test on the
   full code: 11/23 (import of the 260 pages: 4,218 passages, 29 min in the Simulator).
+- 2026-10-29 Out-of-scope refusals, glossary Greek in answers, figures tied to their case, Cyrillic
+  stamps to PaddleOCR, eval clears cached searches (FORK_CHANGES 2.11.14); thesis summary
+  `Docs/Thesis/METHODS_SUMMARY.md` (kept current, AGENTS.md step 4); EU holdout rule (AGENTS.md step
+  5). Labour dev (excerpt): run 6 36/46, run 7 37/46, refusals 5/5. Constitution run 13: 9/10.
 
 ## Next (2026-10-29)
-- Refusals: income tax, pensions, unemployment benefit and Germany questions were answered from
-  unrelated passages (2 of 5 dev, 2 of 3 test wrong); a "the code does not cover this" check
-  (relevance of the best passage to the question's subject) is the next lever.
-- Model errors with the right article in the prompt (five-day vs six-day figures, father vs
-  mother periods): try asking for the condition each figure applies to, or a smaller context.
-- «σπουδαίος λόγος» comes back as «σοβαρός λόγος» from English→Greek; put the glossary's Greek
-  term back after translation.
+- Refusals: dev 5/5 after 2.11.14. Still open: a question naming another law whose article
+  number also exists in the library ("Article 16 of the Constitution" in the Labour Code library,
+  test case 69) needs the library to know which statute each document is; the full-code refusal
+  rate is unmeasured since 2.11.14.
+- Model errors with the right article in the prompt: run 7 still mixes "18 months"/"18 years"
+  (case 34) and drifts off topic (46); consider a smaller context per question.
+- OCR test set from scanned PDFs and photographed pages (the developer: a ΦΕΚ with a text layer
+  mostly tests translation and search, not OCR).
+- **EU labour-law holdout evaluation (owner, 2026-10-29) — HOLDOUT, never tune on it.** Folder
+  `/Users/alagra/Documents/thesis/rag-tests/` (the app developer's test: `eu_data.json` = 11 articles
+  of three EU labour directives in the official English and Greek, 16 questions: 13 answered by the
+  text, 3 not; `ragtests.swift`/`run_all.sh` = his Mac command-line test; his results in README,
+  NOTES and `pcc/results`). Goal: Chapter 6 "before and after" of the on-device model's accuracy and
+  hallucination rate (answering the 3 unanswerable questions), with and without translation to
+  English. Plan:
+  1. Before, raw model: run `./run_all.sh` on this Mac unchanged (on-device rows; PCC rows can't run
+     without the entitlement) and record the printed model variant and context window.
+  2. Before, stock app: the same 16 questions through upstream OpenIntelligence (git worktree of
+     `upstream/main`), documents = the English and the Greek passages, questions in English and in
+     Greek.
+  3. After, this fork: the same through `RAGService.query` (Greek legal mode for Greek questions,
+     i.e. translated to English), one opt-in harness that reads `eu_data.json` from the rag-tests
+     folder in place (not copied into the repository, not committed).
+  4. Metrics per condition: right answers of 13 (graded by the file's `any`/`any_el` and read by a
+     person), declined of the 3 unanswerable (hallucination rate), right passage cited; model
+     variant and window logged with each answer.
+  Rules: build the harness from the file's structure only; run it once per milestone, at the end;
+  record the numbers and never change the app, the prompts, the glossary or any threshold because
+  of what a holdout answer says. Don't open the questions or answers to diagnose failures. Any
+  change made after a holdout run is tuned on the Labour Code dev split only.
 - Device check of all of this on the M3 Mac / iPhone (only the Simulator was used).

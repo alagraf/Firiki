@@ -69,11 +69,16 @@ nonisolated final class OCRRouterService: @unchecked Sendable {
         }
     }
 
-    /// Whether text Vision returned should be read again by the Greek engine: it is long enough to
-    /// judge and either already has Greek letters (Vision's Greek is unreliable) or is mostly
-    /// words that are not English (Vision reads Greek as Latin lookalikes such as "Apepo").
+    /// Whether text Vision returned should be read again by the Greek engine: it has Cyrillic
+    /// letters, or it is long enough to judge and either already has Greek letters (Vision's Greek
+    /// is unreliable) or is mostly words that are not English (Vision reads Greek as Latin
+    /// lookalikes such as "Apepo").
+    /// Cyrillic at any length: Vision read a Greek stamp, «ΑΚΡΙΒΕΣ ΑΝΤΙΓΡΑΦΟ / Ο Προϊστάμενος της
+    /// Διεύθυνσης», as "АКРІВЕТ АТІГРАФО / Проїотнаос ins Alaúduvons", too short and too few words
+    /// for the other tests. The Greek engine's text is kept only when it has Greek letters.
     static func visionTextNeedsGreekEngine(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.unicodeScalars.contains(where: { (0x0400...0x04FF).contains($0.value) }) { return true }
         guard trimmed.count >= 20 else { return trimmed.isEmpty }
         if GreekLegalEntityMasker.containsGreek(trimmed) { return true }
         let words = trimmed.lowercased()

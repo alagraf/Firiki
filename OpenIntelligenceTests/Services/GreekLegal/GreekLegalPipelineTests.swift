@@ -7,6 +7,7 @@
 //
 
 import CoreGraphics
+import CoreImage
 import CoreText
 import Foundation
 import Testing
@@ -265,6 +266,18 @@ struct GreekOCRTests {
         #expect(GreekLegalEntityMasker.canonicalKeys(in: "N. 4808/2021 (ΦΕK A' 101/19.06.2021) του νόμου") == ["LAW:4808/2021", "FEK:Α:101:19.06.2021"])
     }
 
+    /// Images inside a PDF and pages with little text (a stamp, a signature block) are read by
+    /// `ImageUnderstandingService`, not by the page parser: its Greek must come from PaddleOCR too.
+    @MainActor
+    @Test func imageUnderstandingReadsGreekWithPaddleOCR() async throws {
+        try #require(GreekPaddleOCRService.shared.isAvailable, "ONNX Runtime and the Greek OCR models must be in the app")
+        let stamp = ["ΑΚΡΙΒΕΣ ΑΝΤΙΓΡΑΦΟ", "Ο Προϊστάμενος της Διεύθυνσης"]
+        let text = try #require(await ImageUnderstandingService.shared.extractTextFromImage(CIImage(cgImage: renderPage(stamp))))
+        let wer = wordErrorRate(reference: stamp.joined(separator: "\n"), hypothesis: text)
+        #expect(wer < 0.2, "WER \(wer): \(text)")
+        #expect(OCRConfiguration.containsGreekText(text))
+    }
+
     @Test func routerReplacesMisreadVisionTextWithGreek() async throws {
         struct FakeGreek: OCREngineProtocol {
             let name = "fake"
@@ -279,6 +292,10 @@ struct GreekOCRTests {
         #expect(misread == "Καταγγελία σύμβασης εργασίας")
         let english = try await router.recognizeText(in: image, site: "test") { "The employment contract is terminated in writing by the employer." }
         #expect(english == "The employment contract is terminated in writing by the employer.")
+        // Vision's Cyrillic reading of a short Greek stamp.
+        let stamp = try await router.recognizeText(in: image, site: "test") { "АКРІВЕТ АТІГРАФО\nПроїотнаос ins Alaúduvons" }
+        #expect(stamp == "Καταγγελία σύμβασης εργασίας")
+        #expect(!OCRRouterService.visionTextNeedsGreekEngine("Revenue by quarter"))
         let visionOnly = OCRRouterService(greekEngine: FakeGreek(), mode: .vision)
         #expect(try await visionOnly.recognizeText(in: image, site: "test") { "Kataryeλia oupBaons" } == "Kataryeλia oupBaons")
     }
@@ -511,6 +528,54 @@ struct GreekLegalVerificationTests {
         #expect(reviewed.response.generatedResponse == LegalVerificationPolicy.greekAbstentionMessage)
         #expect(!verified, "no gate run, no second attempt, no raw passages")
         #expect(reviewed.response.retrievedChunks.count == 1)
+    }
+
+    @Test func foreignJurisdictionIsRefusedUnlessAPassageNamesIt() {
+        let maternity = Self.retrieved(
+            "The total duration of maternity leave is seventeen (17) weeks.", score: 0.9,
+            greek: "Η συνολική διάρκεια της άδειας μητρότητας ορίζεται σε δεκαεπτά (17) εβδομάδες.")
+        #expect(GreekLegalAnswerFinalizer.preGenerationAbstentionReason(
+            query: "How long does maternity leave last in Germany?", chunks: [maternity])?.contains("Germany") == true)
+        #expect(GreekLegalAnswerFinalizer.preGenerationAbstentionReason(
+            query: "How long does maternity leave last?", chunks: [maternity]) == nil)
+        // A passage that names the country, in its English text or only in the Greek source.
+        let posted = Self.retrieved("Workers posted to Germany keep their maternity leave.", score: 0.9)
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "How long does maternity leave last in Germany?", chunks: [posted]) == nil)
+        let greekOnly = Self.retrieved(
+            "Workers posted abroad keep their maternity leave.", score: 0.9,
+            greek: "Οι εργαζόμενοι που αποσπώνται στη Γερμανία διατηρούν την άδεια μητρότητας.")
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "How long does maternity leave last in Germany?", chunks: [greekOnly]) == nil)
+        // Greece is not another jurisdiction.
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "How long does maternity leave last in Greece?", chunks: [maternity]) == nil)
+    }
+
+    @Test func draftThatOpensWithMissingEvidenceIsRefused() async {
+        let padded = "### Income tax for employees\n\nThe excerpts do not directly specify an income tax rate for employees. However, **financial tax** is mentioned under Article 285 [S1]."
+        #expect(GreekLegalAnswerFinalizer.declaresMissingEvidence(padded))
+        #expect(GreekLegalAnswerFinalizer.declaresMissingEvidence("Insufficient evidence in provided sources. The excerpts cover compensation [S1]."))
+        #expect(GreekLegalAnswerFinalizer.declaresMissingEvidence("**The document does not mention** any stamps for old-age pension."))
+        // Qualified in the same sentence, an answer first, or the gap named after the answer: kept.
+        #expect(!GreekLegalAnswerFinalizer.declaresMissingEvidence(
+            "The documents do not specify a time limit in general, but certain procedural timelines are outlined [S1]."))
+        #expect(!GreekLegalAnswerFinalizer.declaresMissingEvidence(
+            "The dismissal is not invalid solely because the employee refused part-time work, as the excerpts do not say so."))
+        #expect(!GreekLegalAnswerFinalizer.declaresMissingEvidence(
+            "Annual leave is twenty (20) working days [S1]. The excerpts do not mention exceptions."))
+
+        var verified = false
+        let reviewed = await GreekLegalAnswerFinalizer.review(
+            question: "Ποιος είναι ο συντελεστής φόρου εισοδήματος για τους μισθωτούς;",
+            queryEn: "What is the income tax rate for employees?",
+            response: Self.response(padded, chunks: [Self.article38]),
+            verify: { d, q, c in verified = true; return await VerificationGateService().verify(response: d, query: q, retrievedChunks: c, topScores: [0.9]) },
+            translate: { text, _ in text }
+        )
+        #expect(reviewed.response.generatedResponse == LegalVerificationPolicy.greekAbstentionMessage)
+        #expect(reviewed.review.reason == "the draft says the passages don't answer the question")
+        #expect(!verified)
     }
 
     @Test func verifiedDraftIsTranslated() async {
@@ -844,6 +909,19 @@ struct GreekKeywordArmTests {
 
 @Suite("Legal glossary")
 struct LegalGlossaryTests {
+    @Test func glossaryGreekReplacesTheModelsRendering() {
+        let lemma = "σπουδαίος λόγος"
+        #expect(LocalNeuralTranslator.replacingRendering("σοβαρός λόγος", with: lemma, in: "Η καταγγελία για σοβαρό λόγο είναι έγκυρη.")
+            == "Η καταγγελία για σπουδαίο λόγο είναι έγκυρη.")
+        #expect(LocalNeuralTranslator.replacingRendering("σοβαρός λόγος", with: lemma, in: "Σοβαρός λόγος υπάρχει όταν …")
+            == "Σπουδαίος λόγος υπάρχει όταν …")
+        #expect(LocalNeuralTranslator.replacingRendering("σοβαρός λόγος", with: lemma, in: "λόγω σοβαρών λόγων υγείας")
+            == "λόγω σπουδαίων λόγων υγείας")
+        // Other words, a different word count, or the rendering already right: unchanged.
+        #expect(LocalNeuralTranslator.replacingRendering("σοβαρός λόγος", with: lemma, in: "σοβαρή βλάβη της υγείας") == "σοβαρή βλάβη της υγείας")
+        #expect(LocalNeuralTranslator.replacingRendering("διάρκεια θητείας", with: "θητεία", in: "η διάρκεια θητείας") == "η διάρκεια θητείας")
+    }
+
     @Test func termsHaveOneEnglishRendering() {
         let (masked, entities) = GreekLegalEntityMasker.maskEntities(in: "Το πολίτευμα της Ελλάδας και η Ακροτελεύτια διάταξη (Άρθρο 120).")
         #expect(entities.map(\.canonicalKey) == ["TERM:form of government", "TERM:final provision", "ART:120"])
