@@ -64,6 +64,13 @@ streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
 
+- 2026-10-30 07:45 (Claude Code): committed 2.11.27–2.11.29: five-document Q&A (dev 14/24, test
+  6/12), summary (Law 5278 dev 5/6; decision 8934 test 0/5 held out, 4/5 after reading by parts),
+  legal opinion (dev citations 10/12, test 3/8). Import fixes: word positions from the raw page
+  text (Law 5278 had 8 of 16 article headings), single-column pages; Labour dev unchanged at 38/46.
+  A τρίμηνο glossary entry was tried and dropped. Next: full-Code refusal run and test case 69
+  (`poc-remaining-work.md` section 3), then the device check with the owner, then the EU holdout.
+
 - 2026-10-30 01:10 (Claude Code): committed 2.11.26, template routing (dev 43/44, test 20/22).
   Five-document Q&A baseline running (`library1`, reimport of the five PDFs, dev split; script
   `/private/tmp/oi-work/library_dev.sh <log> <reimport 0|1> [split]`).

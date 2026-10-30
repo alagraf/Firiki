@@ -730,6 +730,40 @@ struct GreekLegalVerificationTests {
         return RetrievedChunk(chunk: chunk, similarityScore: 0.9, rank: 1, sourceDocument: "law.pdf")
     }
 
+    @Test func questionNamingALibraryStatuteIsSearchedInThatDocument() {
+        let law5278 = UUID(), law5239 = UUID(), decision = UUID(), constitution = UUID()
+        let keys = [law5278: "LAW:5278/2026", law5239: "LAW:5239/2025", decision: "MD:8934", constitution: "CONST"]
+        #expect(GreekLegalAnswerFinalizer.statuteScope(
+            query: "Για πόσο χρόνο ισχύουν οι κανονιστικοί όροι σύμφωνα με τον ν. 5278/2026;", documentKeys: keys) == [law5278])
+        #expect(GreekLegalAnswerFinalizer.statuteScope(query: "What does Law 5239/2025 say about overtime?", documentKeys: keys) == [law5239])
+        // The masker reads a law's number only with its year, so "Law 5239" alone scopes nothing.
+        #expect(GreekLegalAnswerFinalizer.statuteScope(query: "What does Law 5239 say about overtime?", documentKeys: keys) == nil)
+        #expect(GreekLegalAnswerFinalizer.statuteScope(query: "Τι ορίζει το άρθρο 16 του Συντάγματος;", documentKeys: keys) == [constitution])
+        // No statute named, or only one that is not a document: the whole library.
+        #expect(GreekLegalAnswerFinalizer.statuteScope(query: "Πόσες ώρες υπερωρίας επιτρέπονται;", documentKeys: keys) == nil)
+        #expect(GreekLegalAnswerFinalizer.statuteScope(query: "What does Law 4808/2021 provide?", documentKeys: keys) == nil)
+        // Another year is another statute.
+        #expect(GreekLegalAnswerFinalizer.statuteScope(query: "What does Law 5239/2010 provide?", documentKeys: keys) == nil)
+    }
+
+    @Test func frontMatterIsLeftOutWhenTheDocumentHasArticles() {
+        let law = UUID(), decision = UUID()
+        func passage(_ document: UUID, _ index: Int, _ text: String) -> RetrievedChunk {
+            RetrievedChunk(chunk: DocumentChunk(documentId: document, content: text, embedding: [], metadata: ChunkMetadata(chunkIndex: index)),
+                           similarityScore: 1, rank: index + 1)
+        }
+        let title = passage(law, 0, "LAW NO. 5278 National Social Agreement. Article 8 After-effect of all normative terms. Article 9 Extension.")
+        let contents = passage(law, 1, "CHAPTER D AFTER-EFFECT Article 8 After-effect of all normative terms of collective agreements")
+        let article8 = passage(law, 12, "Article 8 [Άρθρο 8]\nThe normative terms continue to apply for three months.")
+        let continued = passage(law, 13, "After the three months all normative terms continue to apply.")
+        let wage = passage(decision, 0, "The statutory minimum wage is set at 920 euros.")
+        let pool = [title, contents, passage(law, 2, "Article 1 [Άρθρο 1]\nPurpose of the law is the strengthening of agreements."), article8, continued, wage].map(\.chunk)
+        let kept = LegalCrossReferences.droppingFrontMatter([title, wage, contents, article8, continued], pool: pool)
+        #expect(kept.map(\.chunk.id) == [wage, article8, continued].map(\.chunk.id))
+        // Only front matter: unchanged.
+        #expect(LegalCrossReferences.droppingFrontMatter([title, contents], pool: pool).count == 2)
+    }
+
     @Test func namedStatuteIsRefusedUnlessAPassageComesFromOrCitesIt() {
         let leave = Self.retrieved(
             "Article 210: the employee is entitled to annual paid leave of twenty (20) working days.", document: "PD:62/2025")

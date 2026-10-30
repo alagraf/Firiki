@@ -1534,6 +1534,204 @@ All five unit and evaluation tests passed in each run (`✔ Test run with 5 test
 passed`). The six "none" prompts of the set were all answered none. Each prompt takes about 1–2 s
 in the Simulator.
 
+#### 2.11.27 PoC capability 1: questions over a five-document library; Gazette pages read in order
+
+**Why:** the five-document library (the Labour Code, Laws 5239/2025, 5278/2026 and 5316/2026,
+decision 8934/2026; `Benchmarks/GreekLabourLibrary`) answered 13 of 24 dev questions at the
+baseline (`library1`). Tracing the failures on the dev split found five causes:
+1. A question that names a law ("σύμφωνα με τον ν. 5278/2026") was searched over all five
+   documents, and the Labour Code's 4,200 passages outranked the named law's.
+2. Inside one document, its title page and contents (which list every article's title) outranked
+   the articles.
+3. The extractive shortcut replaced the Greek legal answer with a sentence picked from a passage
+   ("62/2025", dev 1 and 2).
+4. The import read every page of Laws 5278 and 5316 and of decision 8934 as two columns. Their
+   text runs the full width, but the short lines (a paragraph number, the end of a paragraph) centre
+   far left of the others, and the column detector moved them ahead of the rest of the page.
+5. The import placed words on the page using ranges from the NFKC-normalized page text, which
+   `PDFPage.selection(for:)` reads as ranges of the raw text. NFKC lengthens the text at every Greek
+   keraia (U+0384, "ΚΕΦΑΛΑΙΟ Α΄" becomes a space and a combining accent), so every later word got a
+   later word's position. On Law 5278 "1" of "Άρθρο 1" took the position of the next line, the
+   line broke as "Άρθρο" / "1 Σκοπός", and the chunker never saw articles 1, 2, 3, 5, 8 and 9 as
+   headings (8 of 16 articles stored). Measured offline: page 2 is 3,635 UTF-16 units raw and 3,641
+   normalized, and the range of "1" selected "κ" one line down.
+
+**What:**
+1. `GreekLegalAnswerService.requestedStatutes` and `statuteScope(query:documentKeys:)`: the
+   statutes a question names (law, decree, ministerial decision keys; the Constitution). If they
+   match documents of the library, `RAGService.greekLegalStatuteScope` runs the question with
+   `RAGQueryScope.documentIds` set to those documents (each document's statute is read from its
+   first chunk's `documentStatuteKey`, 2.11.25). Otherwise, or when the caller already set a
+   scope, nothing changes. `unsupportedNamedStatute` uses the same reading.
+2. `LegalCrossReferences.droppingFrontMatter`: in Greek legal mode, passages before a document's
+   first article heading are left out of the context when the document has articles (a document
+   without articles, like the decision, keeps all), and the list is left as it was if nothing
+   would remain.
+3. The extractive override is off in Greek legal mode.
+4. `DocumentProcessor.isSingleColumn(lineWidths:pageWidth:)`: a page whose median line is wider
+   than half the page width is one column, and column detection is skipped. Measured on the
+   library: one-column Gazette pages 0.56–0.79 of the width, two-column pages (Law 5239, the Code)
+   0.07–0.38.
+5. `extractTextWithSpatialOrdering` and `LayoutAwareExtractor.extractBlocksFromPDFPage` take
+   ranges from the raw `page.string` and normalize only the text they keep
+   (`PDFPage.normalized(_:pageHasGreek:)`, the normalization `normalizedString` applies).
+
+After 4 and 5, Law 5278 is stored with all 16 articles (8 after 4 alone), and the Labour Code with
+articles under 591 different numbers (590 after 4 alone; before, articles 2, 72 and those from 589
+on were missing).
+
+**Files:** `GreekLegalAnswerService.swift`, `RAGService.swift` (`greekLegalStatuteScope`, the Greek
+query wrapper, front matter before the context is packed, the extractive override's condition,
+`searchDocumentsRaw(containerId:)`, `documentsForContainer` internal), `LegalCrossReferences.swift`,
+`DocumentProcessor.swift`, `LayoutAwareExtractor.swift`, `PDFPage+Greek.swift`;
+`GreekLegalPipelineTests.swift` (`questionNamingALibraryStatuteIsSearchedInThatDocument`,
+`frontMatterIsLeftOutWhenTheDocumentHasArticles`), `DocumentProcessorTests.swift`
+(`testIsSingleColumn_MedianLineWidthDecides`, `testSpatialOrdering_KeraiaDoesNotShiftLaterWords`:
+a generated Greek page with a keraia before "Άρθρο 1"), `GreekConstitutionEvaluationTests.swift`
+(the `GreekLabourLibrary` set, reimported into its own library).
+
+**Verification** (five-document library, dev split, 24 questions, iOS 27 Simulator; one run each):
+
+| Run | Change | Passed | Right documents retrieved |
+|---|---|---|---|
+| `library1` | baseline | 13 of 24 | 16 of 21 |
+| `library2` | statute scope | 11 of 24 | 16 of 21 |
+| `library3` | + front matter, no extractive override | 12 of 24 | 16 of 21 |
+| `library4` | + single-column pages (reimport) | 12 of 24 | 15 of 21 |
+| `library5` | + raw-string word positions (reimport) | **14 of 24** | 15 of 21 |
+| `librarytest1` | test split (12), once, reimported | **6 of 12** | 6 of 11 |
+
+Test-split failures: 3 and 24 abstained with the wrong documents retrieved; 27 abstained (article
+244 of the Code not retrieved); 15 and 18 answered from the right article but missed a fact; 31
+answered from the Code's article instead of naming Law 5239.
+
+Labour Code dev split, reimported after 4 and 5: 38 of 46, refusals 5 of 5 (`labour18`; 38
+before), so the import change cost the single-document set nothing.
+
+Units: in `units6` the keraia test failed only on its own check (the generated page's font returns
+Σ as the look-alike Ʃ) while "Άρθρο 1" came out as its own line; the check now matches the title
+without its sigma. In `greekunit21` (`Executed 84 tests, with 0 failures`; Swift Testing 95 tests,
+1 issue) `questionNamingALibraryStatuteIsSearchedInThatDocument` failed: it expected "Law 5239"
+without a year to scope the search, but the masker reads a law's number only with its year. The
+test now names "Law 5239/2025" and records that the number alone scopes nothing. `greekunit23`:
+`✔ Test run with 57 tests in 7 suites passed`, `Executed 17 tests, with 0 failures`.
+
+**Tried and dropped:** a glossary entry for «τρίμηνο» (library dev 8, where the translator's "a
+quarter" came back as «ένα τέταρτο»). As "three-month period" it fixed dev 8 but Labour Code dev 4
+came back as «πρώτη τρίμηνη περίοδο» (`library6` 13 of 24, `labour19` 32 of 46); as "three months"
+dev 4 came back as «τους τρεις πρώτους μήνες» (`library7` 13 of 24, `labour20` 36 of 46). Each
+variant traded one case for the other, so the entry was removed.
+
+#### 2.11.28 PoC capability 2: a Greek summary of one statute
+
+**Why:** the owner's second PoC capability: a complete Greek summary of one statute (main rules,
+figures and deadlines, with article references), checked against the source.
+
+**What:** `GreekLegalDocumentSummarizer` (`Services/Legal/`), map then reduce, sized for the
+iPhone's 4,096-token window even where the model reports more:
+1. The document's articles are built from its passages in chunk order; the title page, the
+   contents and passages that are mostly headings are left out.
+2. Articles are packed into groups of about 7,400 English characters. Each group begins with a
+   marker line ("=== Article 8 ===", "(continued)" for a split article), so the model knows which
+   article each rule belongs to.
+3. Map: one call per group asks for short notes, a line limit set by the number of articles in the
+   group, each labelled with its article. Notes are cleaned: marker lines and "Article N:" labels
+   set the current article, a label naming an article not in the group is replaced by the
+   group's own, and lines under 12 characters are dropped.
+4. "Main provisions" is built in code: one bullet per article from its first two notes; with more
+   than 12 articles, the 12 with the most notes are kept, in document order. The model writes
+   only one or two opening sentences (reduce), so it cannot renumber articles.
+5. Every sentence is checked: figures the document's passages do not state (gate C, ignoring the
+   statute's own number), and articles or statutes the document neither has nor cites (gate F),
+   are dropped. The rest is translated with the citation-preserving English→Greek path.
+6. A document without article headings (the ministerial decision) is cut into parts of about
+   2,500 characters between passages ("Part 1", "Part 2", …), noted with instructions for a text
+   without articles, and listed without part labels. Added after the test run, which found the
+   decision's summary empty.
+
+Tried and dropped on the dev document: free reduce over all notes (it took figures and article
+numbers from the notes into the wrong article: `summary1`, about 40 bullets, "Article 404" and
+"410" for articles of Law 5278); a combine round, and a bullet cap.
+
+**Files:** `OpenIntelligence/Services/Legal/GreekLegalDocumentSummarizer.swift`;
+`OpenIntelligenceTests/Services/GreekLegal/GreekLegalSummaryTests.swift` (unit suite
+`GreekLegalSummaryTests`: articles without contents or title page, groups and markers, notes keep
+the group's articles, one bullet an article, a document without articles summarized by parts,
+unsupported figures and articles dropped, the whole map → reduce → translate path with a stub model; opt-in `GreekLegalSummaryEvaluation`,
+`TEST_RUNNER_OI_GREEK_SUMMARY=1`, `_SPLIT=dev|test`); `Benchmarks/GreekLabourLibrary/summary_v1.jsonl`
+(Law 5278/2026 dev, 6 provisions and 3 articles; decision 8934/2026 test).
+
+**Verification** (dev: Law 5278/2026; one run each):
+
+| Run | Provisions covered | Articles cited | Note |
+|---|---|---|---|
+| `summary1` | 5 of 6 | 1 of 3 | free reduce; about 40 bullets, wrong article numbers |
+| `summary2` | 1 of 6 | 1 of 3 | markers; articles 8 and 9 lost with their marker lines |
+| `summary3` | 2 of 6 | 0 of 3 | provisions built in code |
+| `summary4` | 2 of 6 | 0 of 3 | + single-column pages (8 of 16 articles still stored) |
+| `summary5` | **5 of 6** | **3 of 3** | + raw-string word positions (16 of 16 articles); 0 sentences dropped; 81 s |
+
+Missing in `summary5`: the 40% extension threshold (article 9). After the parts were added the
+article path is unchanged: `summary8` 5 of 6, 3 of 3.
+
+Test split (decision 8934/2026, 5 provisions, no articles): **0 of 5** held out (`summarytest1`:
+no article headings, so no groups and an empty summary). After the parts: 4 of 5 (`summarytest2`,
+26 s; missing "for the whole country"). The second figure is not a held-out result, since the fix
+answers a failure the test run showed.
+
+Units: `✔ Test run with 13 tests in 2 suites passed` (`sumunit9`, summary and opinion suites).
+
+#### 2.11.29 PoC capability 3: a legal opinion from several documents
+
+**Why:** the owner's third PoC capability: a coherent opinion on a question that draws on several
+of the five documents (which law applies, what each provides, how they combine, conclusion),
+every claim cited to its document and article.
+
+**What:** `GreekLegalOpinionWriter` (`Services/Legal/`) and `RAGService.greekLegalOpinion(question:containerId:)`:
+1. Passages are retrieved from each document separately (`searchDocumentsRaw` scoped to it,
+   8 passages, front matter left out, best 3 kept), so the Labour Code cannot crowd out the other
+   laws. Documents scoring at least 60% of the best are kept, up to 3.
+2. Links to the Labour Code are read from the documents, not asked of the model: an article
+   heading of a later law that amends, replaces or adds an article "στον Κώδικα Εργατικού
+   Δικαίου", and, for the decision, the Code article it cites most. When a kept law amends a Code
+   article, the Code joins the sources, and a retrieved Code passage of an amended or added
+   article is replaced by the amending article's text (the Code's own text is the old version).
+3. Each document's section is drafted in its own model call (fits the window); a conclusion is
+   written from the sections. Sections lose sentences that say a point is not addressed; the
+   conclusion is its first paragraph, at most 3 sentences.
+4. Every sentence is checked as in 2.11.28 (gate C, gate F against the document's articles and the
+   statutes it cites); the opinion is refused only when the conclusion has no supported sentence.
+5. The English parts (Applicable law, What each provides, How they combine, Conclusion) are
+   translated to Greek, under Greek headings, with a closing note that it is a PoC and not legal
+   advice.
+
+**Files:** `OpenIntelligence/Services/Legal/GreekLegalOpinionWriter.swift`;
+`OpenIntelligenceTests/Services/GreekLegal/GreekLegalOpinionTests.swift` (unit suite
+`GreekLegalOpinionTests`: links read from headings, source selection with the Code joining when
+amended, an amended Code article read from the amending law, sections and conclusion cleaned, the
+whole path with a stub model, refusal; opt-in `GreekLegalOpinionEvaluation`,
+`TEST_RUNNER_OI_GREEK_OPINION=1`, `_SPLIT=dev|test`); `Benchmarks/GreekLabourLibrary/opinion_qa_v1.jsonl`
+(10 requests, dev 6 and test 4, each with the two documents and articles it must cite and its key
+facts).
+
+**Verification** (dev, 6 requests, 12 citations, 20 key facts; one run each):
+
+| Run | Citations | Key facts | Refused | Note |
+|---|---|---|---|---|
+| `opinion1` | 9 of 12 | 12 of 20 | 1 of 6 | |
+| `opinion2` | 9 of 12 | 9 of 20 | 0 of 6 | scoped search per document, front matter |
+| `opinion3` | 8 of 12 | 9 of 20 | 0 of 6 | + single-column pages |
+| `opinion4` | **10 of 12** | **11 of 20** | 0 of 6 | + raw-string word positions |
+
+Each opinion takes 19–29 s in the Simulator. Request 5 (hiring for urgent needs, Law 5239 article
+21 + Code 578) is answered from other articles (0 of 2 citations).
+
+Test split (4 requests, once, `opiniontest1`): **citations 3 of 8, key facts 7 of 10, refused 0 of
+4.** Requests 7 and 8 cite other articles than the set expects (7, extension of an agreement:
+articles 3, 4, 14, 49, 258 and 396, where Law 5278 article 9 and Code 404 were expected, 1 of 3
+facts; 8, managers' leave: Code articles 221–225 and others, where Law 5316 article 36 and Code
+220 were expected, 2 of 2 facts); 9 misses one of its two articles; 10 cites both.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

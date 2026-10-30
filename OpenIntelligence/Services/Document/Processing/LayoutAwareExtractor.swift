@@ -304,9 +304,12 @@ actor LayoutAwareExtractor {
     // MARK: - PDFKit Block Extraction
 
     private func extractBlocksFromPDFPage(_ page: PDFPage, pageNumber: Int) -> [TextBlock] {
-        guard let pageText = page.normalizedString, !pageText.isEmpty else {
+        // Thesis fork (2.11.27): ranges are found in the raw `string`, which `selection(for:)`
+        // counts; each kept line is normalized (`PDFPage.normalized`).
+        guard let pageText = page.string, !pageText.isEmpty else {
             return []
         }
+        let pageHasGreek = GreekLegalEntityMasker.containsGreek(pageText)
 
         var blocks: [TextBlock] = []
         let pageBounds = page.bounds(for: .mediaBox)
@@ -341,7 +344,7 @@ actor LayoutAwareExtractor {
                 }
 
                 blocks.append(TextBlock(
-                    text: trimmedLine,
+                    text: PDFPage.normalized(trimmedLine, pageHasGreek: pageHasGreek),
                     boundingBox: normalizedBounds,
                     confidence: 1.0,  // Native text is high confidence
                     pageNumber: pageNumber

@@ -35,6 +35,12 @@ fix that stage in a general way; run again and compare.
 - **Text clean-up.** Unicode normalisation; repair of Latin letters that look Greek (a Latin "A"
   in "ΦΕΚ A'"); quality filters that recognise Greek instead of discarding it as noise; rejoining
   words broken across lines; removal of the Government Gazette's running headers.
+- **Reading order of digital PDFs.** Each word's position on the page is looked up in the PDF's
+  own text, not the normalised one: normalisation lengthens Greek text at every keraia ("Α΄"), and
+  positions taken from it belonged to later words, so article headings ran into the lines around
+  them and one law kept only 8 of its 16 articles. A page is read as one column when its typical
+  line spans more than half its width (one-column Gazette pages measured 56–79%, two-column ones
+  under 40%).
 
 ## 2. Structure-aware chunking
 - Greek statutes are split along their own structure: one passage per numbered paragraph of each
@@ -69,6 +75,9 @@ fix that stage in a general way; run again and compare.
   with a keyword index over its original Greek text that ignores accents and case and matches word
   stems (Greek is highly inflected).
 - **Article lookup.** A question that names an article gets that article's passages first.
+- **Libraries of several documents.** A question that names a law of the library is searched in
+  that law's document only, so a large code cannot crowd it out; a document's title page and
+  contents, which list every article's title, are left out when it has articles.
 
 ## 5. Answer generation
 - **Deterministic decoding** (greedy) so the same question gets the same answer, which also makes
@@ -106,6 +115,27 @@ fix that stage in a general way; run again and compare.
   for ages 15–18). Such a request is asked again as a plain-text classification under the
   filter's setting for transforming user content; keywords decide when the model can't.
 
+## 6b. Summarising one statute (PoC capability)
+- The statute is read in pieces that fit the phone's 4,096-token window, each marked with its
+  articles; the model notes each piece's rules with their article numbers (map).
+- The list of main provisions is built from the notes by the program, one bullet an article, and
+  the model writes only the opening sentences (reduce): left to write the list, it renumbered
+  articles and took figures from one article into another.
+- A text without articles, such as a ministerial decision, is read in parts of similar size.
+- Every sentence is checked against the whole document (its figures and article references) and
+  dropped if unsupported, then translated to Greek.
+
+## 6c. Legal opinion from several documents (PoC capability)
+- Passages are retrieved from each document separately, and the documents closest to the
+  question are kept (up to three).
+- Which later law amends or adds which Labour Code article is read from the amending articles'
+  headings, not asked of the model; an amended article is read from the amending law, since the
+  Code's own text is the old version.
+- The model drafts one section a document and then a conclusion, each within the phone's window;
+  every sentence is checked as for summaries, and the opinion is refused when its conclusion has
+  no supported sentence. The Greek opinion has the parts question, applicable law, what each text
+  provides, how they combine, conclusion, and a note that it is not legal advice.
+
 ## 7. Evaluation method
 - **Question sets** written from the official texts, each with a reference answer citing article
   and paragraph and key-fact patterns for automatic grading:
@@ -115,6 +145,11 @@ fix that stage in a general way; run again and compare.
     harassment and the digital work card, including cross-reference questions, questions in
     everyday language and 8 questions that must be refused. Split into development (46) and test
     (23) sets.
+  - A library of five labour-law documents (the Labour Code, Laws 5239/2025, 5278/2026 and
+    5316/2026, ministerial decision 8934/2026 on the minimum wage): 36 questions, development (24)
+    and test (12); a summary set (one law for development, the decision for test) listing the
+    provisions and articles each summary must state; an opinion set of 10 requests (6
+    development, 4 test), each with the two documents and articles it must cite and its key facts.
 - **Whole-app measurement.** Each run imports the document through the app's real pipeline and
   asks every question through the same path a user's question takes. Retrieval accuracy (was the
   right article found), answer accuracy (are the key facts in the answer) and refusal accuracy
@@ -140,6 +175,12 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-29 | Labour Code, development (46), excerpt, after table rows and the off-topic figure repair (two runs) | 36 and 35 of 46 (35 before) |
 | 2026-10-29 | Constitution (10) and Labour Code development (46), after the per-document statute check | 8 of 10 (8 before); 38 of 46, refusals 5 of 5 |
 | 2026-10-30 | Contract template routing (66 requests, half Greek): development (44) / test (22), on-device model; keywords alone | 43 of 44 / 20 of 22; 26 of 44 / 8 of 22 |
+| 2026-10-30 | Five-document library, development (24): start / after search by named law, contents left out, reading-order fixes | 13 of 24 / 14 of 24 |
+| 2026-10-30 | Five-document library, test (12), once | 6 of 12 |
+| 2026-10-30 | Labour Code, development (46), after the reading-order fixes | 38 of 46 (38 before) |
+| 2026-10-30 | Summary of Law 5278/2026 (development): key provisions, articles cited | 5 of 6, 3 of 3 (2 of 6, 0 of 3 before the reading-order fixes) |
+| 2026-10-30 | Summary of decision 8934/2026 (test): key provisions | 0 of 5 held out (no articles, empty summary); 4 of 5 after reading by parts (not held out) |
+| 2026-10-30 | Legal opinion, development (6) / test (4): citations, key facts, refused | 10 of 12, 11 of 20, 0 / 3 of 8, 7 of 10, 0 |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
 minutes after the faster translation.
@@ -167,6 +208,15 @@ are within this variation.
 - Template routing: the safety filter can block a request about a 15-year-old under both
   settings, and the keywords then may not recognise it; a student's practicum was once taken for
   an apprenticeship. The templates themselves are drafts that a lawyer must check.
+- Five-document library: half of the held-out questions are answered (6 of 12), against 14 of 24
+  in development. Failures are mostly refusals after the wrong documents were retrieved, and
+  answers that miss a fact or name the Code's article instead of the law asked about. The model
+  also misreads a passage now and then ("within five paragraphs" for "within two months"), which
+  the checks cannot catch when the passage does contain the figure.
+- Legal opinions state most key facts but often cite other articles of the same laws than a
+  lawyer would (3 of 8 expected citations on the held-out requests). The sets are small (six
+  development and four test requests), so these figures are indicative.
+- A law named without its year ("Law 5239") is not recognised as a law of the library.
 
 ## Holdout evaluation (before/after)
 A second, never-tuned test set is kept for the before/after comparison (Chapter 6): 16 questions
@@ -190,6 +240,9 @@ The set is small (16 questions) and its library tiny (11 passages), so finding t
 the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-30: five-document library (search by named law, contents left out), reading order of
+  Gazette pages, summary of one statute and legal opinion (PoC capabilities), with development and
+  test results; a glossary entry for «τρίμηνο» tried and dropped.
 - 2026-10-30: contract template routing (PoC capability), with results.
 - 2026-10-29: each statute knows which statute it is; a question naming another one is refused.
 - 2026-10-29: tables keep one row a line; an off-topic figure no longer refuses a correct answer.

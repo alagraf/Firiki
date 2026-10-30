@@ -122,9 +122,7 @@ nonisolated enum GreekLegalAnswerFinalizer {
     /// told from one of another law.
     static func unsupportedNamedStatute(query: String, chunks: [RetrievedChunk]) -> String? {
         guard chunks.contains(where: { $0.chunk.legal?.documentStatuteKey != nil }) else { return nil }
-        var requested = GreekLegalEntityMasker.canonicalKeys(in: query)
-            .filter { $0.hasPrefix("LAW:") || $0.hasPrefix("PD:") || $0.hasPrefix("MD:") }
-        if namesConstitution(query) { requested.insert("CONST") }
+        let requested = requestedStatutes(query)
         guard !requested.isEmpty else { return nil }
         let supported = chunks.contains { retrieved in
             let chunk = retrieved.chunk
@@ -139,13 +137,34 @@ nonisolated enum GreekLegalAnswerFinalizer {
         return supported ? nil : requested.sorted().first.map(statuteName)
     }
 
+    /// The statutes a question names: laws, decrees and decisions by number, and the Constitution.
+    static func requestedStatutes(_ query: String) -> Set<String> {
+        var requested = GreekLegalEntityMasker.canonicalKeys(in: query)
+            .filter { $0.hasPrefix("LAW:") || $0.hasPrefix("PD:") || $0.hasPrefix("MD:") }
+        if namesConstitution(query) { requested.insert("CONST") }
+        return requested
+    }
+
+    /// The documents a question is searched in when it names a statute that is one of the
+    /// library's documents (`documentStatuteKey` of each document): "… according to Law
+    /// 5278/2026" is answered from Law 5278/2026, not from the other laws whose passages are
+    /// closest to its words. Nil when the question names no statute or none of them is a document;
+    /// a named statute that is not a document is left to `unsupportedNamedStatute`.
+    static func statuteScope(query: String, documentKeys: [UUID: String]) -> Set<UUID>? {
+        let requested = requestedStatutes(query)
+        guard !requested.isEmpty else { return nil }
+        let scope = Set(documentKeys.filter { _, key in requested.contains { LegalVerificationPolicy.sameStatute(key, $0) } }.keys)
+        return scope.isEmpty ? nil : scope
+    }
+
     /// "Constitution" or "Σύνταγμα(τος)" as a word; "constitutional" doesn't count.
     static func namesConstitution(_ text: String) -> Bool {
         text.range(of: #"\bconstitution\b"#, options: [.regularExpression, .caseInsensitive]) != nil
             || SQLiteFullTextService.greekSearchFold(text).range(of: #"\bσυνταγμα(?:τοσ)?\b"#, options: .regularExpression) != nil
     }
 
-    private static func statuteName(_ key: String) -> String {
+    /// A statute key as the model and the reader see it: "Law 5278/2026", "the Constitution".
+    static func statuteName(_ key: String) -> String {
         if key == "CONST" { return "the Constitution" }
         let names = ["LAW:": "Law ", "PD:": "Presidential Decree ", "MD:": "Ministerial Decision "]
         for (prefix, name) in names where key.hasPrefix(prefix) { return name + key.dropFirst(prefix.count) }

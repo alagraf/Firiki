@@ -17,7 +17,9 @@
 //  runs some cases only.
 //
 //  A reusable harness since step 2 of the night plan: `TEST_RUNNER_OI_GREEK_EVAL_SET` picks the
-//  dataset folder in `Benchmarks/` (`GreekConstitution`, the default, or `GreekLabourCode`),
+//  dataset folder in `Benchmarks/` (`GreekConstitution`, the default, `GreekLabourCode`, or
+//  `GreekLabourLibrary`, five labour-law documents imported into one library, whose cases name the
+//  document the answer must come from),
 //  `TEST_RUNNER_OI_GREEK_EVAL_SPLIT` the cases (`dev`, `test` or `all`, the default; a case without
 //  a split is in every one), and `TEST_RUNNER_OI_GREEK_EVAL_CORPUS` the PDF of a set that has two
 //  (`excerpt`, the default, or `full`). Each set and corpus has a library of its own. Reported
@@ -70,6 +72,10 @@ struct GreekEvalCase: Decodable {
     let split: String?
     /// The app must refuse: the article or the law is not in the library.
     let shouldAbstain: Bool?
+    /// A library of several documents: the file the answer must come from, and a second one a
+    /// "which version applies" answer needs (`Benchmarks/GreekLabourLibrary`).
+    let document: String?
+    let alsoDocument: String?
 
     var mustAbstain: Bool { shouldAbstain ?? false }
 
@@ -101,20 +107,31 @@ struct GreekEvalCase: Decodable {
 struct GreekEvalSet {
     let name: String
     let questions: String
-    /// Corpus name → PDF file name.
-    let corpora: [String: String]
+    /// Corpus name → the PDFs imported together into its library, relative to the set's folder.
+    let corpora: [String: [String]]
     let defaultCorpus: String
     /// The library name of the first set is the one runs 1–8 used, so its import is reused.
     let libraryPrefix: String
 
     static let all: [String: GreekEvalSet] = [
         "GreekConstitution": GreekEvalSet(
-            name: "GreekConstitution", questions: "syntagma_qa_v1.jsonl", corpora: ["full": "syntagma1_1.pdf"],
+            name: "GreekConstitution", questions: "syntagma_qa_v1.jsonl", corpora: ["full": ["syntagma1_1.pdf"]],
             defaultCorpus: "full", libraryPrefix: "Greek Constitution evaluation"),
         "GreekLabourCode": GreekEvalSet(
             name: "GreekLabourCode", questions: "labour_qa_v1.jsonl",
-            corpora: ["excerpt": "pd_62_2025_excerpt.pdf", "full": "pd_62_2025_fek_a121.pdf"],
+            corpora: ["excerpt": ["pd_62_2025_excerpt.pdf"], "full": ["pd_62_2025_fek_a121.pdf"]],
             defaultCorpus: "excerpt", libraryPrefix: "Greek Labour Code evaluation"),
+        // Five labour-law documents in one library (PoC capability 1); the Labour Code from its own folder.
+        "GreekLabourLibrary": GreekEvalSet(
+            name: "GreekLabourLibrary", questions: "library_qa_v1.jsonl",
+            corpora: [
+                "library": [
+                    "../GreekLabourCode/pd_62_2025_fek_a121.pdf", "n_5239_2025_fek_a178.pdf", "n_5278_2026_fek_a22.pdf",
+                    "n_5316_2026_fek_a105.pdf", "ya_8934_2026_fek_b1759.pdf",
+                ],
+                "code": ["../GreekLabourCode/pd_62_2025_fek_a121.pdf"],
+            ],
+            defaultCorpus: "library", libraryPrefix: "Greek labour library evaluation"),
     ]
 
     var folder: URL { GreekEvalCase.repository.appendingPathComponent("Benchmarks/\(name)") }
@@ -143,8 +160,8 @@ struct GreekConstitutionEvaluationTests {
         let set = try #require(GreekEvalSet.all[environment["OI_GREEK_EVAL_SET"] ?? "GreekConstitution"])
         let corpus = environment["OI_GREEK_EVAL_CORPUS"].flatMap { set.corpora[$0] == nil ? nil : $0 } ?? set.defaultCorpus
         let split = environment["OI_GREEK_EVAL_SPLIT"] ?? "all"
-        let pdf = set.folder.appendingPathComponent(try #require(set.corpora[corpus]))
-        print("[GreekEval] set=\(set.name) corpus=\(corpus) (\(pdf.lastPathComponent)) split=\(split)")
+        let pdfs = try #require(set.corpora[corpus]).map { set.folder.appendingPathComponent($0).standardizedFileURL }
+        print("[GreekEval] set=\(set.name) corpus=\(corpus) (\(pdfs.map(\.lastPathComponent).joined(separator: ", "))) split=\(split)")
 
         for _ in 0..<60 where !SystemLanguageModel.default.isAvailable {
             try await Task.sleep(for: .seconds(5))
@@ -184,10 +201,10 @@ struct GreekConstitutionEvaluationTests {
             if let savedTier { UserDefaults.standard.set(savedTier, forKey: tierKey) } else { UserDefaults.standard.removeObject(forKey: tierKey) }
             let made = try created.get()
             let importStart = Date()
-            let imported = await engine.ingestDocuments([pdf], containerId: made.id)
+            let imported = await engine.ingestDocuments(pdfs, containerId: made.id)
             let chunks = engine.documents.filter { $0.containerId == made.id }.map(\.totalChunks).reduce(0, +)
-            print("[GreekEval] imported \(imported.successCount) document (\(chunks) passages) in \(Int(Date().timeIntervalSince(importStart))) s")
-            try #require(imported.successCount == 1)
+            print("[GreekEval] imported \(imported.successCount) document\(imported.successCount == 1 ? "" : "s") (\(chunks) passages) in \(Int(Date().timeIntervalSince(importStart))) s")
+            try #require(imported.successCount == pdfs.count)
             library = made
         } else {
             print("[GreekEval] reusing the imported library \(libraryName)")
@@ -208,6 +225,7 @@ struct GreekConstitutionEvaluationTests {
 
         var rows: [String] = []
         var answerPassed = 0, answerable = 0, retrievalHits = 0, abstainedCorrectly = 0, mustAbstain = 0, falseAbstentions = 0
+        var documentHits = 0, documentCases = 0
         for evalCase in cases {
             let started = Date()
             let response: RAGResponse
@@ -221,9 +239,15 @@ struct GreekConstitutionEvaluationTests {
             let answer = response.generatedResponse
             let review = response.metadata.legalReview
             let abstained = (review?.abstained ?? false) || answer.hasPrefix(String(LegalVerificationPolicy.greekAbstentionMessage.prefix(40)))
-            let retrievedArticle = response.retrievedChunks.contains {
-                LegalCrossReferences.definedArticles(of: $0.chunk).contains("ART:\(evalCase.article)")
+            // With a `document`, the article must come from that document (articles 1–16 are in every law).
+            let retrievedArticle = response.retrievedChunks.contains { retrieved in
+                (evalCase.document.map { $0 == retrieved.sourceDocument } ?? true)
+                    && (evalCase.article == 0 || LegalCrossReferences.definedArticles(of: retrieved.chunk).contains("ART:\(evalCase.article)"))
             }
+            // Every document the answer needs has a passage among the retrieved ones.
+            let neededDocuments = [evalCase.document, evalCase.alsoDocument].compactMap { $0 }
+            let retrievedDocuments = Set(response.retrievedChunks.map(\.sourceDocument))
+            let documentsRetrieved = neededDocuments.allSatisfy(retrievedDocuments.contains)
             let missing = evalCase.missingFacts(in: answer)
             let ok: Bool
             if evalCase.mustAbstain {
@@ -236,13 +260,18 @@ struct GreekConstitutionEvaluationTests {
                 if ok { answerPassed += 1 }
                 if retrievedArticle { retrievalHits += 1 }
                 if abstained { falseAbstentions += 1 }
+                if !neededDocuments.isEmpty {
+                    documentCases += 1
+                    if documentsRetrieved { documentHits += 1 }
+                }
             }
-            let kind = evalCase.mustAbstain ? "must abstain" : "article \(evalCase.article) retrieved: \(retrievedArticle ? "yes" : "no")"
+            let documents = neededDocuments.isEmpty || evalCase.mustAbstain ? "" : ", documents: \(documentsRetrieved ? "yes" : "no")"
+            let kind = evalCase.mustAbstain ? "must abstain" : "article \(evalCase.article) retrieved: \(retrievedArticle ? "yes" : "no")\(documents)"
             rows.append(
                 "| \(evalCase.id) | \(evalCase.level) | \(evalCase.split ?? "-") | \(ok ? "PASS" : "FAIL") | \(kind) | abstained: \(abstained ? "yes" : "no") | named: \(evalCase.namesArticle(answer) || evalCase.namesArticle(review?.englishDraft ?? "") ? "yes" : "no") | missing: \(evalCase.mustAbstain ? [] : missing) | \(Int(Date().timeIntervalSince(started))) s |")
             print("[GreekEval] Q\(evalCase.id): \(evalCase.question)")
             print("[GreekEval]   question as run: \(review?.queryEn ?? "-")")
-            print("[GreekEval]   passages: \(response.retrievedChunks.prefix(5).map { "\(LegalCrossReferences.definedArticles(of: $0.chunk)) \(String(format: "%.2f", $0.similarityScore))" })")
+            print("[GreekEval]   passages: \(response.retrievedChunks.prefix(5).map { "\(set.corpora[corpus]?.count == 1 ? "" : $0.sourceDocument + " ")\(LegalCrossReferences.definedArticles(of: $0.chunk)) \(String(format: "%.2f", $0.similarityScore))" })")
             print("[GreekEval]   English draft: \(review?.englishDraft ?? "-")")
             print("[GreekEval]   review: abstained=\(abstained) reason=\(review?.reason ?? "-") gates=\(review?.gates.filter { !$0.passed }.map(\.gate) ?? [])")
             print("[GreekEval]   answer: \(answer)")
@@ -251,6 +280,9 @@ struct GreekConstitutionEvaluationTests {
         print("[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |")
         for row in rows { print("[GreekEval] \(row)") }
         print("[GreekEval] answer pass \(answerPassed) of \(answerable); retrieval hit \(retrievalHits) of \(answerable); false abstentions \(falseAbstentions); abstention correct \(abstainedCorrectly) of \(mustAbstain)")
+        if documentCases > 0 {
+            print("[GreekEval] right documents retrieved \(documentHits) of \(documentCases)")
+        }
         print("[GreekEval] summary set=\(set.name) corpus=\(corpus) split=\(split): passed \(answerPassed + abstainedCorrectly) of \(cases.count)")
         // Runs 1-8 printed this line; kept for comparison.
         print("[GreekEval] passed \(answerPassed + abstainedCorrectly) of \(cases.count)")

@@ -123,6 +123,25 @@ nonisolated enum LegalCrossReferences {
         return pinned + candidates.filter { !pinnedIds.contains($0.chunk.id) }
     }
 
+    /// The candidates without the passages that come before their document's first article
+    /// heading: a statute's title page and table of contents, which repeat its number and its
+    /// articles' titles, so they match a question's words, but state no rule (five-document
+    /// library, dev case 8: the title page and contents of Law 5278/2026 outranked its Article 8).
+    /// A document with no article heading (a ministerial decision) keeps every passage; when every
+    /// candidate is front matter the list is unchanged.
+    static func droppingFrontMatter(_ candidates: [RetrievedChunk], pool: [DocumentChunk]) -> [RetrievedChunk] {
+        let documents = Set(candidates.map(\.chunk.documentId))
+        var firstArticle: [UUID: Int] = [:]
+        for chunk in pool where documents.contains(chunk.documentId) && !definedArticles(of: chunk).isEmpty {
+            firstArticle[chunk.documentId] = min(firstArticle[chunk.documentId] ?? .max, chunk.metadata.chunkIndex)
+        }
+        let kept = candidates.filter { candidate in
+            guard let first = firstArticle[candidate.chunk.documentId] else { return true }
+            return candidate.chunk.metadata.chunkIndex >= first
+        }
+        return kept.isEmpty ? candidates : kept
+    }
+
     /// Article keys ("ART:22") cited in a text.
     static func referencedArticles(in text: String) -> Set<String> {
         GreekLegalEntityMasker.canonicalKeys(in: text).filter { $0.hasPrefix("ART:") }

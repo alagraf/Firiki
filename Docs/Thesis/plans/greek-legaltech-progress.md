@@ -229,14 +229,19 @@ implement, test, commit, and only then start the next. **Priority (owner, 2026-1
    `Benchmarks/`; the other four are labour statutes not already codified in it, downloaded from
    official sources only after the owner approves each file (name, source, size). New question set for the
    five-document library, with a dev and a test split, written from the statutes; tune on dev only.
+   **Done 2026-10-30 (FORK_CHANGES 2.11.27):** dev 14 of 24 (13 at the start), test 6 of 12;
+   import fixes for Gazette pages (reading order, article headings).
 2. **Summarisation of one legal document.** A complete summary of one statute (structure, main
    rules, figures and deadlines, with article references), in Greek. Test: checklist of the key
    provisions each summary must cover, figures checked against the source (gate C), no article
-   that isn't in the document (gate F).
+   that isn't in the document (gate F). **Done 2026-10-30 (FORK_CHANGES 2.11.28):** Law 5278 dev
+   5 of 6 provisions, 3 of 3 articles; decision 8934 test 0 of 5 held out, 4 of 5 after reading a
+   document without articles by parts.
 3. **Legal opinion from five documents.** A coherent opinion on a question that draws on several of
    the five documents (which law applies, what each says, how they combine, conclusion), every claim
    cited to its document and article. Test: a set of opinion questions with the documents and
-   articles each must cite; citations checked against the passages.
+   articles each must cite; citations checked against the passages. **Done 2026-10-30
+   (FORK_CHANGES 2.11.29):** dev citations 10 of 12, key facts 11 of 20; test 3 of 8, 7 of 10.
 4. **Template routing.** Recognise from a user's prompt which of 10 labour contract templates fits
    (owner's choice: Claude Code drafts the 10 templates from the Labour Code, marked as PoC drafts,
    not legal advice). Test: a labelled set of prompts in Greek and English, accuracy and confusion

@@ -145,7 +145,11 @@ of import plus answers).
 - Results only. Don't tune on the test split.
 - If wrong refusals are common, look for the cause on the dev split with the full corpus (`SPLIT=dev CORPUS=full`).
 
-## 4. Capability 1 (owner priority 1): Q&A over one document, then five
+## 4. Capability 1 (owner priority 1): Q&A over one document, then five (done: 2.11.27)
+
+**Done 2026-10-30:** dev 14 of 24 (13 at the start), test 6 of 12 once. Statute scope, front
+matter left out, no extractive override in Greek mode, and two import fixes (single-column pages;
+word positions from the raw page text, which Law 5278 needed for 8 of its 16 article headings).
 
 **Status 2026-10-29 22:00:**
 - Written: the question set `Benchmarks/GreekLabourLibrary/library_qa_v1.jsonl` (36 questions, 24 dev
@@ -209,7 +213,11 @@ that and filling a template's `{{placeholders}}` are possible follow-ups.
   - Unit tests run the router on the dev prompts (no Simulator model needed if embeddings run in
     tests).
 
-## 6. Capability 2: Summary of one legal document
+## 6. Capability 2: Summary of one legal document (done: 2.11.28)
+
+**Done 2026-10-30:** Law 5278 dev 5 of 6 provisions, 3 of 3 articles; decision 8934 test 0 of 5
+held out (no articles), 4 of 5 after summarizing by parts (not held out).
+`GreekLegalDocumentSummarizer.swift`, `GreekLegalSummaryTests.swift`, `summary_v1.jsonl`.
 
 - **Behaviour:** a "summarise this document" request in Greek legal mode produces a complete Greek
   summary of one statute:
@@ -234,7 +242,12 @@ that and filling a template's `{{placeholders}}` are possible follow-ups.
   - Report coverage, unsupported figures (gate C) and articles not in the document (gate F).
   - Unit tests for the map–reduce grouping and the sentence dropping with stubbed model calls.
 
-## 7. Capability 3: Legal opinion from five documents
+## 7. Capability 3: Legal opinion from five documents (done: 2.11.29)
+
+**Done 2026-10-30:** dev citations 10 of 12, key facts 11 of 20, refused 0 of 6; test citations
+3 of 8, key facts 7 of 10, refused 0 of 4 (once). `GreekLegalOpinionWriter.swift`,
+`GreekLegalOpinionTests.swift`, `opinion_qa_v1.jsonl`. Opt-in run: `TEST_RUNNER_OI_GREEK_OPINION=1`,
+`_SPLIT=dev|test` (reads the five-document library, so import it first).
 
 - **Behaviour:** a question asking for an opinion produces a structured Greek opinion with these
   sections:

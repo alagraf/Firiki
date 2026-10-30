@@ -933,7 +933,7 @@ class RAGService: ObservableObject {
     }
 
     @MainActor
-    private func documentsForContainer(_ containerId: UUID) -> [Document] {
+    func documentsForContainer(_ containerId: UUID) -> [Document] {
         let defaultContainerId = containerService.containers.first?.id
         return documents.filter { document in
             if let docContainer = document.containerId {
@@ -6084,6 +6084,28 @@ class RAGService: ObservableObject {
             Log.warning("[Translation] Query translation failed, using original query: \(error)", category: .retrieval)
             return (trimmed, false)
         }
+    }
+
+    /// Thesis fork (2.11.27): the documents of the library a Greek question is searched in when it
+    /// names a statute that is one of them (`GreekLegalAnswerFinalizer.statuteScope`), or nil. Each
+    /// document's statute is read from its first passage, so only a question that names a statute
+    /// reads the store.
+    func greekLegalStatuteScope(questions: [String], containerId: UUID?) async -> Set<UUID>? {
+        guard questions.contains(where: { !GreekLegalAnswerFinalizer.requestedStatutes($0).isEmpty }) else { return nil }
+        let (targetId, documentIds) = await MainActor.run {
+            let id = containerId ?? self.containerService.activeContainerId
+            return (id, self.documentsForContainer(id).map(\.id))
+        }
+        guard let database = try? await dbForContainer(targetId) else { return nil }
+        var keys: [UUID: String] = [:]
+        for documentId in documentIds {
+            if let key = try? await database.chunks(forDocument: documentId, limit: 1).first?.legal?.documentStatuteKey {
+                keys[documentId] = key
+            }
+        }
+        let scopes = questions.compactMap { GreekLegalAnswerFinalizer.statuteScope(query: $0, documentKeys: keys) }
+        guard !scopes.isEmpty else { return nil }
+        return scopes.reduce(Set<UUID>()) { $0.union($1) }
     }
 
     /// The English translation of a Greek query (at least 30% Greek letters), or nil when the query
@@ -11592,7 +11614,17 @@ class RAGService: ObservableObject {
         // Apple's usage for every model call this answer makes is added up (`AnswerUsageTally`, 5.7) and put in
         // its metadata by `finalizeResponse`.
         let assetRecorder = ModelAssetRecorder()
+        // A question that names a statute of the library is searched in that document (2.11.27),
+        // unless the caller already limited it to named documents.
+        var statuteScope: Set<UUID>?
+        if greekLegal, RAGQueryScope.documentIds == nil {
+            statuteScope = await greekLegalStatuteScope(questions: [question, pipelineQuestion], containerId: containerId)
+            if let statuteScope {
+                Log.info("[GreekLegal] The question names a statute of the library: searching \(statuteScope.count) document(s)", category: .retrieval)
+            }
+        }
         let run = {
+            try await RAGQueryScope.$documentIds.withValue(statuteScope ?? RAGQueryScope.documentIds) {
             try await GreekLegalAnswerContext.$originalQuestion.withValue(greekLegal ? question : nil) {
             try await GreekLegalAnswerContext.$assetRecorder.withValue(greekLegal ? assetRecorder : nil) {
             try await GreekLegalAnswerContext.$isActive.withValue(greekLegal) {
@@ -11609,6 +11641,7 @@ class RAGService: ObservableObject {
                         )
                     }
                 }
+            }
             }
             }
             }
@@ -15124,6 +15157,16 @@ class RAGService: ObservableObject {
 
                 // For procedural queries, preserve document order instead of relevance order
                 // This prevents sequence inversions (e.g., "dry before disinfect" errors)
+                // Thesis fork (2.11.27): in Greek legal mode a statute's title page and contents
+                // are left out; they repeat its number and article titles but state no rule.
+                if GreekLegalAnswerContext.isActive {
+                    let before = contextCandidates.count
+                    contextCandidates = LegalCrossReferences.droppingFrontMatter(
+                        contextCandidates, pool: cachedAllChunks ?? rerankedChunks.map(\.chunk))
+                    if contextCandidates.count < before {
+                        Log.info("[RAG] Front matter: \(before - contextCandidates.count) passage(s) before their document's first article left out", category: .retrieval)
+                    }
+                }
                 // Thesis fork: a question naming an article gets the passage that holds it first.
                 let candidatesBeforePin = contextCandidates.map(\.chunk.id)
                 contextCandidates = LegalCrossReferences.pinningRequestedArticle(
@@ -16801,7 +16844,12 @@ class RAGService: ObservableObject {
                     }
 
                     var sourceLockedFinalResponse = false
-                    if answerIntentIsExtractive || isPrecisionValueQuery(question),
+                    // Thesis fork (2.11.27): not in Greek legal mode, whose answer is the model's draft
+                    // checked by gates A–I. The extractor took a question's statute number ("Law
+                    // 5239/2025") for the value asked and replaced the answer with a sentence citing
+                    // "62/2025" (five-document library, dev cases 1 and 2).
+                    if !GreekLegalAnswerContext.isActive,
+                        answerIntentIsExtractive || isPrecisionValueQuery(question),
                         let extractiveOverride = await highPrecisionLookupOverride(
                             question: question,
                             answerIntent: answerIntent,
@@ -22493,9 +22541,10 @@ extension RAGService: RAGToolHandler {
     /// Search and return raw chunks for agentic orchestrator (not just formatted string)
     /// Uses hybrid search (vector + BM25) for better retrieval quality on technical documents.
     /// Used internally by AgenticOrchestrator to collect chunks for UnifiedMetricsBar
-    func searchDocumentsRaw(query: String, topK: Int = 10, minSimilarity: Float? = nil) async throws -> [RetrievedChunk]
+    func searchDocumentsRaw(query: String, topK: Int = 10, minSimilarity: Float? = nil, containerId: UUID? = nil) async throws -> [RetrievedChunk]
     {
-        let embeddingContext = await resolveEmbeddingContext()
+        // Thesis fork: `containerId` searches that library instead of the active one (the legal opinion, 2.11.29).
+        let embeddingContext = await resolveEmbeddingContext(preferredContainerId: containerId)
         let container = await containerForId(embeddingContext.containerId)
         let translatedQuery = await translatedQueryForEmbedding(query, container: container)
         let queryEmbedding = try await embeddingContext.service.generateEmbedding(for: translatedQuery.text)

@@ -8293,10 +8293,17 @@ class DocumentProcessor {
         return .none
     }
 
-    private func extractTextWithSpatialOrdering(from page: PDFPage) -> String? {
+    func extractTextWithSpatialOrdering(from page: PDFPage) -> String? {
         // Get all selections for lines on this page
         // We'll enumerate through the page character by character to find line boundaries
-        guard let pageString = page.normalizedString, !pageString.isEmpty else { return nil }
+        //
+        // Thesis fork (2.11.27): the raw `string`, not `normalizedString`. The ranges below go to
+        // `selection(for:)`, which counts the raw string's UTF-16 units, and NFKC lengthens a Greek
+        // page at every keraia ("Α΄"), so each later word was placed where a word further on is. On
+        // Law 5278/2026 "Άρθρο 1" took the position of the next line's first letters, and its
+        // heading merged into the title below it. Each word is normalized as it is kept.
+        guard let pageString = page.string, !pageString.isEmpty else { return nil }
+        let pageHasGreek = GreekLegalEntityMasker.containsGreek(pageString)
 
         // Use word-level selection to build spatial lines
         var spatialLines: [SpatialLine] = []
@@ -8327,7 +8334,7 @@ class DocumentProcessor {
         var columnBreaks = 0
 
         for word in words {
-            let wordString = String(word)
+            let wordString = PDFPage.normalized(String(word), pageHasGreek: pageHasGreek)
 
             // Try to find this word in the page and get its bounds
             if let selection = page.selection(for: NSRange(word.startIndex..<word.endIndex, in: pageString)),
@@ -8416,7 +8423,10 @@ class DocumentProcessor {
         // Detect columns from X positions
         let xPositions = spatialLines.map { $0.xPosition }
         let pageWidth = page.bounds(for: .cropBox).width
-        let columnBoundaries = detectColumnBoundaries(from: xPositions, pageWidth: pageWidth)
+        // Thesis fork (2.11.27): a page whose lines mostly run across most of its width is one
+        // column, whatever gaps the centres of its short lines leave.
+        let columnBoundaries = Self.isSingleColumn(lineWidths: spatialLines.map(\.bounds.width), pageWidth: pageWidth)
+            ? [] : detectColumnBoundaries(from: xPositions, pageWidth: pageWidth)
 
         if columnBoundaries.isEmpty {
             // Treated as a single column and sorted by Y alone.
@@ -8477,6 +8487,20 @@ class DocumentProcessor {
         }
 
         return result.joined(separator: "\n")
+    }
+
+    /// Thesis fork (2.11.27): whether a page is one column: its median line is wider than half of
+    /// the page. `detectColumnBoundaries` reads the centres of lines, and on a one-column page the
+    /// short lines (a paragraph number, the last line of a paragraph, the left part of a line split
+    /// on a wide justified gap) centre far left of the full lines, so it found two columns on every
+    /// page of Law 5278/2026 and moved those lines ahead of the rest. The article headings merged
+    /// into the lines around them, and Articles 1–3, 5, 8 and 9 were never cut as articles. The
+    /// median line of a one-column page of the library's Gazette documents measured 56–79% of the
+    /// page width, that of a two-column page (Law 5239/2025, the Labour Code) 7–38%.
+    nonisolated static func isSingleColumn(lineWidths: [CGFloat], pageWidth: CGFloat) -> Bool {
+        guard pageWidth > 0, !lineWidths.isEmpty else { return false }
+        let sorted = lineWidths.sorted()
+        return sorted[sorted.count / 2] > pageWidth * 0.5
     }
 
     /// Detect column boundaries from a list of X positions

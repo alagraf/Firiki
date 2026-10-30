@@ -1,3 +1,5 @@
+import PDFKit
+import UIKit
 import XCTest
 @testable import OpenIntelligenceEngine
 
@@ -158,6 +160,49 @@ final class DocumentProcessorTests: XCTestCase {
             currentLineY: 705
         )
         XCTAssertEqual(gutter, .horizontalGap)
+    }
+
+    /// Thesis fork (2.11.27): a page whose median line spans most of the width is one column,
+    /// however many short lines it has; a page of lines under 40% of the width is not.
+    func testIsSingleColumn_MedianLineWidthDecides() {
+        let page: CGFloat = 595
+        // One column: full lines plus short paragraph numbers and paragraph ends.
+        let oneColumn: [CGFloat] = [460, 470, 465, 30, 120, 470, 460, 25, 468, 200, 462]
+        XCTAssertTrue(DocumentProcessor.isSingleColumn(lineWidths: oneColumn, pageWidth: page))
+        // Two columns of about 37% of the page.
+        let twoColumns: [CGFloat] = [220, 225, 218, 30, 222, 224, 90, 221, 219]
+        XCTAssertFalse(DocumentProcessor.isSingleColumn(lineWidths: twoColumns, pageWidth: page))
+        XCTAssertFalse(DocumentProcessor.isSingleColumn(lineWidths: [], pageWidth: page))
+    }
+
+    /// Thesis fork (2.11.27): word positions come from the raw page string. NFKC turns the keraia
+    /// of "Α΄" into two characters, and ranges taken from the normalized string placed every later
+    /// word one character on, so "1" of "Άρθρο 1" took the next line's position and the heading
+    /// line broke as "Άρθρο" / "1 Σκοπός".
+    func testSpatialOrdering_KeraiaDoesNotShiftLaterWords() throws {
+        let lines = [
+            "ΚΕΦΑΛΑΙΟ Α΄", "ΣΚΟΠΟΣ ΚΑΙ ΑΝΤΙΚΕΙΜΕΝΟ", "Άρθρο 1", "Σκοπός",
+            "Σκοπός του παρόντος νόμου είναι η ενίσχυση των συλλογικών συμβάσεων εργασίας",
+            "και η προαγωγή των συλλογικών διαπραγματεύσεων σε κλαδικό επίπεδο.",
+        ]
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
+        let data = renderer.pdfData { context in
+            context.beginPage()
+            let font = UIFont.systemFont(ofSize: 11)
+            for (index, line) in lines.enumerated() {
+                (line as NSString).draw(at: CGPoint(x: 60, y: 60 + CGFloat(index) * 16), withAttributes: [.font: font])
+            }
+        }
+        let page = try XCTUnwrap(PDFDocument(data: data)?.page(at: 0))
+        let raw = try XCTUnwrap(page.string)
+        // The case only exists when normalization changes the length.
+        XCTAssertNotEqual((raw as NSString).length, (try XCTUnwrap(page.normalizedString) as NSString).length)
+
+        let text = try XCTUnwrap(DocumentProcessor().extractTextWithSpatialOrdering(from: page))
+        let extracted = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        // The generated page's font gives sigma back as a look-alike, so the title is matched without it.
+        let heading = try XCTUnwrap(extracted.firstIndex(of: "Άρθρο 1"), "\(extracted)")
+        XCTAssertTrue(extracted[heading + 1].hasSuffix("κοπός"), "\(extracted)")
     }
 
     func testTableCellReadabilityScore_EmptyString_ReturnsZero() {
