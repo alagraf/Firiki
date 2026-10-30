@@ -186,7 +186,20 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   of 3 declined. The owner's own grading sheet for this run is
   `rag-tests/results/2026-10-30/holdout_grading_sheet.csv` (outside the repository); the owner's
   grade is the final one.
-- **Outcome:** the import changes and the PoC work left the holdout result unchanged.
+- **Owner's hand grade (final), 2026-10-30:** every answer read, all 13 answerable questions
+  graded (the automatic grading leaves one to a person). Sheet:
+  `rag-tests/results/2026-10-30/holdout_grading_sheet_completed.csv` (outside the repository).
+
+| Condition | `holdout_fork4`, hand grade | `holdout_fork3`, hand grade (2026-10-29) |
+|---|---|---|
+| English passages, English questions | 13 of 13, refused 3 of 3 | 13 of 13, 3 of 3 |
+| Greek passages, English questions | 13 of 13, refused 3 of 3 | 12 of 13 (1 wrong), 3 of 3 |
+| Greek passages, Greek questions | 12 of 13 (1 wrong), refused 3 of 3; all in Greek | 13 of 13, 3 of 3 |
+
+- **Outcome:** the import changes and the PoC work left the holdout result unchanged within run
+  variation: 38 of 39 answerable right in both runs, 9 of 9 unanswerable refused in both. One
+  answer is graded wrong in each run, in a different condition. Following the holdout rule, the
+  wrong answer was not examined and nothing was changed because of it.
 
 ## Open failures known from dev (not fixed)
 

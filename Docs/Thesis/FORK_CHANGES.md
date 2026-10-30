@@ -1772,7 +1772,10 @@ summary of every fork change for the implementation chapter).
 **Verification:** holdout graded with `regrade_holdout.py`: 12 of 12 graded answerable questions
 right and 3 of 3 refused in each of the three conditions, the same as `holdout_fork3` graded the
 same way; right passage retrieved 13 of 13. The owner's grading sheet for this run is in
-`rag-tests/results/2026-10-30/` (outside the repository).
+`rag-tests/results/2026-10-30/` (outside the repository). The owner's hand grade (final, every
+answer read): 13 of 13, 13 of 13 and 12 of 13 right (English; Greek passages with English
+questions; all Greek), 3 of 3 refused in each, against 13, 12 and 13 of 13 for `holdout_fork3`.
+Nothing was changed because of it.
 
 ## 3. How to inspect the changes
 

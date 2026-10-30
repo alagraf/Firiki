@@ -252,4 +252,4 @@ implement, test, commit, and only then start the next. **Priority (owner, 2026-1
 The EU holdout stays evaluation only for all of these.
 
 **2026-10-30:** all four capabilities done; full-Code test 15/23 (2.11.30); EU holdout run again,
-unchanged (2.11.31). Every experiment is recorded in `Docs/Thesis/EXPERIMENTS.md`. Left: device check.
+unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 2026-10-29). Every experiment is recorded in `Docs/Thesis/EXPERIMENTS.md`. Left: device check.
