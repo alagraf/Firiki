@@ -1,0 +1,6 @@
+# holdout_fork1: result lines of holdout_fork1.log (log last written 2026-10-29 10:08)
+} (error = Error Domain=NSPOSIXErrorDomain Code=3 "No such process" UserInfo={SimCallingSelector=launchApplicationWithID:options:pid:error:, NSLocalizedDescription=Simulator device failed to launch com.openintelligence.app., NSUnderlyingError=0x7b5a9202d0 {Error Domain=NSPOSIXErrorDomain Code=3 "No such process" UserInfo={NSLocalizedDescription=Application launch for 'com.openintelligence.app' did not return a process handle nor launch error.}}})
+2026-10-29 10:08:13.460 xcodebuild[72793:5656978] [MT] IDELaunchReport: 1ba6c7c8cbe50ac0:1ba6c7c8cac19300:Launching OpenIntelligenceTests Finished with error: Simulator device failed to launch com.openintelligence.app.
+2026-10-29 10:08:13.462 xcodebuild[72793:5656978] [MT] IDELaunchReport: 1ba6c7c8cbe50ac0:1ba6c7c8cbe50ac0: Finished with error: Simulator device failed to launch com.openintelligence.app.
+	Simulator device failed to launch com.openintelligence.app.
+	OpenIntelligence encountered an error (Failed to install or launch the test runner. (Underlying Error: Simulator device failed to launch com.openintelligence.app. No such process. (Underlying Error: Application launch for 'com.openintelligence.app' did not return a process handle nor launch error. No such process)))

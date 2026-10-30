@@ -1,0 +1,4 @@
+# kv1: result lines of kv1.log (log last written 2026-10-28 22:37)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+✔ Test run with 32 tests in 9 suites passed after 23.500 seconds.

@@ -1,0 +1,8 @@
+# greek10: result lines of greek10.log (log last written 2026-10-29 01:47)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✘ Test gazettePagesAreCutByArticleAndParagraph() recorded an issue at GreekLegalPipelineTests.swift:898:9: Expectation failed: articles.map(\.article) == ["Άρθρο 1", "Άρθρο 2", "Άρθρο 2", "Άρθρο 2", "Άρθρο 3"]
+✘ Test gazettePagesAreCutByArticleAndParagraph() recorded an issue at GreekLegalPipelineTests.swift:906:9: Expectation failed: articles[1].text == "Άρθρο 2\nΔοκιμαστική περίοδος - Δόκιμος εργαζόμενος\n1. Ο εργοδότης δύναται να συμφωνήσει με τον εργαζόμενο δοκιμαστική περίοδο έως έξι (6) μηνών."
+✘ Test legalMetadataRoundTripsThroughSQLite() recorded an issue at GreekLegalPipelineTests.swift:163:9: Expectation failed: read[chunkId]?.canonicalKeys == ["ART:66", "LAW:4808/2021"]
+✘ Test gazettePagesAreCutByArticleAndParagraph() recorded an issue at GreekLegalPipelineTests.swift:907:9: Expectation failed: articles.map(\.paragraphs) == [[], [1], [2], [3], []]
+✔ Test run with 0 tests in 13 suites passed after 0.001 seconds.

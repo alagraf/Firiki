@@ -1,0 +1,32 @@
+# labour4test: result lines of labour4test.log (log last written 2026-10-29 05:55)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourCode corpus=excerpt (pd_62_2025_excerpt.pdf) split=test
+[GreekEval] model availability: available
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 3 | medium | test | PASS | article 224 retrieved: yes | abstained: no | named: no | missing: [] | 12 s |
+[GreekEval] | 6 | medium | test | PASS | article 223 retrieved: yes | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] | 9 | medium | test | PASS | article 175 retrieved: yes | abstained: no | named: yes | missing: [] | 71 s |
+[GreekEval] | 12 | easy | test | PASS | article 171 retrieved: yes | abstained: no | named: yes | missing: [] | 12 s |
+[GreekEval] | 15 | medium | test | PASS | article 194 retrieved: yes | abstained: no | named: no | missing: [] | 9 s |
+[GreekEval] | 18 | medium | test | FAIL | article 194 retrieved: yes | abstained: no | named: no | missing: ["(45|σαραντα\\s*πεντε)"] | 10 s |
+[GreekEval] | 21 | medium | test | PASS | article 9 retrieved: yes | abstained: no | named: no | missing: [] | 17 s |
+[GreekEval] | 24 | medium | test | PASS | article 113 retrieved: yes | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] | 27 | easy | test | PASS | article 2 retrieved: yes | abstained: no | named: no | missing: [] | 9 s |
+[GreekEval] | 30 | medium | test | FAIL | article 331 retrieved: yes | abstained: no | named: no | missing: ["\\b(4|τεσσ\\w+)\\b(?:[^.;\\d]|\\(\\d+\\)){0,25}μην"] | 9 s |
+[GreekEval] | 33 | medium | test | FAIL | article 333 retrieved: yes | abstained: no | named: no | missing: ["\\b(2|δυο)\\b(?:[^.;\\d]|\\(\\d+\\)){0,25}μην"] | 8 s |
+[GreekEval] | 36 | medium | test | PASS | article 338 retrieved: yes | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] | 39 | easy | test | PASS | article 230 retrieved: yes | abstained: no | named: no | missing: [] | 17 s |
+[GreekEval] | 42 | hard | test | FAIL | article 291 retrieved: yes | abstained: no | named: yes | missing: ["σπουδαι"] | 57 s |
+[GreekEval] | 45 | hard | test | FAIL | article 250 retrieved: no | abstained: no | named: no | missing: ["ακυρ", "(εγγραφ|αποδειξ|αποδειξει)"] | 12 s |
+[GreekEval] | 48 | medium | test | FAIL | article 580 retrieved: yes | abstained: no | named: no | missing: ["(εναρξ|εναρξη)", "ληξ"] | 10 s |
+[GreekEval] | 51 | hard | test | PASS | article 334 retrieved: yes | abstained: no | named: no | missing: [] | 12 s |
+[GreekEval] | 54 | hard | test | FAIL | article 193 retrieved: yes | abstained: no | named: yes | missing: ["\\b(8|οκτω)\\b(?:[^.;\\d]|\\(\\d+\\)){0,25}ωρ"] | 12 s |
+[GreekEval] | 57 | medium | test | PASS | article 291 retrieved: yes | abstained: no | named: yes | missing: [] | 70 s |
+[GreekEval] | 60 | easy | test | PASS | article 219 retrieved: yes | abstained: no | named: no | missing: [] | 251 s |
+[GreekEval] | 63 | abstain | test | FAIL | must abstain | abstained: no | named: no | missing: [] | 7 s |
+[GreekEval] | 66 | abstain | test | FAIL | must abstain | abstained: no | named: no | missing: [] | 18 s |
+[GreekEval] | 69 | abstain | test | PASS | must abstain | abstained: yes | named: no | missing: [] | 11 s |
+[GreekEval] answer pass 13 of 20; retrieval hit 19 of 20; false abstentions 0; abstention correct 1 of 3
+[GreekEval] summary set=GreekLabourCode corpus=excerpt split=test: passed 14 of 23
+✔ Test run with 1 test in 1 suite passed after 679.422 seconds.

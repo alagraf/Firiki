@@ -1,0 +1,6 @@
+# t5: result lines of t5.log (log last written 2026-10-28 17:38)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✘ Test testBilingualIngestionAndHybridRetrieval() recorded an issue at GreekLegalPipelineTests.swift:391:9: Expectation failed: results.first?.chunk.sourceTextEl?.hasPrefix("Άρθρο 66") == true
+✘ Test testBilingualIngestionAndHybridRetrieval() failed after 3.544 seconds with 1 issue.
+✘ Test run with 17 tests in 3 suites failed after 3.549 seconds with 1 issue.

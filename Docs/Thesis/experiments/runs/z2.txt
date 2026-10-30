@@ -1,0 +1,6 @@
+# z2: result lines of z2.log (log last written 2026-10-28 19:22)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✘ Test nonLegalGreekQuestionKeepsTheNormalGateAThreshold() recorded an issue at GreekLegalPipelineTests.swift:637:9: Expectation failed: result.gateResults.first { $0.gate == .retrievalConfidence }?.passed == true
+✘ Test nonLegalGreekQuestionKeepsTheNormalGateAThreshold() failed after 0.118 seconds with 1 issue.
+✘ Test run with 24 tests in 5 suites failed after 79.910 seconds with 1 issue.

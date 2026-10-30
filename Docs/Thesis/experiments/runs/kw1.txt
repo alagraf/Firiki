@@ -1,0 +1,4 @@
+# kw1: result lines of kw1.log (log last written 2026-10-28 22:11)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+✔ Test run with 9 tests in 3 suites passed after 1.044 seconds.

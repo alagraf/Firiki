@@ -1,0 +1,56 @@
+# labour1: result lines of labour1.log (log last written 2026-10-29 04:23)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourCode corpus=excerpt (pd_62_2025_excerpt.pdf) split=dev
+[GreekEval] model availability: available
+[GreekEval] imported 1 document (641 passages) in 263 s
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 1 | easy | dev | PASS | article 221 retrieved: no | abstained: no | named: no | missing: [] | 10 s |
+[GreekEval] | 2 | medium | dev | PASS | article 221 retrieved: no | abstained: no | named: no | missing: [] | 10 s |
+[GreekEval] | 4 | medium | dev | PASS | article 224 retrieved: no | abstained: no | named: no | missing: [] | 10 s |
+[GreekEval] | 5 | hard | dev | FAIL | article 225 retrieved: no | abstained: no | named: no | missing: ["(δυο|2)\\s*(\\(2\\)\\s*)?περιοδ"] | 10 s |
+[GreekEval] | 7 | hard | dev | PASS | article 226 retrieved: no | abstained: no | named: no | missing: [] | 10 s |
+[GreekEval] | 8 | easy | dev | FAIL | article 222 retrieved: no | abstained: no | named: no | missing: ["(εναρξη|αρχη|ξεκιν)"] | 12 s |
+[GreekEval] | 10 | easy | dev | PASS | article 187 retrieved: no | abstained: no | named: no | missing: [] | 13 s |
+[GreekEval] | 11 | medium | dev | FAIL | article 174 retrieved: no | abstained: no | named: no | missing: ["(4|τεσσ\\w+)\\s*(\\(4\\)\\s*)?μην"] | 11 s |
+[GreekEval] | 13 | medium | dev | PASS | article 173 retrieved: no | abstained: no | named: yes | missing: [] | 10 s |
+[GreekEval] | 14 | medium | dev | PASS | article 172 retrieved: no | abstained: no | named: no | missing: [] | 13 s |
+[GreekEval] | 16 | medium | dev | PASS | article 194 retrieved: no | abstained: no | named: no | missing: [] | 8 s |
+[GreekEval] | 17 | hard | dev | PASS | article 194 retrieved: no | abstained: no | named: no | missing: [] | 9 s |
+[GreekEval] | 19 | medium | dev | PASS | article 219 retrieved: no | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] | 20 | easy | dev | PASS | article 8 retrieved: no | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] | 22 | hard | dev | FAIL | article 157 retrieved: no | abstained: no | named: no | missing: ["διατροφ"] | 54 s |
+[GreekEval] | 23 | easy | dev | PASS | article 3 retrieved: no | abstained: no | named: no | missing: [] | 14 s |
+[GreekEval] | 25 | hard | dev | FAIL | article 113 retrieved: no | abstained: no | named: no | missing: ["(9|εννεα|εννια)\\s*(\\(9\\)\\s*)?μην"] | 10 s |
+[GreekEval] | 26 | medium | dev | FAIL | article 113 retrieved: no | abstained: no | named: no | missing: ["ακυρ"] | 15 s |
+[GreekEval] | 28 | medium | dev | FAIL | article 336 retrieved: no | abstained: no | named: yes | missing: ["(12|δωδεκα)\\s*(\\(12\\)\\s*)?μην"] | 8 s |
+[GreekEval] | 29 | medium | dev | FAIL | article 331 retrieved: no | abstained: yes | named: no | missing: ["(2|δυο)\\s*(\\(2\\)\\s*)?μην"] | 7 s |
+[GreekEval] | 31 | easy | dev | FAIL | article 325 retrieved: no | abstained: no | named: no | missing: ["σπουδαι"] | 10 s |
+[GreekEval] | 32 | hard | dev | FAIL | article 341 retrieved: no | abstained: no | named: no | missing: ["εγγραφ"] | 16 s |
+[GreekEval] | 34 | medium | dev | FAIL | article 333 retrieved: no | abstained: no | named: yes | missing: ["(12|δωδεκα)\\s*(\\(12\\)\\s*)?μην"] | 13 s |
+[GreekEval] | 35 | hard | dev | PASS | article 337 retrieved: no | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] | 37 | easy | dev | PASS | article 236 retrieved: no | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] | 38 | medium | dev | FAIL | article 236 retrieved: no | abstained: no | named: no | missing: ["(8|οκτω)\\s*(\\(8\\)\\s*)?εβδομαδ"] | 9 s |
+[GreekEval] | 40 | medium | dev | PASS | article 291 retrieved: no | abstained: no | named: no | missing: [] | 8 s |
+[GreekEval] | 41 | medium | dev | FAIL | article 291 retrieved: no | abstained: no | named: no | missing: ["(6|εξι)\\s*(\\(6\\)\\s*)?μην"] | 14 s |
+[GreekEval] | 43 | medium | dev | FAIL | article 239 retrieved: no | abstained: no | named: no | missing: ["(30|τριαντα)\\s*(\\(30\\)\\s*)?μην"] | 13 s |
+[GreekEval] | 44 | easy | dev | FAIL | article 242 retrieved: no | abstained: no | named: no | missing: ["(1|μια|μιας|ενα)\\s*(\\(1\\)\\s*)?ημερ"] | 8 s |
+[GreekEval] | 46 | medium | dev | PASS | article 60 retrieved: no | abstained: no | named: no | missing: [] | 12 s |
+[GreekEval] | 47 | hard | dev | FAIL | article 65 retrieved: no | abstained: no | named: no | missing: ["συνηγορ"] | 10 s |
+[GreekEval] | 49 | hard | dev | PASS | article 580 retrieved: no | abstained: no | named: no | missing: [] | 8 s |
+[GreekEval] | 50 | hard | dev | FAIL | article 336 retrieved: no | abstained: no | named: yes | missing: ["προσμετρ|μετρ|συνυπολογ|περιλαμβαν"] | 16 s |
+[GreekEval] | 52 | hard | dev | FAIL | article 348 retrieved: no | abstained: yes | named: no | missing: ["(ημισυ|μισ|1/2)", "(3|τρει\\w*|τρι\\w*)\\s*(\\(3\\)\\s*)?μην"] | 13 s |
+[GreekEval] | 53 | hard | dev | PASS | article 173 retrieved: no | abstained: no | named: yes | missing: [] | 281 s |
+[GreekEval] | 55 | hard | dev | PASS | article 341 retrieved: no | abstained: no | named: no | missing: [] | 14 s |
+[GreekEval] | 56 | easy | dev | PASS | article 241 retrieved: no | abstained: no | named: no | missing: [] | 10 s |
+[GreekEval] | 58 | medium | dev | FAIL | article 172 retrieved: no | abstained: no | named: no | missing: ["(15|δεκαπεντε)"] | 57 s |
+[GreekEval] | 59 | hard | dev | FAIL | article 226 retrieved: no | abstained: no | named: no | missing: ["(ανυπαρκτ|ακυρ|δεν\\s+ισχυ)"] | 23 s |
+[GreekEval] | 61 | medium | dev | FAIL | article 348 retrieved: no | abstained: yes | named: no | missing: ["(μισ|ημισυ|1/2|(1|ενα|ενασ)\\s*(\\(1\\)\\s*)?μην)"] | 12 s |
+[GreekEval] | 62 | abstain | dev | PASS | must abstain | abstained: yes | named: no | missing: [] | 15 s |
+[GreekEval] | 64 | abstain | dev | PASS | must abstain | abstained: yes | named: no | missing: [] | 15 s |
+[GreekEval] | 65 | abstain | dev | PASS | must abstain | abstained: yes | named: no | missing: [] | 8 s |
+[GreekEval] | 67 | abstain | dev | PASS | must abstain | abstained: yes | named: no | missing: [] | 10 s |
+[GreekEval] | 68 | abstain | dev | FAIL | must abstain | abstained: no | named: no | missing: [] | 15 s |
+[GreekEval] answer pass 20 of 41; retrieval hit 0 of 41; false abstentions 3; abstention correct 4 of 5
+[GreekEval] summary set=GreekLabourCode corpus=excerpt split=dev: passed 24 of 46
+✔ Test run with 1 test in 1 suite passed after 1171.892 seconds.

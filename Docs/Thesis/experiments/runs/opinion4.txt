@@ -1,0 +1,11 @@
+# opinion4: result lines of opinion4.log (log last written 2026-10-30 04:05)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekOpinion] | 1 | dev | written | citations 2 of 2 | other articles cited [4, 10, 11, 191, 192, 411] | facts 3 of 4 | dropped 0 | 29 s |
+[GreekOpinion] | 2 | dev | written | citations 2 of 2 | other articles cited [10, 11, 175, 233, 410, 411] | facts 3 of 4 | dropped 0 | 24 s |
+[GreekOpinion] | 3 | dev | written | citations 2 of 2 | other articles cited [2, 49, 202, 258] | facts 2 of 3 | dropped 0 | 21 s |
+[GreekOpinion] | 4 | dev | written | citations 2 of 2 | other articles cited [35, 50, 238, 248] | facts 2 of 3 | dropped 0 | 21 s |
+[GreekOpinion] | 5 | dev | written | citations 0 of 2 | other articles cited [6, 47, 66, 113, 205, 210, 211] | facts 0 of 4 | dropped 0 | 21 s |
+[GreekOpinion] | 6 | dev | written | citations 2 of 2 | other articles cited [92, 125] | facts 1 of 2 | dropped 1 | 19 s |
+[GreekOpinion] summary split=dev: citations 10 of 12, key facts 11 of 20, refused 0 of 6
+✔ Test run with 7 tests in 2 suites passed after 138.822 seconds.

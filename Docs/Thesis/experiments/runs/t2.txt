@@ -1,0 +1,4 @@
+# t2: result lines of t2.log (log last written 2026-10-28 16:59)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✔ Test run with 14 tests in 3 suites passed after 0.031 seconds.

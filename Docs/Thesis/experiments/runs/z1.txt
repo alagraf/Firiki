@@ -1,0 +1,4 @@
+# z1: result lines of z1.log (log last written 2026-10-28 19:16)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+✔ Test run with 1 test in 1 suite passed after 83.749 seconds.

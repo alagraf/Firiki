@@ -1,0 +1,17 @@
+# eval4: result lines of eval4.log (log last written 2026-10-28 22:29)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] model availability: available
+[GreekEval] imported 1 document in 903 s
+[GreekEval] | # | level | result | retrieval | article named | missing facts | time |
+[GreekEval] | 1 | easy | PASS | article 1 retrieved: yes | named: yes | missing: [] | 12 s |
+[GreekEval] | 2 | easy | PASS | article 51 retrieved: yes | named: yes | missing: [] | 10 s |
+[GreekEval] | 3 | easy | PASS | article 55 retrieved: yes | named: yes | missing: [] | 9 s |
+[GreekEval] | 4 | medium | FAIL | article 6 retrieved: yes | named: no | missing: ["(6|εξι) (μην|μηνες)"] | 11 s |
+[GreekEval] | 5 | medium | PASS | article 45 retrieved: yes | named: no | missing: [] | 16 s |
+[GreekEval] | 6 | medium | PASS | article 30 retrieved: no | named: no | missing: [] | 8 s |
+[GreekEval] | 7 | medium | FAIL | article 6 retrieved: yes | named: no | missing: ["(3|τρεις|τριων) ημερ"] | 13 s |
+[GreekEval] | 8 | hard | PASS | article 32 retrieved: yes | named: no | missing: [] | 9 s |
+[GreekEval] | 9 | hard | PASS | article 110 retrieved: no | named: no | missing: [] | 67 s |
+[GreekEval] | 10 | hard | FAIL | article 120 retrieved: no | named: no | missing: ["πατριωτισμ", "αντιστ|αντισταση"] | 12 s |
+✔ Test run with 1 test in 1 suite passed after 1075.033 seconds.

@@ -1,0 +1,7 @@
+# summarytest1: result lines of summarytest1.log (log last written 2026-10-30 07:31)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekSummary] document ya_8934_2026_fek_b1759.pdf statute=MD:8934 passages=37 groups=0 notes=0 chars, 2 s
+[GreekSummary] | 2 | test | provisions 0 of 5 | articles cited 0 of 0 | dropped 0 | missing: ["minimum monthly wage for salaried employees: 920.00 euros", "minimum daily wage for manual workers: 41.09 euros", "from 1 April 2026", "for the whole country", "legal basis: article 141A of the Labour Code"] |
+[GreekSummary] summary split=test: provisions covered 0 of 5
+✔ Test run with 7 tests in 2 suites passed after 3.332 seconds.

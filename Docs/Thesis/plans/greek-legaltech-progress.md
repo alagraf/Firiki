@@ -250,3 +250,6 @@ implement, test, commit, and only then start the next. **Priority (owner, 2026-1
    with a schema of the template ids, keyword fallback; dev 43/44, test 20/22.
 
 The EU holdout stays evaluation only for all of these.
+
+**2026-10-30:** all four capabilities done; full-Code test 15/23 (2.11.30); EU holdout run again,
+unchanged (2.11.31). Every experiment is recorded in `Docs/Thesis/EXPERIMENTS.md`. Left: device check.

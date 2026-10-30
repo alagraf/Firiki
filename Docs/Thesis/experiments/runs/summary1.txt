@@ -1,0 +1,12 @@
+# summary1: result lines of summary1.log (log last written 2026-10-30 01:25)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✘ Test mapThenReduceThenTranslate() recorded an issue at GreekLegalSummaryTests.swift:87:9: Expectation failed: summary.greek.hasPrefix("EL Law 5278/2026") && summary.groups == 1 && summary.dropped.isEmpty
+✘ Test unsupportedFiguresAndForeignArticlesAreDropped() recorded an issue at GreekLegalSummaryTests.swift:64:9: Expectation failed: text.contains("Law 5278/2026 strengthens")
+✘ Test mapThenReduceThenTranslate() failed after 0.032 seconds with 1 issue.
+✘ Test unsupportedFiguresAndForeignArticlesAreDropped() recorded an issue at GreekLegalSummaryTests.swift:68:9: Expectation failed: dropped.count == 2
+✘ Test unsupportedFiguresAndForeignArticlesAreDropped() failed after 0.037 seconds with 2 issues.
+[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=189 groups=10 notes=18259 chars, 283 s
+[GreekSummary] | 1 | dev | provisions 5 of 6 | articles cited 1 of 3 | dropped 0 | missing: ["GSEE co-signs sector agreements (art. 3)"] |
+[GreekSummary] summary split=dev: provisions covered 5 of 6
+✘ Test run with 5 tests in 2 suites failed after 284.259 seconds with 3 issues.

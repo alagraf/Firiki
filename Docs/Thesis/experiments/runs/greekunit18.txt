@@ -1,0 +1,9 @@
+# greekunit18: result lines of greekunit18.log (log last written 2026-10-29 21:23)
+	 Executed 15 tests, with 0 failures (0 unexpected) in 0.168 (0.177) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.020 (0.022) seconds
+	 Executed 23 tests, with 0 failures (0 unexpected) in 0.111 (0.117) seconds
+	 Executed 18 tests, with 0 failures (0 unexpected) in 0.050 (0.055) seconds
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.019 (0.020) seconds
+	 Executed 67 tests, with 0 failures (0 unexpected) in 0.369 (0.392) seconds
+	 Executed 67 tests, with 0 failures (0 unexpected) in 0.369 (0.393) seconds
+✔ Test run with 74 tests in 15 suites passed after 25.703 seconds.

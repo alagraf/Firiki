@@ -1,0 +1,14 @@
+# holdout_fork3: result lines of holdout_fork3.log (log last written 2026-10-29 12:23)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.003) seconds
+[EUHoldout] model: AFM 3 Core Advanced, window 8192, availability available
+[EUHoldout] imported 11 en passages in 83 s
+[EUHoldout] imported 11 el passages in 113 s
+[EUHoldout] cleared 0 cached searches
+[EUHoldout] SUMMARY English passages, English questions: 13 of 13 answers look right, right passage retrieved 13 of 13, declined 2 of 3 questions that have no answer, declined 0 answerable, errors 0
+[EUHoldout] SUMMARY Greek passages, English questions: 13 of 13 answers look right, right passage retrieved 13 of 13, declined 2 of 3 questions that have no answer, declined 0 answerable, errors 0
+[EUHoldout] SUMMARY Greek passages, Greek questions: 13 of 13 answers look right, right passage retrieved 13 of 13, declined 3 of 3 questions that have no answer, declined 0 answerable, errors 0
+[EUHoldout] RESULT English passages, English questions: 13 of 13 answers look right, right passage retrieved 13 of 13, declined 2 of 3 questions that have no answer, declined 0 answerable, errors 0
+[EUHoldout] RESULT Greek passages, English questions: 13 of 13 answers look right, right passage retrieved 13 of 13, declined 2 of 3 questions that have no answer, declined 0 answerable, errors 0
+[EUHoldout] RESULT Greek passages, Greek questions: 13 of 13 answers look right, right passage retrieved 13 of 13, declined 3 of 3 questions that have no answer, declined 0 answerable, errors 0
+✔ Test run with 1 test in 1 suite passed after 2890.972 seconds.

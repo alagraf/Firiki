@@ -1,0 +1,21 @@
+# constitution12: result lines of constitution12.log (log last written 2026-10-29 14:51)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekConstitution corpus=full (syntagma1_1.pdf) split=all
+[GreekEval] model availability: available
+[GreekEval] imported 1 document (712 passages) in 374 s
+[GreekEval] cleared 0 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 1 | easy | - | FAIL | article 1 retrieved: yes | abstained: yes | named: no | missing: ["κοινοβουλευτικ\\w* δημοκρατ"] | 214 s |
+[GreekEval] | 2 | easy | - | FAIL | article 51 retrieved: no | abstained: yes | named: no | missing: ["200|διακοσι", "300|τριακοσι"] | 8 s |
+[GreekEval] | 3 | easy | - | PASS | article 55 retrieved: yes | abstained: no | named: no | missing: [] | 8 s |
+[GreekEval] | 4 | medium | - | PASS | article 6 retrieved: yes | abstained: no | named: no | missing: [] | 7 s |
+[GreekEval] | 5 | medium | - | FAIL | article 45 retrieved: yes | abstained: no | named: no | missing: ["προεδρ\\w* (της )?δημοκρατ"] | 8 s |
+[GreekEval] | 6 | medium | - | PASS | article 30 retrieved: yes | abstained: no | named: no | missing: [] | 6 s |
+[GreekEval] | 7 | medium | - | PASS | article 6 retrieved: yes | abstained: no | named: no | missing: [] | 9 s |
+[GreekEval] | 8 | hard | - | FAIL | article 32 retrieved: yes | abstained: yes | named: no | missing: ["2/3|δυο τριτ"] | 9 s |
+[GreekEval] | 9 | hard | - | PASS | article 110 retrieved: yes | abstained: no | named: yes | missing: [] | 268 s |
+[GreekEval] | 10 | hard | - | PASS | article 120 retrieved: yes | abstained: no | named: no | missing: [] | 11 s |
+[GreekEval] answer pass 6 of 10; retrieval hit 9 of 10; false abstentions 3; abstention correct 0 of 0
+[GreekEval] summary set=GreekConstitution corpus=full split=all: passed 6 of 10
+✔ Test run with 1 test in 1 suite passed after 928.233 seconds.

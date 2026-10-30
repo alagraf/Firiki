@@ -1,0 +1,21 @@
+# constitution16: result lines of constitution16.log (log last written 2026-10-29 18:15)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekConstitution corpus=full (syntagma1_1.pdf) split=all
+[GreekEval] model availability: available
+[GreekEval] imported 1 document (712 passages) in 194 s
+[GreekEval] cleared 0 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 1 | easy | - | PASS | article 1 retrieved: yes | abstained: no | named: no | missing: [] | 12 s |
+[GreekEval] | 2 | easy | - | PASS | article 51 retrieved: yes | abstained: no | named: no | missing: [] | 9 s |
+[GreekEval] | 3 | easy | - | FAIL | article 55 retrieved: yes | abstained: yes | named: no | missing: ["25|εικοσι ?πεντε|εικοστ\\w* ?πεμπτ"] | 8 s |
+[GreekEval] | 4 | medium | - | PASS | article 6 retrieved: yes | abstained: no | named: no | missing: [] | 7 s |
+[GreekEval] | 5 | medium | - | PASS | article 45 retrieved: yes | abstained: no | named: no | missing: [] | 12 s |
+[GreekEval] | 6 | medium | - | PASS | article 30 retrieved: yes | abstained: no | named: no | missing: [] | 6 s |
+[GreekEval] | 7 | medium | - | PASS | article 6 retrieved: yes | abstained: no | named: no | missing: [] | 10 s |
+[GreekEval] | 8 | hard | - | FAIL | article 32 retrieved: yes | abstained: yes | named: no | missing: ["2/3|δυο τριτ"] | 8 s |
+[GreekEval] | 9 | hard | - | PASS | article 110 retrieved: yes | abstained: no | named: no | missing: [] | 10 s |
+[GreekEval] | 10 | hard | - | PASS | article 120 retrieved: yes | abstained: no | named: no | missing: [] | 16 s |
+[GreekEval] answer pass 8 of 10; retrieval hit 10 of 10; false abstentions 2; abstention correct 0 of 0
+[GreekEval] summary set=GreekConstitution corpus=full split=all: passed 8 of 10
+✔ Test run with 1 test in 1 suite passed after 298.372 seconds.

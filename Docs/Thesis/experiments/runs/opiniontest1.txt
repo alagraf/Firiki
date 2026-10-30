@@ -1,0 +1,9 @@
+# opiniontest1: result lines of opiniontest1.log (log last written 2026-10-30 07:33)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekOpinion] | 7 | test | written | citations 0 of 2 | other articles cited [3, 4, 14, 49, 258, 396] | facts 1 of 3 | dropped 0 | 29 s |
+[GreekOpinion] | 8 | test | written | citations 0 of 2 | other articles cited [8, 9, 10, 12, 27, 175, 202, 221, 222, 223, 225] | facts 2 of 2 | dropped 0 | 27 s |
+[GreekOpinion] | 9 | test | written | citations 1 of 2 | other articles cited [12, 18, 549] | facts 2 of 3 | dropped 0 | 18 s |
+[GreekOpinion] | 10 | test | written | citations 2 of 2 | other articles cited [191, 192] | facts 2 of 2 | dropped 1 | 18 s |
+[GreekOpinion] summary split=test: citations 3 of 8, key facts 7 of 10, refused 0 of 4
+✔ Test run with 7 tests in 2 suites passed after 94.125 seconds.

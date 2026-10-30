@@ -1,0 +1,36 @@
+# library4: result lines of library4.log (log last written 2026-10-30 03:05)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourLibrary corpus=library (pd_62_2025_fek_a121.pdf, n_5239_2025_fek_a178.pdf, n_5278_2026_fek_a22.pdf, n_5316_2026_fek_a105.pdf, ya_8934_2026_fek_b1759.pdf) split=dev
+[GreekEval] model availability: available
+[GreekEval] imported 5 documents (6337 passages) in 1555 s
+[GreekEval] cleared 0 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 1 | easy | dev | FAIL | article 7 retrieved: yes, documents: yes | abstained: yes | named: no | missing: ["\\b(4|τεσσ[εα]ρ\\w*)\\b(?:[^.;\\d]|\\(\\d+\\)){0,25}ωρ"] | 16 s |
+[GreekEval] | 2 | medium | dev | PASS | article 7 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 12 s |
+[GreekEval] | 4 | medium | dev | PASS | article 14 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 15 s |
+[GreekEval] | 6 | easy | dev | PASS | article 21 retrieved: yes, documents: yes | abstained: no | named: yes | missing: [] | 679 s |
+[GreekEval] | 7 | medium | dev | PASS | article 12 retrieved: no, documents: no | abstained: no | named: no | missing: [] | 20 s |
+[GreekEval] | 8 | medium | dev | FAIL | article 8 retrieved: no, documents: yes | abstained: no | named: no | missing: ["(τριμην\\w*|\\b(3|τρει?σ|τριων)\\b(?:[^.;\\d]|\\(\\d+\\)){0,10}μην)"] | 13 s |
+[GreekEval] | 10 | easy | dev | FAIL | article 9 retrieved: no, documents: yes | abstained: yes | named: no | missing: ["\\b40\\b|σαραντα"] | 12 s |
+[GreekEval] | 11 | hard | dev | FAIL | article 9 retrieved: no, documents: yes | abstained: yes | named: no | missing: ["(γ\\.?σ\\.?ε\\.?ε|γενικη συνομοσπονδια)"] | 19 s |
+[GreekEval] | 13 | easy | dev | FAIL | article 10 retrieved: yes, documents: yes | abstained: no | named: no | missing: ["\\b(2|δυο)\\b(?:[^.;\\d]|\\(\\d+\\)){0,25}μην"] | 15 s |
+[GreekEval] | 14 | easy | dev | PASS | article 11 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 18 s |
+[GreekEval] | 16 | medium | dev | FAIL | article 9 retrieved: no, documents: yes | abstained: yes | named: no | missing: ["(αρχικ\\w* αμοιβ|ευροσ)", "συλλογικ"] | 23 s |
+[GreekEval] | 17 | easy | dev | FAIL | article 48 retrieved: no, documents: yes | abstained: yes | named: no | missing: ["νοεμβρ|\\b1[./]11[./]"] | 16 s |
+[GreekEval] | 19 | medium | dev | FAIL | article 36 retrieved: no, documents: yes | abstained: yes | named: no | missing: ["(ναι|εφαρμοζ|περιλαμβαν|συμπεριλαμβαν)", "(διευθυντ|ουασινγκτ)"] | 13 s |
+[GreekEval] | 20 | easy | dev | PASS | article 0 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 19 s |
+[GreekEval] | 21 | easy | dev | PASS | article 0 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 21 s |
+[GreekEval] | 23 | medium | dev | PASS | article 0 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 23 s |
+[GreekEval] | 25 | easy | dev | PASS | article 195 retrieved: no, documents: no | abstained: no | named: no | missing: [] | 19 s |
+[GreekEval] | 26 | easy | dev | PASS | article 196 retrieved: no, documents: no | abstained: no | named: no | missing: [] | 20 s |
+[GreekEval] | 28 | easy | dev | PASS | article 247 retrieved: no, documents: no | abstained: no | named: no | missing: [] | 21 s |
+[GreekEval] | 30 | hard | dev | FAIL | article 7 retrieved: yes, documents: no | abstained: no | named: no | missing: ["\\b(4|τεσσ[εα]ρ\\w*)\\b(?:[^.;\\d]|\\(\\d+\\)){0,25}ωρ", "5239"] | 21 s |
+[GreekEval] | 32 | hard | dev | FAIL | article 8 retrieved: no, documents: no | abstained: no | named: no | missing: ["(ολοι|ολουσ|ολων|συνολο)", "5278"] | 20 s |
+[GreekEval] | 33 | medium | dev | FAIL | must abstain | abstained: no | named: no | missing: [] | 23 s |
+[GreekEval] | 34 | medium | dev | PASS | must abstain | abstained: yes | named: no | missing: [] | 9 s |
+[GreekEval] | 36 | medium | dev | FAIL | must abstain | abstained: no | named: no | missing: [] | 20 s |
+[GreekEval] answer pass 11 of 21; retrieval hit 10 of 21; false abstentions 6; abstention correct 1 of 3
+[GreekEval] right documents retrieved 15 of 21
+[GreekEval] summary set=GreekLabourLibrary corpus=library split=dev: passed 12 of 24
+✔ Test run with 1 test in 1 suite passed after 2657.599 seconds.

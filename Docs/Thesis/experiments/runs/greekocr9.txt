@@ -1,0 +1,4 @@
+# greekocr9: result lines of greekocr9.log (log last written 2026-10-29 09:10)
+} (error = Error Domain=NSPOSIXErrorDomain Code=3 "No such process" UserInfo={SimCallingSelector=launchApplicationWithID:options:pid:error:, NSLocalizedDescription=Simulator device failed to launch com.openintelligence.app., NSUnderlyingError=0x753a698db0 {Error Domain=NSPOSIXErrorDomain Code=3 "No such process" UserInfo={NSLocalizedDescription=Application launch for 'com.openintelligence.app' did not return a process handle nor launch error.}}})
+2026-10-29 09:05:18.853 xcodebuild[55905:5516292] [MT] IDELaunchReport: 25d75ca5ec3e21c0:25d75ca5ec3e04c0:Launching OpenIntelligenceTests Finished with error: Simulator device failed to launch com.openintelligence.app.
+2026-10-29 09:05:18.855 xcodebuild[55905:5516292] [MT] IDELaunchReport: 25d75ca5ec3e21c0:25d75ca5ec3e21c0: Finished with error: Simulator device failed to launch com.openintelligence.app.

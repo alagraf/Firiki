@@ -64,6 +64,12 @@ streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
 
+- 2026-10-30 11:45 (Claude Code): EU holdout run again (owner chose it before the device check):
+  unchanged, 12/12 graded right and 3/3 refused in each condition (2.11.31); owner's grading sheet
+  in `rag-tests/results/2026-10-30/`. Every experiment is now recorded in `EXPERIMENTS.md` with run
+  result files in `experiments/runs/` (owner's rule: record all experiments for the evaluation
+  chapter; rerun `scripts/thesis/collect_run_results.py` after new runs). Left: the device check.
+
 - 2026-10-30 08:30 (Claude Code): full-Code Labour test split once (2.11.30): 15 of 23, refusals 3 of
   3 with case 69, 1 wrong refusal. Left: the device check with the owner, then the EU holdout.
 

@@ -1,0 +1,5 @@
+# translatebench2: result lines of translatebench2.log (log last written 2026-10-29 13:10)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[TranslateBench] 117 chunks: one sentence at a time 21.3 s, batched 9.3 s (2.3x), identical chunks 50
+✔ Test run with 1 test in 1 suite passed after 31.856 seconds.

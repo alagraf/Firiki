@@ -1,0 +1,12 @@
+# import_b4: result lines of import_b4.log (log last written 2026-10-29 13:48)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourCode corpus=excerpt (pd_62_2025_excerpt.pdf) split=all
+[GreekEval] model availability: available
+[GreekEval] imported 1 document (691 passages) in 274 s
+[GreekEval] cleared 0 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 1 | easy | dev | FAIL | article 221 retrieved: yes | abstained: yes | named: no | missing: ["(20|εικοσι)\\b"] | 11 s |
+[GreekEval] answer pass 0 of 1; retrieval hit 1 of 1; false abstentions 1; abstention correct 0 of 0
+[GreekEval] summary set=GreekLabourCode corpus=excerpt split=all: passed 0 of 1
+✔ Test run with 1 test in 1 suite passed after 286.070 seconds.

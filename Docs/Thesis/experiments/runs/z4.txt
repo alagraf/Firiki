@@ -1,0 +1,4 @@
+# z4: result lines of z4.log (log last written 2026-10-28 19:27)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✔ Test run with 29 tests in 7 suites passed after 82.345 seconds.

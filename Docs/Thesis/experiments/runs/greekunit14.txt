@@ -1,0 +1,4 @@
+# greekunit14: result lines of greekunit14.log (log last written 2026-10-29 15:19)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.006) seconds
+✔ Test run with 70 tests in 15 suites passed after 24.691 seconds.

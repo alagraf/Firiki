@@ -1,0 +1,10 @@
+# greekunit17: result lines of greekunit17.log (log last written 2026-10-29 20:40)
+	 Executed 15 tests, with 0 failures (0 unexpected) in 0.116 (0.132) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.021 (0.023) seconds
+	 Executed 23 tests, with 0 failures (0 unexpected) in 0.179 (0.186) seconds
+	 Executed 18 tests, with 0 failures (0 unexpected) in 0.067 (0.072) seconds
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.023 (0.024) seconds
+	 Executed 67 tests, with 0 failures (0 unexpected) in 0.406 (0.438) seconds
+	 Executed 67 tests, with 0 failures (0 unexpected) in 0.406 (0.439) seconds
+✘ Test textBoxesFollowTheLine() failed after 0.124 seconds with 1 issue.
+✘ Test run with 72 tests in 15 suites failed after 30.343 seconds with 1 issue.

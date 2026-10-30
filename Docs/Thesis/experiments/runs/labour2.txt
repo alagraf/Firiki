@@ -1,0 +1,6 @@
+# labour2: result lines of labour2.log (log last written 2026-10-29 04:56)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourCode corpus=excerpt (pd_62_2025_excerpt.pdf) split=dev
+[GreekEval] model availability: available
+[GreekEval] imported 1 document (691 passages) in 263 s

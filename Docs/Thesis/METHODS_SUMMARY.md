@@ -181,6 +181,7 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-30 | Summary of Law 5278/2026 (development): key provisions, articles cited | 5 of 6, 3 of 3 (2 of 6, 0 of 3 before the reading-order fixes) |
 | 2026-10-30 | Summary of decision 8934/2026 (test): key provisions | 0 of 5 held out (no articles, empty summary); 4 of 5 after reading by parts (not held out) |
 | 2026-10-30 | Legal opinion, development (6) / test (4): citations, key facts, refused | 10 of 12, 11 of 20, 0 / 3 of 8, 7 of 10, 0 |
+| 2026-10-30 | EU holdout, this fork, rerun after the PoC work (automatic corrected grading) | unchanged: 12 of 12 graded right, 3 of 3 refused in each condition |
 | 2026-10-30 | Labour Code, test (23), full 260-page Code, once | 15 of 23 (12 before); 3 of 3 refused, including the question about the Constitution's Article 16; 1 wrong refusal |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
@@ -236,7 +237,14 @@ questions. The grading was not blind (the grader knew which app wrote each answe
 The set is small (16 questions) and its library tiny (11 passages), so finding the passage is easy;
 the larger Labour Code sets remain the main accuracy measure.
 
+**Run again on 2026-10-30**, after the PoC capabilities and the reading-order fixes, with the same
+automatic grading (the corrected one): the fork's result is unchanged, 12 of the 12 graded
+answerable questions right and 3 of 3 unanswerable refused in each condition, all Greek answers in
+Greek, the right passage retrieved every time (the same as the 2026-10-29 run under this grading).
+The owner's hand grade of this run is pending.
+
 ## Revision history
+- 2026-10-30: EU holdout run again (unchanged); every experiment recorded in `EXPERIMENTS.md`.
 - 2026-10-30: Labour Code test split over the full Code (refusals, the Constitution question).
 - 2026-10-30: five-document library (search by named law, contents left out), reading order of
   Gazette pages, summary of one statute and legal opinion (PoC capabilities), with development and

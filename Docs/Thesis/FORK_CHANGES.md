@@ -1590,6 +1590,10 @@ query wrapper, front matter before the context is packed, the extractive overrid
 a generated Greek page with a keraia before "Άρθρο 1"), `GreekConstitutionEvaluationTests.swift`
 (the `GreekLabourLibrary` set, reimported into its own library).
 
+The statute scope's hypothesis (it would fix the six failed dev questions that name a law) was not
+supported: none of them changed with it, and the dev result went from 13 to 11 (cases 2 and 36
+flipped). Per-case results and the open failures (13, 33) are in `EXPERIMENTS.md` E1–E4.
+
 **Verification** (five-document library, dev split, 24 questions, iOS 27 Simulator; one run each):
 
 | Run | Change | Passed | Right documents retrieved |
@@ -1745,6 +1749,30 @@ when the per-document statute key was added (2.11.25).
 retrieved for 18 of 20 and 1 wrong refusal (33). Must refuse: **3 of 3**, case 69 included.
 Failures with the right article retrieved: 3 (two months), 18 (45 hours), 30 (four months), 48
 (start and end), 54 (8 hours); with it not retrieved: 36 (article 338), 45 (article 250).
+
+#### 2.11.31 Experiments record; EU holdout run again
+
+**Why:** the owner asked (2026-10-30) for every experiment that can serve the evaluation chapter
+to be recorded, including dropped ones and per-case outcomes. Run logs lived only in
+`/private/tmp/oi-logs`, which is cleared on restart.
+
+**What:**
+- `Docs/Thesis/EXPERIMENTS.md`: each experiment's observation, change, hypothesis, runs, numbers and
+  outcome (E1–E10), with a table pointing to the earlier experiments in this file.
+- `scripts/thesis/collect_run_results.py` copies the result lines of every run log (per-case rows,
+  summaries, test outcome lines) to `Docs/Thesis/experiments/runs/`, one file a run, with
+  `INDEX.md`. For the EU holdout it keeps only the model, import and summary lines; a check of the
+  71 longer strings of the holdout file found none of them in the saved files.
+- The EU holdout run again at `ffff0241` (`holdout_fork4`, reimported, 2,341 s), evaluation only.
+
+**Files:** `Docs/Thesis/EXPERIMENTS.md`, `Docs/Thesis/experiments/runs/` (147 runs),
+`scripts/thesis/collect_run_results.py`, `Docs/Thesis/IMPLEMENTATION_SUMMARY.md` (the owner's
+summary of every fork change for the implementation chapter).
+
+**Verification:** holdout graded with `regrade_holdout.py`: 12 of 12 graded answerable questions
+right and 3 of 3 refused in each of the three conditions, the same as `holdout_fork3` graded the
+same way; right passage retrieved 13 of 13. The owner's grading sheet for this run is in
+`rag-tests/results/2026-10-30/` (outside the repository).
 
 ## 3. How to inspect the changes
 

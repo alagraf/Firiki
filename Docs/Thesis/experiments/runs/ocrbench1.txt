@@ -1,0 +1,36 @@
+# ocrbench1: result lines of ocrbench1.log (log last written 2026-10-29 14:58)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[OCRBench] page 01 clean vision CER 0.9772 WER 0.9766 wordRecall 0.0980 wordPrec 0.1695 idRecall 0.0000 numRecall 0.7692 s 2.40
+[OCRBench] page 01 clean paddle CER 0.4468 WER 0.4716 wordRecall 0.9510 wordPrec 0.9510 idRecall 0.8750 numRecall 0.8462 s 7.07
+[OCRBench] page 01 clean app_path CER 0.4468 WER 0.4716 wordRecall 0.9510 wordPrec 0.9510 idRecall 0.8750 numRecall 0.8462 s 11.05
+[OCRBench] page 01 scan vision CER 0.9778 WER 0.9766 wordRecall 0.0980 wordPrec 0.1852 idRecall 0.0000 numRecall 0.7692 s 1.08
+[OCRBench] page 01 scan paddle CER 0.4462 WER 0.6321 wordRecall 0.5294 wordPrec 0.7013 idRecall 0.7083 numRecall 0.7949 s 3.24
+[OCRBench] page 01 scan app_path CER 0.4462 WER 0.6321 wordRecall 0.5294 wordPrec 0.7013 idRecall 0.7083 numRecall 0.7949 s 4.75
+[OCRBench] page 01 photo vision CER 0.9772 WER 0.9766 wordRecall 0.0980 wordPrec 0.1176 idRecall 0.0000 numRecall 0.7436 s 1.18
+[OCRBench] page 01 photo paddle CER 0.4587 WER 0.4749 wordRecall 0.9641 wordPrec 0.9547 idRecall 0.8750 numRecall 0.9487 s 13.40
+[OCRBench] page 01 photo app_path CER 0.4587 WER 0.4749 wordRecall 0.9641 wordPrec 0.9547 idRecall 0.8750 numRecall 0.9487 s 7.69
+[OCRBench] page 04 clean vision CER 0.9857 WER 0.9974 wordRecall 0.0381 wordPrec 0.0435 idRecall 0.0000 numRecall 0.9091 s 2.20
+[OCRBench] page 04 clean paddle CER 0.7383 WER 0.8590 wordRecall 0.9633 wordPrec 0.9338 idRecall 0.8947 numRecall 0.9394 s 7.56
+[OCRBench] page 04 clean app_path CER 0.7383 WER 0.8590 wordRecall 0.9633 wordPrec 0.9338 idRecall 0.8947 numRecall 0.9394 s 10.03
+[OCRBench] page 04 scan vision CER 0.9851 WER 0.9881 wordRecall 0.0276 wordPrec 0.0925 idRecall 0.0000 numRecall 0.6364 s 1.71
+[OCRBench] page 04 scan paddle CER 0.7451 WER 0.9157 wordRecall 0.6916 wordPrec 0.7279 idRecall 0.7895 numRecall 0.7879 s 5.87
+[OCRBench] page 04 scan app_path CER 0.7451 WER 0.9157 wordRecall 0.6916 wordPrec 0.7279 idRecall 0.7895 numRecall 0.7879 s 7.63
+[OCRBench] page 04 photo vision CER 0.9837 WER 0.9881 wordRecall 0.0302 wordPrec 0.0782 idRecall 0.0000 numRecall 0.7273 s 2.53
+[OCRBench] page 04 photo paddle CER 0.7376 WER 0.8577 wordRecall 0.9580 wordPrec 0.9311 idRecall 0.8947 numRecall 0.9091 s 7.75
+[OCRBench] page 04 photo app_path CER 0.7376 WER 0.8577 wordRecall 0.9580 wordPrec 0.9311 idRecall 0.8947 numRecall 0.9091 s 17.24
+[OCRBench] page 08 clean vision CER 0.9842 WER 0.9930 wordRecall 0.0497 wordPrec 0.0546 idRecall 0.0000 numRecall 0.8605 s 1.65
+[OCRBench] page 08 clean paddle CER 0.7610 WER 0.8943 wordRecall 0.9531 wordPrec 0.9213 idRecall 0.9333 numRecall 0.8837 s 7.50
+[OCRBench] page 08 clean app_path CER 0.7610 WER 0.8943 wordRecall 0.9531 wordPrec 0.9213 idRecall 0.9333 numRecall 0.8837 s 13.79
+[OCRBench] page 08 scan vision CER 0.9844 WER 0.9861 wordRecall 0.0331 wordPrec 0.1000 idRecall 0.0000 numRecall 0.5814 s 3.48
+[OCRBench] page 08 scan paddle CER 0.7397 WER 0.8999 wordRecall 0.8800 wordPrec 0.8740 idRecall 0.9333 numRecall 0.8605 s 6.84
+[OCRBench] page 08 scan app_path CER 0.7397 WER 0.8999 wordRecall 0.8800 wordPrec 0.8740 idRecall 0.9333 numRecall 0.8605 s 18.60
+[OCRBench] page 08 photo vision CER 0.9846 WER 0.9917 wordRecall 0.0538 wordPrec 0.0599 idRecall 0.0000 numRecall 0.9070 s 1.66
+[OCRBench] page 08 photo paddle CER 0.7610 WER 0.8957 wordRecall 0.9559 wordPrec 0.9228 idRecall 0.9333 numRecall 0.9302 s 7.45
+[OCRBench] page 08 photo app_path CER 0.7610 WER 0.8957 wordRecall 0.9559 wordPrec 0.9228 idRecall 0.9333 numRecall 0.9302 s 13.68
+[OCRBench] page 12 clean vision CER 0.9796 WER 0.9808 wordRecall 0.0507 wordPrec 0.1198 idRecall 0.0000 numRecall 0.7547 s 2.03
+[OCRBench] page 12 clean paddle CER 0.7704 WER 0.8923 wordRecall 0.9658 wordPrec 0.9466 idRecall 1.0000 numRecall 0.9811 s 8.60
+[OCRBench] page 12 clean app_path CER 0.7704 WER 0.8923 wordRecall 0.9658 wordPrec 0.9466 idRecall 1.0000 numRecall 0.9811 s 16.36
+[OCRBench] page 12 scan vision CER 0.9836 WER 0.9987 wordRecall 0.0583 wordPrec 0.0651 idRecall 0.0000 numRecall 0.8679 s 3.86
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+✔ Test run with 0 tests in 1 suite passed after 0.001 seconds.

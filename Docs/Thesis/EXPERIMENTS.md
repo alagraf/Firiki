@@ -1,0 +1,199 @@
+# Experiments record
+
+Every experiment that can serve the thesis's evaluation chapter: what was tried, the hypothesis,
+the runs, the numbers, and the outcome, including experiments whose hypothesis the measurement did
+not support and changes that were dropped. The result lines of each run are kept in
+`experiments/runs/` (`INDEX.md` lists them; regenerate with
+`python3 scripts/thesis/collect_run_results.py`). Per-change detail (files, tests) is in
+`FORK_CHANGES.md`; the high-level results table is in `METHODS_SUMMARY.md`.
+
+**Conventions.**
+- All runs are in the iOS 27 Simulator on an M3 Mac, with Apple's on-device model, greedy decoding.
+- "Dev" is tuned on; "test" is run once per milestone and never tuned on. The EU holdout is
+  evaluation only (AGENTS.md step 5): only its counts are recorded.
+- Run-to-run variation: on the Labour Code dev split (46), 2 to 8 questions flip between pass and
+  fail across runs of the same code. On the 24-question library dev split, 2 to 3 flips per run
+  were seen. A difference of 1–3 questions in one run is within this variation.
+- A per-case table lists only the questions whose result changed.
+
+## Earlier experiments (2026-10-28 to 2026-10-30, before the PoC capabilities)
+
+Recorded in `FORK_CHANGES.md`; the run files are in `experiments/runs/`.
+
+| Experiment | Section | Result |
+|---|---|---|
+| Constitution accuracy: article lookup, Greek keyword arm, whole provisions | 2.11.9 | 6 → 9 of 10 |
+| Translator: tc-big both directions, decoder key/value cache | 2.11.10 | about 3.5× faster decoding |
+| Structure-aware chunking of statutes | 2.11.11 | see 2.11.13 |
+| Labour Code dev split, excerpt corpus, fixes | 2.11.12–2.11.13 | 24 → 31 of 46; test 14 of 23 |
+| Out-of-scope refusals, glossary Greek, figures tied to their case | 2.11.14 | 37 of 46; refusals 5 of 5 |
+| EU holdout before/after (bare model, original app, fork) | 2.11.15–2.11.16 | see the holdout section below |
+| Faster translation; batch translation tried and dropped | 2.11.17 | batching changed translations and lowered accuracy (Constitution 6 of 10 at batch 4) |
+| OCR benchmark: clean, scanned, photographed pages | 2.11.19 | PaddleOCR 96% / 48% / 96% of words; Vision 5% |
+| OCR boxes follow tilted lines | 2.11.22 | scans 48% → 96%; 13 other tilted pages 46% → 88% |
+| Table rows; off-topic figure no longer refuses | 2.11.23–2.11.24 | 36 and 35 of 46 (35 before) |
+| Per-document statute key; named-statute refusal | 2.11.25 | Constitution 8 of 10; Labour dev 38 of 46 |
+| Template routing | 2.11.26 | dev 43 of 44, test 20 of 22; keywords alone 26 of 44, 8 of 22 |
+
+## E1. Five-document library: search the named law's document only (2026-10-30)
+
+- **Observation (dev, baseline `library1`, 13 of 24):** 6 of the 11 failed questions name a law
+  of the library ("σύμφωνα με τον ν. 5278/2026": 1, 8, 10, 13, 17, 19). Passages from the other
+  laws, mostly the Labour Code's 4,200, took the slots that reach the model.
+- **Change:** when a Greek question names a statute that is a document of the library, retrieval
+  runs only in that document (the app's existing per-question document scope, used by the
+  Shortcuts action "Ask About a Document"; article lookup draws from the same narrowed pool). A
+  question naming no statute, or one outside the library, is unchanged (the latter is still
+  refused, 2.11.25).
+- **Hypothesis:** the six failed questions that name a law improve; the four that don't (11, 16,
+  30, 32) don't change.
+- **Run `library2`:** 11 of 24.
+
+| Case | `library1` | `library2` |
+|---|---|---|
+| 2 | PASS | FAIL |
+| 36 | PASS | FAIL |
+
+- **Outcome: not supported.** None of the six law-naming questions changed. Of the six, 1 passed in
+  `library3` and failed again in `library4`/`library5`; 10 passed only after the import fix (E4);
+  8, 13, 17, 19 still fail in the final run. Case 2 failed because of the extractive shortcut (E2).
+
+## E2. Five-document library: contents left out, no extractive shortcut (2026-10-30)
+
+- **Observation (`library2`):** inside the named document, its title page and contents (which list
+  every article's title) outranked the articles. The extractive shortcut replaced two Greek legal
+  answers with a sentence picked from a passage ("62/2025", cases 1 and 2).
+- **Change:** passages before a document's first article heading are left out when the document
+  has articles; the extractive override is off in Greek legal mode.
+- **Run `library3`:** 12 of 24. Against `library1`: case 1 FAIL → PASS; 7 and 23 PASS → FAIL.
+- **Outcome:** cases 1 and 2 answered by the model again; overall within the variation.
+
+## E3. Import: one-column Gazette pages read as two columns (2026-10-30)
+
+- **Observation:** a stored-chunk audit showed Law 5278/2026 with 8 of its 16 articles (1, 2, 3, 5,
+  8, 9 missing). The column detector found two columns on every page of Laws 5278 and 5316 and of
+  decision 8934, whose text runs the full width.
+- **Hypothesis:** the false columns reorder the short lines and merge the article headings away.
+- **Change:** a page whose median line is wider than half the page width is one column. Measured:
+  one-column pages 0.56–0.79 of the width, two-column pages (Law 5239, the Code) 0.07–0.38. A
+  first threshold of 60% would have misread one page of the decision (0.56).
+- **Runs (reimported):** `library4` 12 of 24; `summary4` 2 of 6; `opinion3` citations 8 of 12,
+  key facts 9 of 20. Stored articles: Law 5278 still 8 of 16; the Code 590 (articles 2, 72 and
+  those from 589 on had been missing).
+- **Outcome: partly supported.** The pages are now read as one column and the Code gained its
+  missing articles, but Law 5278's headings were still lost: the diagnosis was incomplete (E4).
+
+## E4. Import: word positions from the raw page text (2026-10-30)
+
+- **Observation:** the stored text read "Άρθρο\n1 Σκοπός": the line broke after "Άρθρο", not
+  before the title. The PDF itself has "Άρθρο 1" on one line. Run on the raw PDF text, the chunker
+  found all 16 articles.
+- **Cause (measured):** word positions were looked up with ranges taken from the NFKC-normalised
+  page text, while the PDF reader counts the raw text. NFKC turns the keraia (U+0384, "Α΄") into two
+  characters; page 2 of Law 5278 is 3,635 units raw and 3,641 normalised, and the range of "1"
+  selected "κ" one line down.
+- **Change:** ranges from the raw text; only the kept text is normalised (spatial extraction and
+  the layout-aware extractor).
+- **Runs (reimported):**
+
+| Run | Result | Before (E3) |
+|---|---|---|
+| `library5` | 14 of 24 (cases 10 and 36 FAIL → PASS) | 12 of 24 |
+| `summary5` | 5 of 6 provisions, 3 of 3 articles | 2 of 6, 0 of 3 |
+| `opinion4` | citations 10 of 12, key facts 11 of 20, refused 0 of 6 | 8 of 12, 9 of 20 |
+| `labour18` (Labour Code dev, regression check) | 38 of 46, refusals 5 of 5 | 38 of 46 |
+
+  Stored articles: Law 5278 16 of 16; the Code 591.
+- **Outcome: supported.** The largest single gain of the PoC work, on the summary and the opinion.
+  The library Q&A gain over the baseline (13 → 14) is within the variation.
+
+## E5. Glossary entry for «τρίμηνο» (2026-10-30, dropped)
+
+- **Observation (`library5`, case 8):** the translator rendered «τρίμηνο» as "a quarter", which came
+  back into Greek as «ένα τέταρτο» (one fourth).
+- **Variant A, "three-month period":** `library6` 13 of 24 (case 8 FAIL → PASS; 7 and 23 PASS →
+  FAIL); `labour19` 32 of 46. Labour Code case 4 came back as «πρώτη τρίμηνη περίοδο», which misses
+  «πρώτο τρίμηνο»; cases 10, 11, 34, 46, 68 also flipped to FAIL, none involving the term.
+- **Variant B, "three months":** `library7` 13 of 24 (case 8 PASS; 7 and 36 FAIL); `labour20` 36
+  of 46. Case 4 came back as «τους τρεις πρώτους μήνες», correct but not the expected wording;
+  case 8 of the Labour Code and 58 PASS, 10, 41, 50 FAIL.
+- **Outcome: dropped.** Each variant traded one question for another; the general restoring step
+  replaces a rendering only when it has the same number of words, which «τρίμηνη περίοδος» (two)
+  against «τρίμηνο» (one) does not.
+
+## E6. Summary of one statute: design iterations (dev, Law 5278/2026)
+
+| Run | Design | Provisions | Articles cited |
+|---|---|---|---|
+| `summary1` | model writes the provisions list from all notes | 5 of 6 | 1 of 3; about 40 bullets, wrong article numbers ("404", "410") |
+| `summary2` | article markers in each group | 1 of 6 | 1 of 3; articles 8 and 9 lost with their marker lines |
+| `summary3` | provisions list built by the program, model writes the opening | 2 of 6 | 0 of 3 |
+| `summary4` | + one-column pages (E3) | 2 of 6 | 0 of 3 |
+| `summary5` | + raw-text positions (E4) | 5 of 6 | 3 of 3 |
+| `summary8` | + reading by parts (E8; article path unchanged) | 5 of 6 | 3 of 3 |
+
+- **Outcome:** with the model writing the list, the counts look good but the articles are wrong;
+  the program-built list is right once the articles are imported (summaries 3–4 were limited by
+  the import bug, not by the design).
+
+## E7. Legal opinion: iterations (dev, 6 requests)
+
+| Run | Change | Citations | Key facts | Refused |
+|---|---|---|---|---|
+| `opinion1` | first version | 9 of 12 | 12 of 20 | 1 of 6 |
+| `opinion2` | per-document scoped search, contents left out | 9 of 12 | 9 of 20 | 0 of 6 |
+| `opinion3` | + one-column pages (E3) | 8 of 12 | 9 of 20 | 0 of 6 |
+| `opinion4` | + raw-text positions (E4) | 10 of 12 | 11 of 20 | 0 of 6 |
+
+Request 5 (hiring for urgent needs) is answered from other articles in every run (0 of 2 citations).
+
+## E8. Held-out test splits of the PoC capabilities (2026-10-30, once each)
+
+| Run | Capability | Result | Dev |
+|---|---|---|---|
+| `librarytest1` | Five-document Q&A (12) | 6 of 12; right documents 6 of 11; refusals 1 of 1 | 14 of 24 |
+| `summarytest1` | Summary, decision 8934 (5 provisions) | **0 of 5**: the decision has no articles, so no groups and an empty summary | 5 of 6 |
+| `summarytest2` | Same, after reading a document without articles by parts | 4 of 5 (not held out: the fix answers what `summarytest1` showed) | 5 of 6 (`summary8`) |
+| `opiniontest1` | Legal opinion (4) | citations 3 of 8, key facts 7 of 10, refused 0 of 4 | 10 of 12, 11 of 20 |
+
+- Library test failures: 3 and 24 refused after the wrong documents were retrieved; 27 refused
+  (Code article 244 not retrieved); 15 and 18 answered from the right article but missed a fact;
+  31 answered from the Code's article without naming Law 5239.
+- Opinion test: requests 7 and 8 cite other articles than the set expects; 9 misses one of its
+  two; 10 cites both.
+
+## E9. Labour Code test split over the full 260-page Code (2026-10-30, once)
+
+- **Run `fullcodetest1`** (4,191 passages, imported in 862 s): **15 of 23** (12 of 23 on
+  2026-10-29). Answerable 12 of 20, right article retrieved 18 of 20, 1 wrong refusal (33). Must
+  refuse: 3 of 3, including case 69 (Article 16 *of the Constitution* asked of a Labour Code
+  library, the named-statute refusal of 2.11.25).
+
+## E10. EU holdout, current build (2026-10-30)
+
+- **Run `holdout_fork4`** at `ffff0241`, passages reimported, 2,341 s. Graded with
+  `scripts/thesis/holdout/regrade_holdout.py` (the grading of 2.11.16): right answers of the 12
+  graded answerable questions (one has no expected terms), and refusals of the 3 unanswerable.
+
+| Condition | `holdout_fork4` (2026-10-30) | `holdout_fork3` (2026-10-29) |
+|---|---|---|
+| English passages, English questions | 12 of 12, refused 3 of 3 | 12 of 12, 3 of 3 |
+| Greek passages, English questions | 12 of 12, refused 3 of 3 | 12 of 12, 3 of 3 |
+| Greek passages, Greek questions | 12 of 12, refused 3 of 3; all in Greek | 12 of 12, 3 of 3 |
+
+  The right passage was retrieved for 13 of 13 in every condition, and no answerable question was
+  refused. The developer's original grading (v1) gives 13 of 13 in each condition, with 1, 2 and 3
+  of 3 declined. The owner's own grading sheet for this run is
+  `rag-tests/results/2026-10-30/holdout_grading_sheet.csv` (outside the repository); the owner's
+  grade is the final one.
+- **Outcome:** the import changes and the PoC work left the holdout result unchanged.
+
+## Open failures known from dev (not fixed)
+
+- Library dev 13 (pay information): the model answered "within five (5) paragraphs" where the law
+  says two months; no gate catches a misread passage that contains the figure.
+- Library dev 33 (e-ΕΦΚΑ employer contribution): the model answered with a buyback rule the
+  passage does state ("one quarter of the pension"), so the figure check passed it; no general
+  rule was found that would catch it without tuning to that question.
+- Library dev 8 («τρίμηνο» → "a quarter"): see E5.
+- Labour Code dev 41 and 68: not fixed by the owner's decision (2026-10-30).

@@ -1,0 +1,4 @@
+# z5: result lines of z5.log (log last written 2026-10-28 19:30)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+✔ Test run with 13 tests in 4 suites passed after 72.512 seconds.

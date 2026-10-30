@@ -1,0 +1,4 @@
+# units2: result lines of units2.log (log last written 2026-10-30 01:48)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✔ Test run with 5 tests in 1 suite passed after 0.030 seconds.

@@ -1,0 +1,19 @@
+# eval2: result lines of eval2.log (log last written 2026-10-28 22:03)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+[GreekEval] model availability: available
+✘ Test greekToEnglishKeepsLegalIdentifiers() recorded an issue at GreekLegalPipelineTests.swift:315:9: Expectation failed: english.lowercased().contains("dismissal") || english.lowercased().contains("termination")
+✘ Test greekToEnglishKeepsLegalIdentifiers() failed after 1.925 seconds with 1 issue.
+[GreekEval] imported 1 document in 899 s
+[GreekEval] | # | level | result | retrieval | article named | missing facts | time |
+[GreekEval] | 1 | easy | PASS | article 1 retrieved: yes | named: no | missing: [] | 10 s |
+[GreekEval] | 2 | easy | PASS | article 51 retrieved: yes | named: no | missing: [] | 10 s |
+[GreekEval] | 3 | easy | FAIL | article 55 retrieved: yes | named: yes | missing: ["25|εικοσι πεντε|εικοστο πεμπτο"] | 9 s |
+[GreekEval] | 4 | medium | FAIL | article 6 retrieved: yes | named: no | missing: ["(6|εξι) (μην|μηνες)"] | 10 s |
+[GreekEval] | 5 | medium | PASS | article 45 retrieved: yes | named: no | missing: [] | 13 s |
+[GreekEval] | 6 | medium | FAIL | article 30 retrieved: no | named: no | missing: ["(5|πεντε) (ετ|χρον)|πενταετ"] | 6 s |
+[GreekEval] | 7 | medium | FAIL | article 6 retrieved: yes | named: no | missing: ["(3|τρεις|τριων) ημερ"] | 13 s |
+[GreekEval] | 8 | hard | PASS | article 32 retrieved: yes | named: no | missing: [] | 8 s |
+[GreekEval] | 9 | hard | PASS | article 110 retrieved: no | named: no | missing: [] | 62 s |
+[GreekEval] | 10 | hard | FAIL | article 120 retrieved: yes | named: yes | missing: ["πατριωτισμ", "αντιστ|αντισταση"] | 222 s |
+✘ Test run with 22 tests in 6 suites failed after 1269.433 seconds with 1 issue.

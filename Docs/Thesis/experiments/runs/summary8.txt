@@ -1,0 +1,9 @@
+# summary8: result lines of summary8.log (log last written 2026-10-30 07:38)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✘ Test aDocumentWithoutArticlesIsSummarizedByParts() recorded an issue at GreekLegalSummaryTests.swift:99:9: Expectation failed: parts.map(\.text).joined(separator: "\n") == passages.joined(separator: "\n")
+✘ Test aDocumentWithoutArticlesIsSummarizedByParts() failed after 0.023 seconds with 1 issue.
+[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=13 notes=12008 chars, 81 s
+[GreekSummary] | 1 | dev | provisions 5 of 6 | articles cited 3 of 3 | dropped 0 | missing: ["extension threshold 40% of the sector\'s employees (art. 9)"] |
+[GreekSummary] summary split=dev: provisions covered 5 of 6
+✘ Test run with 8 tests in 2 suites failed after 82.181 seconds with 1 issue.

@@ -1,0 +1,5 @@
+# eval7: result lines of eval7.log (log last written 2026-10-28 23:33)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] model availability: available
+[GreekEval] imported 1 document in 463 s

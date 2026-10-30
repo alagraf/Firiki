@@ -1,0 +1,4 @@
+# greekocr1: result lines of greekocr1.log (log last written 2026-10-29 20:57)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✔ Test run with 7 tests in 1 suite passed after 1.260 seconds.

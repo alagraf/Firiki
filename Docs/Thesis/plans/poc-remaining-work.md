@@ -283,7 +283,10 @@ On an iPhone or the M3 Mac:
 
 The owner runs the app and reads the Processing Log; give them a checklist.
 
-## 9. EU holdout (last)
+## 9. EU holdout (last) (run 2026-10-30: 2.11.31)
+
+**Run 2026-10-30, before the device check at the owner's choice:** unchanged, 12/12 graded right and 3/3
+refused in each condition. Run it again after the device check if anything changes.
 
 Run the 16 EU questions once, as a measurement only (AGENTS.md step 5), with
 `EUHoldoutEvaluationTests`. Record the numbers in METHODS_SUMMARY. Change nothing because of them.

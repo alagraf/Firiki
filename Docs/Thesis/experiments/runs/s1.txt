@@ -1,0 +1,7 @@
+# s1: result lines of s1.log (log last written 2026-10-28 20:51)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✘ Test thePassageHoldingTheArticleComesFirst() recorded an issue at GreekLegalPipelineTests.swift:728:9: Expectation failed: pinned.first?.chunk.id == article1.id
+✘ Test thePassageHoldingTheArticleComesFirst() recorded an issue at GreekLegalPipelineTests.swift:730:9: Expectation failed: pinned.count == 3
+✘ Test thePassageHoldingTheArticleComesFirst() failed after 0.052 seconds with 2 issues.
+✘ Test run with 4 tests in 2 suites failed after 578.464 seconds with 2 issues.

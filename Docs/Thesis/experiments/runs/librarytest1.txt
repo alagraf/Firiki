@@ -1,0 +1,24 @@
+# librarytest1: result lines of librarytest1.log (log last written 2026-10-30 07:30)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourLibrary corpus=library (pd_62_2025_fek_a121.pdf, n_5239_2025_fek_a178.pdf, n_5278_2026_fek_a22.pdf, n_5316_2026_fek_a105.pdf, ya_8934_2026_fek_b1759.pdf) split=test
+[GreekEval] model availability: available
+[GreekEval] imported 5 documents (6331 passages) in 1561 s
+[GreekEval] cleared 0 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 3 | medium | test | FAIL | article 7 retrieved: no, documents: no | abstained: yes | named: no | missing: ["(αρνη\\w*)"] | 31 s |
+[GreekEval] | 5 | medium | test | PASS | article 14 retrieved: yes, documents: yes | abstained: no | named: yes | missing: [] | 53 s |
+[GreekEval] | 9 | medium | test | PASS | article 8 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 20 s |
+[GreekEval] | 12 | easy | test | PASS | article 16 retrieved: no, documents: yes | abstained: no | named: no | missing: [] | 15 s |
+[GreekEval] | 15 | hard | test | FAIL | article 12 retrieved: yes, documents: yes | abstained: no | named: no | missing: ["\\b5\\b|πεντε", "(δικαιολογ|αντικειμενικ)"] | 23 s |
+[GreekEval] | 18 | medium | test | FAIL | article 21 retrieved: yes, documents: yes | abstained: no | named: no | missing: ["συνηγορ"] | 17 s |
+[GreekEval] | 22 | easy | test | PASS | article 0 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 19 s |
+[GreekEval] | 24 | medium | test | FAIL | article 0 retrieved: no, documents: no | abstained: yes | named: no | missing: ["\\b141"] | 17 s |
+[GreekEval] | 27 | medium | test | FAIL | article 244 retrieved: no, documents: no | abstained: yes | named: no | missing: ["\\b(8|οκτω)\\b"] | 20 s |
+[GreekEval] | 29 | medium | test | PASS | article 130 retrieved: no, documents: no | abstained: no | named: no | missing: [] | 18 s |
+[GreekEval] | 31 | hard | test | FAIL | article 14 retrieved: yes, documents: no | abstained: no | named: yes | missing: ["5239"] | 24 s |
+[GreekEval] | 35 | easy | test | PASS | must abstain | abstained: yes | named: no | missing: [] | 14 s |
+[GreekEval] answer pass 5 of 11; retrieval hit 6 of 11; false abstentions 3; abstention correct 1 of 1
+[GreekEval] right documents retrieved 6 of 11
+[GreekEval] summary set=GreekLabourLibrary corpus=library split=test: passed 6 of 12
+✔ Test run with 1 test in 1 suite passed after 1840.706 seconds.

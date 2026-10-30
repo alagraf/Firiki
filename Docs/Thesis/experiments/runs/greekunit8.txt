@@ -1,0 +1,7 @@
+# greekunit8: result lines of greekunit8.log (log last written 2026-10-29 09:03)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+✘ Test imageUnderstandingReadsGreekWithPaddleOCR() recorded an issue at GreekLegalPipelineTests.swift:277:9: Expectation failed: wer < 0.2
+✘ Test imageUnderstandingReadsGreekWithPaddleOCR() recorded an issue at GreekLegalPipelineTests.swift:278:9: Expectation failed: OCRConfiguration.containsGreekText(text)
+✘ Test imageUnderstandingReadsGreekWithPaddleOCR() failed after 1.080 seconds with 2 issues.
+✘ Test run with 65 tests in 15 suites failed after 37.562 seconds with 2 issues.

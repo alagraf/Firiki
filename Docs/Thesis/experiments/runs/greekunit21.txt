@@ -1,0 +1,12 @@
+# greekunit21: result lines of greekunit21.log (log last written 2026-10-30 04:07)
+	 Executed 15 tests, with 0 failures (0 unexpected) in 0.114 (0.120) seconds
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.074 (0.076) seconds
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.104 (0.109) seconds
+	 Executed 23 tests, with 0 failures (0 unexpected) in 0.118 (0.124) seconds
+	 Executed 18 tests, with 0 failures (0 unexpected) in 0.053 (0.057) seconds
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.018 (0.020) seconds
+	 Executed 84 tests, with 0 failures (0 unexpected) in 0.480 (0.506) seconds
+	 Executed 84 tests, with 0 failures (0 unexpected) in 0.480 (0.507) seconds
+✘ Test questionNamingALibraryStatuteIsSearchedInThatDocument() recorded an issue at GreekLegalPipelineTests.swift:738:9: Expectation failed: GreekLegalAnswerFinalizer.statuteScope(query: "What does Law 5239 say about overtime?", documentKeys: keys) == [law5239]
+✘ Test questionNamingALibraryStatuteIsSearchedInThatDocument() failed after 0.130 seconds with 1 issue.
+✘ Test run with 95 tests in 18 suites failed after 24.546 seconds with 1 issue.

@@ -1,0 +1,7 @@
+# holdout_stock1: result lines of holdout_stock1.log (log last written 2026-10-29 10:44)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.003) seconds
+[EUHoldout] model: AFM 3 Core Advanced, window 8192, availability available
+✘ Test euHoldout() recorded an issue at EUHoldoutStockAppTests.swift:109:6: Caught error: Error Domain=NSCocoaErrorDomain Code=260 "The file “eu_data.json” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/tmp/rag-tests/eu_data.json, NSURL=file:///tmp/rag-tests/eu_data.json, NSUnderlyingError=0x107252340 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+✘ Test euHoldout() failed after 1.958 seconds with 1 issue.
+✘ Test run with 1 test in 1 suite failed after 1.960 seconds with 1 issue.

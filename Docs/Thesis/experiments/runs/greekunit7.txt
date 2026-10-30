@@ -1,0 +1,3 @@
+# greekunit7: result lines of greekunit7.log (log last written 2026-10-29 09:01)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds

@@ -1,0 +1,4 @@
+# greekunit23: result lines of greekunit23.log (log last written 2026-10-30 05:54)
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.128 (0.133) seconds
+	 Executed 17 tests, with 0 failures (0 unexpected) in 0.128 (0.134) seconds
+✔ Test run with 57 tests in 7 suites passed after 4.907 seconds.
