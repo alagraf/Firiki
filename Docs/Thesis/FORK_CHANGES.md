@@ -1732,6 +1732,20 @@ articles 3, 4, 14, 49, 258 and 396, where Law 5278 article 9 and Code 404 were e
 facts; 8, managers' leave: Code articles 221–225 and others, where Law 5316 article 36 and Code
 220 were expected, 2 of 2 facts); 9 misses one of its two articles; 10 cites both.
 
+#### 2.11.30 Measurement: the Labour Code test split over the full Code
+
+**Why:** refusals had been measured on the 37-page excerpt only (2.11.14), and test case 69
+(Article 16 *of the Constitution*, asked of a Labour Code library) was left for the test split
+when the per-document statute key was added (2.11.25).
+
+**What:** no code change. The Labour Code test split (23 questions) was run once on the full
+260-page Code, reimported with the import of 2.11.27 (`fullcodetest1`, 4,191 passages, 862 s).
+
+**Result:** **15 of 23** (12 of 23 on 2026-10-29). Answerable: 12 of 20, with the right article
+retrieved for 18 of 20 and 1 wrong refusal (33). Must refuse: **3 of 3**, case 69 included.
+Failures with the right article retrieved: 3 (two months), 18 (45 hours), 30 (four months), 48
+(start and end), 54 (8 hours); with it not retrieved: 36 (article 338), 45 (article 250).
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

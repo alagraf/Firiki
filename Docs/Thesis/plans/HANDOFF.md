@@ -64,6 +64,9 @@ streamed import has none); measuring OCR on real phone photos and scans.
 
 ## Log
 
+- 2026-10-30 08:30 (Claude Code): full-Code Labour test split once (2.11.30): 15 of 23, refusals 3 of
+  3 with case 69, 1 wrong refusal. Left: the device check with the owner, then the EU holdout.
+
 - 2026-10-30 07:45 (Claude Code): committed 2.11.27–2.11.29: five-document Q&A (dev 14/24, test
   6/12), summary (Law 5278 dev 5/6; decision 8934 test 0/5 held out, 4/5 after reading by parts),
   legal opinion (dev citations 10/12, test 3/8). Import fixes: word positions from the raw page

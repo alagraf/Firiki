@@ -135,7 +135,10 @@ split, and say in FORK_CHANGES where the case came from.
 - Evaluations: Constitution set (10 cases, `TEST_RUNNER_OI_GREEK_EVAL_SET` unset, reimport) must stay
   ≥ 8 of 10; Labour dev twice, no drop.
 
-## 3. Refusal rate over the full Labour Code
+## 3. Refusal rate over the full Labour Code (done: 2.11.30)
+
+**Done 2026-10-30:** full Code, test split, once: 15 of 23; refused 3 of 3 (case 69 included); 1 wrong
+refusal of 20.
 
 Not measured since FORK_CHANGES 2.11.14. Run the Labour test split on the full Code once
 (`TEST_RUNNER_OI_GREEK_EVAL_CORPUS=full TEST_RUNNER_OI_GREEK_EVAL_SPLIT=test`, reimport, about 15 min

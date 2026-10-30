@@ -181,6 +181,7 @@ Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked o
 | 2026-10-30 | Summary of Law 5278/2026 (development): key provisions, articles cited | 5 of 6, 3 of 3 (2 of 6, 0 of 3 before the reading-order fixes) |
 | 2026-10-30 | Summary of decision 8934/2026 (test): key provisions | 0 of 5 held out (no articles, empty summary); 4 of 5 after reading by parts (not held out) |
 | 2026-10-30 | Legal opinion, development (6) / test (4): citations, key facts, refused | 10 of 12, 11 of 20, 0 / 3 of 8, 7 of 10, 0 |
+| 2026-10-30 | Labour Code, test (23), full 260-page Code, once | 15 of 23 (12 before); 3 of 3 refused, including the question about the Constitution's Article 16; 1 wrong refusal |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
 minutes after the faster translation.
@@ -191,16 +192,12 @@ between pass and fail across runs. Each figure above is one run, so differences 
 are within this variation.
 
 ## 9. Known limitations
-- Refusal of off-topic questions has been measured on the development set (5 of 5 refused) but
-  not yet on the held-out test split or over the full Code, where more loosely related passages
-  compete.
+- Refusal of off-topic questions: 5 of 5 on the development set and 3 of 3 on the held-out set
+  over the full Code. These are few questions.
 - With the right article retrieved, the model still sometimes picks a figure for the wrong case,
   or adds figures from another part of the same article (the severance question now gets 12
   months right but also quotes rows of the article's second table). The number check doesn't
   catch this, because the passage does state those figures.
-- A question naming a different law than the library holds (e.g. "Article 16 of the
-  Constitution" in a Labour Code library) is not yet recognised when the article number exists in
-  both.
 - OCR is measured on simulated scans and photos only; real scans and phone photos are not yet
   measured. Constitution pages read worse than Labour Code pages even untilted (61–79% of the
   words, not yet investigated).
@@ -240,6 +237,7 @@ The set is small (16 questions) and its library tiny (11 passages), so finding t
 the larger Labour Code sets remain the main accuracy measure.
 
 ## Revision history
+- 2026-10-30: Labour Code test split over the full Code (refusals, the Constitution question).
 - 2026-10-30: five-document library (search by named law, contents left out), reading order of
   Gazette pages, summary of one statute and legal opinion (PoC capabilities), with development and
   test results; a glossary entry for «τρίμηνο» tried and dropped.

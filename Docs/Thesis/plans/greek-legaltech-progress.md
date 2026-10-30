@@ -137,7 +137,8 @@ tests under the Greek region (`AnswerUsageTallyTests.testTheDetailsLine`,
   number also exists in the library ("Article 16 of the Constitution" in the Labour Code library,
   test case 69) needs the library to know which statute each document is (**done 2026-10-30,
   2.11.25**: per-document statute key, refusal before generation; case 69 to be measured on the
-  test split); the full-code refusal rate is unmeasured since 2.11.14.
+  test split); the full-code refusal rate is unmeasured since 2.11.14. **Measured 2026-10-30
+  (2.11.30):** full Code, test split: 15 of 23, refused 3 of 3 with case 69, 1 wrong refusal.
 - Model errors with the right article in the prompt: run 7 still mixes "18 months"/"18 years"
   (case 34) and drifts off topic (46); consider a smaller context per question. **Done 2026-10-29 (FORK_CHANGES 2.11.23, 2.11.24):** table rows keep their lines (case 34
   now right, with extra figures from the article's second table); an off-topic figure no longer
