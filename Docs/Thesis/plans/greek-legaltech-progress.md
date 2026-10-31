@@ -286,3 +286,49 @@ unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 20
     five-document dev split, so statute chunking is shown unchanged. Add a small Q&A set over a
     notes file and a Q&A file (dev and test split, written from those files, never from the EU
     holdout). Record in EXPERIMENTS.md, FORK_CHANGES, CHANGELOG 5.7 and METHODS_SUMMARY.
+
+## Capabilities from the chat (owner, 2026-10-31)
+
+- [ ] **Call every capability straight from the chat, without the menu.** Today the summary, the
+  legal opinion and template routing open from the Greek legal assistant sheet
+  (`Features/Chat/Response/GreekLegalAssistantSheet.swift`, tabs Γνωμοδότηση / Πρότυπα / Σύνοψη,
+  opened from `ChatScreen.swift` ~line 1233 and `DocumentDetailsView.swift` ~line 139). The owner wants
+  to type the request in the chat and get the answer in the chat:
+  - «Σύνοψε το έγγραφο» / "summarize the document", or naming one («σύνοψη του ν. 5278/2026»): runs
+    `GreekLegalDocumentSummarizer.summarize` on that document. With no document named and more
+    than one in the library, use the one the conversation is about, or ask which one (in the chat).
+  - «Γνωμοδότηση για …» / "write a legal opinion on …": runs `RAGService.greekLegalOpinion`.
+  - «Ποιο υπόδειγμα σύμβασης …» / "which contract template …": runs
+    `LabourContractTemplateRouter.route` and shows the chosen template (or none) in the chat.
+  - Any other question stays an ordinary question over the documents (five-document Q&A, already in
+    the chat).
+  - **How to recognise the request:** program rules first (Greek and English verbs and nouns:
+    σύνοψη/σύνοψε/περίληψη, γνωμοδότηση, υπόδειγμα/πρότυπο σύμβασης; summarize, opinion,
+    template), then the on-device model with output constrained to the four kinds (as template
+    routing does, 2.11.26) when the rules can't tell. A document named by law number or title is
+    matched with the per-document statute key (2.11.25) or the file name.
+  - Keep the sheet or remove it (owner to decide; suggestion: keep it as a shortcut that writes
+    the same chat message).
+  - **Test:** a labelled set of chat requests (Greek and English, dev and test split, written for
+    the test, never from the EU holdout): capability chosen and document chosen; unit tests of the
+    rules; one run of each capability through the chat path in the Simulator, the answer appearing
+    as a chat reply with its sources. Record in EXPERIMENTS.md, FORK_CHANGES, CHANGELOG 5.7 and
+    METHODS_SUMMARY.
+
+- [ ] **Capability answers as formatted text, not bullets.** The summary lists its provisions as
+  "- Article N: …" lines (`GreekLegalDocumentSummarizer.swift` ~line 247), the opinion lists its
+  sources as "- name, Article N" lines (`GreekLegalOpinionWriter.swift` ~line 307), and the sheet
+  shows them as bullets. Make them read as formatted text instead: short headings and
+  paragraphs, each provision a sentence or paragraph with its article in bold or in brackets
+  («Το άρθρο 3 ορίζει ότι …»), the sources as one line or paragraph. Keep every provision,
+  figure and article reference that the bullets carry, so the summary and opinion checks (key
+  provisions, citations, gate C/F) still pass; rerun the summary and opinion dev sets to show the
+  scores are unchanged. Applies wherever the answer is shown (chat and sheet), in Greek and English.
+
+- [ ] **Remove "Claude Code" from the templates' legal disclaimer.** All 10 templates in
+  `OpenIntelligence/Resources/LabourContractTemplates/*.md` (line 16) say «Συντάχθηκε από το Claude
+  Code με βάση τον Κώδικα Εργατικού Δικαίου …». Change it to «Συντάχθηκε με βάση τον Κώδικα
+  Εργατικού Δικαίου …», keeping the rest of the disclaimer (PoC draft, not legal advice, checked by
+  a lawyer, adapted to the collective agreement). No test reads that line (checked 2026-10-31).
+  Leave the thesis records that say who drafted the templates (`Benchmarks/LabourContractTemplates/README.md`,
+  FORK_CHANGES 2.11.26) as they are, since they document the method.
