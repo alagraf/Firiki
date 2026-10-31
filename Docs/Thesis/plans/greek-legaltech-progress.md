@@ -253,3 +253,36 @@ The EU holdout stays evaluation only for all of these.
 
 **2026-10-30:** all four capabilities done; full-Code test 15/23 (2.11.30); EU holdout run again,
 unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 2026-10-29). Every experiment is recorded in `Docs/Thesis/EXPERIMENTS.md`. Left: device check.
+
+## Context-aware chunking (owner, 2026-10-31)
+
+- [ ] **Chunk a document by what kind of document it is.** If the file is a statute, keep today's
+  chunking (`GreekLegalStructureChunker`: one passage per numbered paragraph of each article, with
+  its heading). But a file may instead be a lawyer's notes or a Q&A, and those need passages that
+  follow their own structure.
+  - **Today:** `DocumentProcessor.swift` (~line 1115) uses the statute chunker for any text that is
+    at least 30% Greek and has 3 or more accepted article headings
+    (`GreekLegalStructureChunker.applies`, `minimumHeadings = 3`). Otherwise the text goes to the
+    generic structured or semantic chunking. So a lawyer's note that quotes «Άρθρο 5», «Άρθρο 8» and
+    «Άρθρο 12» would probably be cut as a statute (to confirm on a fixture first). A Q&A file gets
+    generic chunks that can split a question from its answer.
+  - **Kinds:**
+    1. **Statute** (law, decree, ministerial decision, Code): today's article/paragraph passages.
+    2. **Lawyer's notes / memo / opinion:** passages along the note's own headings and paragraphs
+       (numbered points, "Facts", "Question", "Analysis", "Conclusion"). Article references
+       inside are citations, not cut points; keep them as metadata (the masker already finds
+       them).
+    3. **Q&A** (FAQ, exam questions, a client Q&A): one passage per question with its whole
+       answer, the question kept at the head of each passage (also when a long answer is split).
+    4. **Anything else:** the current generic chunking.
+  - **How to decide the kind:** program rules first (statute: title page with a statute key
+    (2.11.25) and articles that start at the line's beginning in sequence; Q&A: alternating
+    question lines ending in «;» or "?", or «Ερώτηση/Απάντηση», "Q:/A:" labels; notes: none of
+    these). Use the on-device model only if the rules can't tell, with output constrained to the
+    four kinds (like template routing, 2.11.26). Log the kind and the reason in the Processing Log.
+  - **Test:** small fixtures of each kind (written for the test, Greek and English), unit tests of
+    the classifier and of each chunker (a question never separated from its answer; a note's
+    article citations don't start passages). Then rerun the Labour Code dev split and the
+    five-document dev split, so statute chunking is shown unchanged. Add a small Q&A set over a
+    notes file and a Q&A file (dev and test split, written from those files, never from the EU
+    holdout). Record in EXPERIMENTS.md, FORK_CHANGES, CHANGELOG 5.7 and METHODS_SUMMARY.
