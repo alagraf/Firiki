@@ -395,15 +395,41 @@ actor LocalNeuralTranslator {
         "\(direction.rawValue)\u{1}\(segment)"
     }
 
+    /// Splits a segment that exceeds the token budget into sub-segments along punctuation or word boundaries.
+    private static func splitLongSegment(_ segment: String) -> [String] {
+        if segment.contains(", ") {
+            return segment.components(separatedBy: ", ")
+        }
+        if segment.contains("; ") {
+            return segment.components(separatedBy: "; ")
+        }
+        if segment.contains("· ") {
+            return segment.components(separatedBy: "· ")
+        }
+        if segment.contains(": ") {
+            return segment.components(separatedBy: ": ")
+        }
+        let words = segment.components(separatedBy: " ")
+        if words.count > 1 {
+            let mid = words.count / 2
+            let left = words.prefix(mid).joined(separator: " ")
+            let right = words.dropFirst(mid).joined(separator: " ")
+            return [left, right].filter { !$0.isEmpty }
+        }
+        return [segment]
+    }
+
     /// The model input of a segment, or nil for a very long sentence, which is translated as its
-    /// comma-separated parts.
+    /// split parts.
     private static func modelInput(_ segment: String, tokenizer: SentencePieceUnigramTokenizer) -> [Int]? {
         // A chunk can start in mid-sentence. Opus-MT, trained largely on EU proceedings, turns such
         // a fragment into an invented sentence ("The Commission has been able to…"); marked as a
         // continuation with "… " it translates the fragment, and the ellipsis is dropped again.
         let ids = tokenizer.encode(isSentenceFragment(segment) ? "… " + segment : segment)
         guard ids.count > maxSegmentTokens else { return ids }
-        if segment.contains(", ") { return nil }
+        let parts = splitLongSegment(segment)
+        if parts.count > 1 { return nil }
+        print("[LocalNeuralTranslator] Warning: un-splittable segment exceeds \(maxSegmentTokens) tokens (\(ids.count)); truncating.")
         return Array(ids.prefix(maxSegmentTokens - 1)) + [tokenizer.eosId]
     }
 
@@ -432,10 +458,12 @@ actor LocalNeuralTranslator {
         if let ids = Self.modelInput(segment, tokenizer: model.tokenizer) {
             output = Self.finished(segment, tokens: try generate(batch: [ids], model: model)[0], tokenizer: model.tokenizer)
         } else {
-            // A very long sentence: translate its comma-separated parts.
-            output = try segment.components(separatedBy: ", ")
+            // A very long sentence: translate its parts.
+            let parts = Self.splitLongSegment(segment)
+            let sep = segment.contains(", ") ? ", " : (segment.contains("; ") ? "; " : (segment.contains("· ") ? "· " : (segment.contains(": ") ? ": " : " ")))
+            output = try parts
                 .map { try translateSegment($0, direction: direction) }
-                .joined(separator: ", ")
+                .joined(separator: sep)
         }
         store(output, key: key)
         return output
@@ -456,7 +484,7 @@ actor LocalNeuralTranslator {
             if let ids = Self.modelInput(segment, tokenizer: model.tokenizer) {
                 pending.append((segment, ids))
             } else {
-                segment.components(separatedBy: ", ").forEach(collect)
+                Self.splitLongSegment(segment).forEach(collect)
             }
         }
         for text in texts {

@@ -8,10 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		0E1A00012F30000100AA1001 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0E1A00022F30000100AA1001 /* onnxruntime */; };
+		AA1C05DFB217B24343F90AC9 /* OpenIntelligenceEngine.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E0A100042F0F5F5F00AABA0C /* OpenIntelligenceEngine.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B016E7B72F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */; };
 		E0A100022F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */; };
 		E0A100042F0F5F5F00AABA0D /* OpenIntelligenceEngine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0A100042F0F5F5F00AABA0C /* OpenIntelligenceEngine.framework */; };
-		AA1C05DFB217B24343F90AC9 /* OpenIntelligenceEngine.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E0A100042F0F5F5F00AABA0C /* OpenIntelligenceEngine.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		E0A100302F0F5F5F00AABA0C /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = E0A100312F0F5F5F00AABA0C /* Tokenizers */; };
 		E0A100322F0F5F5F00AABA0C /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = E0A100312F0F5F5F00AABA0C /* Tokenizers */; };
 		F0A100012F1A000100AA1001 /* OpenIntelligenceLiveActivities.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A100022F1A000100AA1001 /* OpenIntelligenceLiveActivities.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -24,13 +24,20 @@
 		F0B100162F1A000100AA1001 /* OpenIntelligence/App/SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B100172F1A000100AA1001 /* OpenIntelligence/App/SharedInbox.swift */; };
 		F0C100012F1A000100AA1001 /* OpenIntelligenceCapture.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = F0C100022F1A000100AA1001 /* OpenIntelligenceCapture.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F0C100032F1A000100AA1001 /* CaptureExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100042F1A000100AA1001 /* CaptureExtension.swift */; };
-		F0C100182F1A000100AA1001 /* CaptureViewfinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100192F1A000100AA1001 /* CaptureViewfinder.swift */; };
 		F0C100162F1A000100AA1001 /* OpenIntelligence/App/ScanIntoLibraryIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100172F1A000100AA1001 /* OpenIntelligence/App/ScanIntoLibraryIntent.swift */; };
+		F0C100182F1A000100AA1001 /* CaptureViewfinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100192F1A000100AA1001 /* CaptureViewfinder.swift */; };
 		F0C1001A2F1A000100AA1001 /* OpenIntelligence/App/ScanIntoLibraryIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100172F1A000100AA1001 /* OpenIntelligence/App/ScanIntoLibraryIntent.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		8D8D45ADEC3A8FACC0A1546A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B0D565DD2E98AC50001274A2;
+			remoteInfo = OpenIntelligence;
+		};
+		C1A100012F2E000100AA1001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
 			proxyType = 1;
@@ -51,13 +58,6 @@
 			remoteGlobalIDString = F0A100102F1A000100AA1001;
 			remoteInfo = OpenIntelligenceLiveActivities;
 		};
-		C1A100012F2E000100AA1001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = B0D565DD2E98AC50001274A2;
-			remoteInfo = OpenIntelligence;
-		};
 		F0B100142F1A000100AA1001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
@@ -75,6 +75,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		601D6FF225360C5F89012022 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				AA1C05DFB217B24343F90AC9 /* OpenIntelligenceEngine.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F0A1000C2F1A000100AA1001 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -98,22 +109,12 @@
 			name = "Embed ExtensionKit Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		601D6FF225360C5F89012022 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				AA1C05DFB217B24343F90AC9 /* OpenIntelligenceEngine.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		AF1C66A44688A7B340182360 /* OpenIntelligenceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenIntelligenceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0D565DE2E98AC50001274A2 /* OpenIntelligence.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenIntelligence.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1A100032F2E000100AA1001 /* OpenIntelligenceUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenIntelligenceUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DDFD1600670D479C7075E2C2 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		E0A100042F0F5F5F00AABA0C /* OpenIntelligenceEngine.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = OpenIntelligenceEngine.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0A100022F1A000100AA1001 /* OpenIntelligenceLiveActivities.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenIntelligenceLiveActivities.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -122,7 +123,6 @@
 		F0A100212F1A000100AA1001 /* OpenIntelligenceLiveActivitiesBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenIntelligenceLiveActivitiesBundle.swift; sourceTree = "<group>"; };
 		F0A100222F1A000100AA1001 /* OpenIntelligenceActivityIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = OpenIntelligenceActivityIcon.png; sourceTree = "<group>"; };
 		F0A100232F1A000100AA1001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		C1A100032F2E000100AA1001 /* OpenIntelligenceUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenIntelligenceUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0B100022F1A000100AA1001 /* OpenIntelligenceShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenIntelligenceShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0B100042F1A000100AA1001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		F0B100052F1A000100AA1001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -130,9 +130,9 @@
 		F0B100172F1A000100AA1001 /* OpenIntelligence/App/SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenIntelligence/App/SharedInbox.swift; sourceTree = "<group>"; };
 		F0C100022F1A000100AA1001 /* OpenIntelligenceCapture.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = OpenIntelligenceCapture.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0C100042F1A000100AA1001 /* CaptureExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureExtension.swift; sourceTree = "<group>"; };
-		F0C100192F1A000100AA1001 /* CaptureViewfinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureViewfinder.swift; sourceTree = "<group>"; };
 		F0C100052F1A000100AA1001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0C100172F1A000100AA1001 /* OpenIntelligence/App/ScanIntoLibraryIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenIntelligence/App/ScanIntoLibraryIntent.swift; sourceTree = "<group>"; };
+		F0C100192F1A000100AA1001 /* CaptureViewfinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureViewfinder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -177,19 +177,19 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets/Assets.xcassets,
+				MLModels/GreekOCR/el_dict.txt,
+				"MLModels/GreekOCR/el_PP-OCRv5_mobile_rec.onnx",
+				"MLModels/GreekOCR/PP-OCRv5_mobile_det.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_decoder_cross.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_decoder_step.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_encoder.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_tokenizer.json",
+				"MLModels/Translation/opus-mt-tc-big-en-el_decoder_cross.onnx",
+				"MLModels/Translation/opus-mt-tc-big-en-el_decoder_step.onnx",
+				"MLModels/Translation/opus-mt-tc-big-en-el_encoder.onnx",
+				"MLModels/Translation/opus-mt-tc-big-en-el_tokenizer.json",
 				StoreKit/StoreKitConfiguration.storekit,
 				StoreKit/StoreKitTestHarness.swift,
-				MLModels/GreekOCR/PP-OCRv5_mobile_det.onnx,
-				MLModels/GreekOCR/el_PP-OCRv5_mobile_rec.onnx,
-				MLModels/GreekOCR/el_dict.txt,
-				MLModels/Translation/opus-mt-tc-big-el-en_encoder.onnx,
-				MLModels/Translation/opus-mt-tc-big-el-en_decoder_cross.onnx,
-				MLModels/Translation/opus-mt-tc-big-el-en_decoder_step.onnx,
-				MLModels/Translation/opus-mt-tc-big-el-en_tokenizer.json,
-				MLModels/Translation/opus-mt-tc-big-en-el_encoder.onnx,
-				MLModels/Translation/opus-mt-tc-big-en-el_decoder_cross.onnx,
-				MLModels/Translation/opus-mt-tc-big-en-el_decoder_step.onnx,
-				MLModels/Translation/opus-mt-tc-big-en-el_tokenizer.json,
 			);
 			target = E0A100072F0F5F5F00AABA0C /* OpenIntelligenceEngine */;
 		};
@@ -340,6 +340,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C1A100062F2E000100AA1001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E0A100062F0F5F5F00AABA0C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -350,13 +357,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F0A1000B2F1A000100AA1001 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C1A100062F2E000100AA1001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -540,6 +540,27 @@
 			productReference = B0D565DE2E98AC50001274A2 /* OpenIntelligence.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C1A100082F2E000100AA1001 /* OpenIntelligenceUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C1A1000B2F2E000100AA1001 /* Build configuration list for PBXNativeTarget "OpenIntelligenceUITests" */;
+			buildPhases = (
+				C1A100052F2E000100AA1001 /* Sources */,
+				C1A100062F2E000100AA1001 /* Frameworks */,
+				C1A100072F2E000100AA1001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C1A100022F2E000100AA1001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C1A100042F2E000100AA1001 /* OpenIntelligenceUITests */,
+			);
+			name = OpenIntelligenceUITests;
+			productName = OpenIntelligenceUITests;
+			productReference = C1A100032F2E000100AA1001 /* OpenIntelligenceUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		E0A100072F0F5F5F00AABA0C /* OpenIntelligenceEngine */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E0A100102F0F5F5F00AABA0C /* Build configuration list for PBXNativeTarget "OpenIntelligenceEngine" */;
@@ -632,27 +653,6 @@
 			productReference = F0C100022F1A000100AA1001 /* OpenIntelligenceCapture.appex */;
 			productType = "com.apple.product-type.extensionkit-extension";
 		};
-		C1A100082F2E000100AA1001 /* OpenIntelligenceUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = C1A1000B2F2E000100AA1001 /* Build configuration list for PBXNativeTarget "OpenIntelligenceUITests" */;
-			buildPhases = (
-				C1A100052F2E000100AA1001 /* Sources */,
-				C1A100062F2E000100AA1001 /* Frameworks */,
-				C1A100072F2E000100AA1001 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				C1A100022F2E000100AA1001 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				C1A100042F2E000100AA1001 /* OpenIntelligenceUITests */,
-			);
-			name = OpenIntelligenceUITests;
-			productName = OpenIntelligenceUITests;
-			productReference = C1A100032F2E000100AA1001 /* OpenIntelligenceUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -728,6 +728,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C1A100072F2E000100AA1001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E0A100122F0F5F5F00AABA0C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -740,13 +747,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				F0A100262F1A000100AA1001 /* OpenIntelligenceActivityIcon.png in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C1A100072F2E000100AA1001 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -781,6 +781,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C1A100052F2E000100AA1001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E0A100112F0F5F5F00AABA0C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -796,13 +803,6 @@
 				F0A100242F1A000100AA1001 /* IngestionLiveActivityWidget.swift in Sources */,
 				F0A100252F1A000100AA1001 /* OpenIntelligenceLiveActivitiesBundle.swift in Sources */,
 				F0C1001A2F1A000100AA1001 /* OpenIntelligence/App/ScanIntoLibraryIntent.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C1A100052F2E000100AA1001 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -834,6 +834,11 @@
 			target = B0D565DD2E98AC50001274A2 /* OpenIntelligence */;
 			targetProxy = 8D8D45ADEC3A8FACC0A1546A /* PBXContainerItemProxy */;
 		};
+		C1A100022F2E000100AA1001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B0D565DD2E98AC50001274A2 /* OpenIntelligence */;
+			targetProxy = C1A100012F2E000100AA1001 /* PBXContainerItemProxy */;
+		};
 		E0A100072F0F5F5F00AABA0F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = OpenIntelligenceEngine;
@@ -858,11 +863,6 @@
 			target = F0C100102F1A000100AA1001 /* OpenIntelligenceCapture */;
 			targetProxy = F0C100142F1A000100AA1001 /* PBXContainerItemProxy */;
 		};
-		C1A100022F2E000100AA1001 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = B0D565DD2E98AC50001274A2 /* OpenIntelligence */;
-			targetProxy = C1A100012F2E000100AA1001 /* PBXContainerItemProxy */;
-		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -873,7 +873,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 5.7;
@@ -925,7 +925,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -989,7 +989,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -1017,14 +1017,14 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = OpenIntelligence/OpenIntelligence.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				ENABLE_ENHANCED_SECURITY = YES;
-				ENABLE_POINTER_AUTHENTICATION = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = J7R6G54TG4;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_ENHANCED_SECURITY = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_POINTER_AUTHENTICATION = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1091,13 +1091,13 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = OpenIntelligence/OpenIntelligence.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				ENABLE_ENHANCED_SECURITY = YES;
-				ENABLE_POINTER_AUTHENTICATION = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
 				DEVELOPMENT_TEAM = J7R6G54TG4;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_ENHANCED_SECURITY = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_POINTER_AUTHENTICATION = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1155,6 +1155,45 @@
 			};
 			name = Release;
 		};
+		C1A100092F2E000100AA1001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.openintelligence.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OpenIntelligence;
+			};
+			name = Debug;
+		};
+		C1A1000A2F2E000100AA1001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.openintelligence.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OpenIntelligence;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		E0A100082F0F5F5F00AABA0C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1164,7 +1203,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1205,7 +1244,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
 				DEFINES_MODULE = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1241,11 +1280,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = OpenIntelligenceLiveActivities/OpenIntelligenceLiveActivities.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				GENERATE_INFOPLIST_FILE = NO;
-				CODE_SIGN_ENTITLEMENTS = OpenIntelligenceLiveActivities/OpenIntelligenceLiveActivities.entitlements;
 				INFOPLIST_FILE = OpenIntelligenceLiveActivities/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1273,11 +1312,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = OpenIntelligenceLiveActivities/OpenIntelligenceLiveActivities.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				GENERATE_INFOPLIST_FILE = NO;
-				CODE_SIGN_ENTITLEMENTS = OpenIntelligenceLiveActivities/OpenIntelligenceLiveActivities.entitlements;
 				INFOPLIST_FILE = OpenIntelligenceLiveActivities/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1301,67 +1340,6 @@
 			};
 			name = Release;
 		};
-		F56921109921F3B8D6037496 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 5.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openintelligence.app.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_INTEROP_MODE = objcxx;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,6,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenIntelligence.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenIntelligence";
-			};
-			name = Debug;
-		};
-		C1A100092F2E000100AA1001 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 5.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openintelligence.app.uitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = OpenIntelligence;
-			};
-			name = Debug;
-		};
-		C1A1000A2F2E000100AA1001 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 5.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openintelligence.app.uitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = OpenIntelligence;
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
 		F0B100122F1A000100AA1001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1369,7 +1347,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenIntelligenceShare/OpenIntelligenceShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenIntelligenceShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -1401,7 +1379,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenIntelligenceShare/OpenIntelligenceShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenIntelligenceShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -1432,7 +1410,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenIntelligenceCapture/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -1463,7 +1441,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 150;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenIntelligenceCapture/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -1488,6 +1466,28 @@
 			};
 			name = Release;
 		};
+		F56921109921F3B8D6037496 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.openintelligence.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenIntelligence.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenIntelligence";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1505,6 +1505,15 @@
 			buildConfigurations = (
 				B0D565EA2E98AC51001274A2 /* Debug */,
 				B0D565EB2E98AC51001274A2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C1A1000B2F2E000100AA1001 /* Build configuration list for PBXNativeTarget "OpenIntelligenceUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C1A1000A2F2E000100AA1001 /* Release */,
+				C1A100092F2E000100AA1001 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1532,15 +1541,6 @@
 			buildConfigurations = (
 				F0A100122F1A000100AA1001 /* Debug */,
 				F0A100132F1A000100AA1001 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		C1A1000B2F2E000100AA1001 /* Build configuration list for PBXNativeTarget "OpenIntelligenceUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C1A1000A2F2E000100AA1001 /* Release */,
-				C1A100092F2E000100AA1001 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

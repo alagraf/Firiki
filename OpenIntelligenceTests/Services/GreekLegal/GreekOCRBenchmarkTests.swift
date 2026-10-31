@@ -73,9 +73,10 @@ struct GreekOCRBenchmarkTests {
         return Double(previous[h.count]) / Double(r.count)
     }
 
-    /// Bag of words frequency map.
+    /// Bag of words frequency map with line-end hyphenation re-joined to align with reference text.
     static func bagOfWords(from text: String) -> [String: Int] {
-        let normalized = GreekLegalEntityMasker.normalizeGreekText(text).lowercased()
+        let dehyphenated = text.replacingOccurrences(of: #"(\p{L})-\s*\n\s*(\p{L})"#, with: "$1$2", options: .regularExpression)
+        let normalized = GreekLegalEntityMasker.normalizeGreekText(dehyphenated).lowercased()
         let words = normalized.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
         var bag: [String: Int] = [:]
         for w in words { bag[w, default: 0] += 1 }

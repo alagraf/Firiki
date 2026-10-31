@@ -180,6 +180,19 @@ nonisolated enum GreekLegalAnswerFinalizer {
         let lower = query.lowercased()
         for country in foreignCountries {
             let name = NSRegularExpression.escapedPattern(for: country.english.lowercased())
+            // An inquiry asking about a worker's or individual's nationality/origin (e.g. "worker from Albania",
+            // "employee from Albania", "εργαζόμενος από την Αλβανία") asks about Greek law applying to a foreign
+            // national, not about the foreign country's legal jurisdiction.
+            let workerOriginEn = #"\b(?:worker|employee|person|national|citizen|individual|someone|anyone|immigrant|refugee|origin)\s+from\s+(?:the\s+)?"# + name + #"\b"#
+            if lower.range(of: workerOriginEn, options: .regularExpression) != nil {
+                continue
+            }
+            if let stem = country.greekStem {
+                let workerOriginEl = #"\b(?:εργαζόμεν|μισθωτ|πρόσωπ|πολίτ|υπήκο|αλλοδαπ)\w*\s+από\s+(?:τη[νς]?\s+|το[υς]?\s+|τω[ν]?\s+)?"# + stem
+                if lower.range(of: workerOriginEl, options: .regularExpression) != nil {
+                    continue
+                }
+            }
             let asked = #"\b(?:in|of|from|under|for|to)\s+(?:the\s+)?"# + name + #"\b"#
             guard lower.range(of: asked, options: .regularExpression) != nil else { continue }
             let named = chunks.contains { retrieved in
@@ -248,14 +261,18 @@ nonisolated enum GreekLegalAnswerFinalizer {
         return pipelineFailureMarkers.contains { lower.contains($0) }
     }
 
-    /// A content word (4+ letters) or a legal identifier of the query appears in the passage.
+    /// A content word (4+ letters, excluding generic question words) or a legal identifier of the query appears in the passage.
     static func hasOverlap(query: String, chunk: DocumentChunk) -> Bool {
         let queryKeys = GreekLegalEntityMasker.canonicalKeys(in: query)
         let chunkKeys = LegalVerificationPolicy.evidenceKeys([RetrievedChunk(chunk: chunk, similarityScore: 0, rank: 0)])
         if !queryKeys.isDisjoint(with: chunkKeys) { return true }
-        let text = (chunk.content + " " + (chunk.sourceTextEl ?? "")).lowercased()
-        let words = query.lowercased().components(separatedBy: CharacterSet.letters.inverted).filter { $0.count >= 4 }
-        return words.contains { text.contains($0) }
+        let chunkWords = Set((chunk.content + " " + (chunk.sourceTextEl ?? "")).lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted)
+            .filter { !$0.isEmpty })
+        let words = query.lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted)
+            .filter { $0.count >= 4 && !genericQuestionWords.contains($0) }
+        return words.contains { chunkWords.contains($0) }
     }
 
     /// Words of a labour-law question that don't tell its topic apart (every passage of the library

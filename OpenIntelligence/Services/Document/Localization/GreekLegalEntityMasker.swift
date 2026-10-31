@@ -200,7 +200,7 @@ nonisolated enum GreekLegalEntityMasker {
         ),
         Rule(
             type: .article,
-            regex: regex(#"(?:Άρθρ(?:ο|ου|α|ων)|Αρθρ(?:ο|ου|α|ων)|Άρθρ\.|Αρθρ\.|Αρ\.|Articles?|Art\.)\s*(\d{1,4}[\p{L}]?)"# + end),
+            regex: regex(#"(?:Άρθρ(?:ο|ου|α|ων)|Αρθρ(?:ο|ου|α|ων)|Άρθρ\.|Αρθρ\.|Άρθ\.|Αρθ\.|Articles?|Art\.)\s*(\d{1,4}[\p{L}]?)"# + end),
             canonicalize: { g in
                 let number = articleNumber(g[1])
                 return ("ART:\(number)", "Article \(number)", "Άρθρο \(number)")

@@ -171,11 +171,20 @@ nonisolated enum SpelledNumber {
         return result.replacingOccurrences(of: #"\b(\d+) \(\1\)"#, with: "$1", options: .regularExpression)
     }
 
+    private static let nonFractionOrOrdinalWords: Set<String> = [
+        "month", "months", "length", "lengths", "width", "widths", "depth", "depths",
+        "birth", "births", "growth", "growths", "youth", "youths", "faith", "faiths",
+        "truth", "truths", "south", "north", "path", "paths", "math", "maths",
+        "breath", "breaths", "death", "deaths", "strength", "strengths",
+    ]
+
     private static func isFraction(_ word: String) -> Bool {
-        isOrdinal(word) || word.hasSuffix("ths") || ["thirds", "quarter", "quarters", "half", "halves"].contains(word)
+        guard !nonFractionOrOrdinalWords.contains(word) else { return false }
+        return isOrdinal(word) || word.hasSuffix("ths") || ["thirds", "quarter", "quarters", "half", "halves"].contains(word)
     }
 
     private static func isOrdinal(_ word: String) -> Bool {
-        word.hasSuffix("th") || ["second", "third", "first"].contains(word)
+        guard !nonFractionOrOrdinalWords.contains(word) else { return false }
+        return word.hasSuffix("th") || ["second", "third", "first"].contains(word)
     }
 }

@@ -72,9 +72,12 @@ def parse(path):
         if rest.startswith("no answer"):
             status, _, answer = rest.partition(" | ")
             runs[(label, q)] = ("declined" in status and "ANSWERED" not in status, answer.strip())
-        else:
+        elif " | " in rest:
             parts = rest.split(" | ", 2)
             runs[(label, q)] = (parts[1] == "answer DECLINED", parts[2].strip() if len(parts) > 2 else "")
+        else:
+            is_declined = "declined" in rest.lower()
+            runs[(label, q)] = (is_declined, rest.strip())
     return runs
 
 
@@ -102,15 +105,29 @@ for name, path in systems:
             else:
                 c["answerable"] += 1
                 v1_terms = (item.get("any_el") if greek_q else item.get("any")) or []
-                v1_ok = not v1_declined and (not v1_terms or any(
-                    (has_term if greek_q else has_word)(answer, t) for t in v1_terms))
-                terms = list(v1_terms) + (list(item.get("any") or []) if greek_q else [])
-                match = lambda text: any(has_term(text, t) if re.search(r"[Ͱ-Ͽ]", t) else has_word(text, t) for t in terms)
+                v1_all = (item.get("all_el") if greek_q else item.get("all")) or []
+                v1_none = (item.get("none_el") if greek_q else item.get("none")) or []
+                check_term = lambda text, t: has_term(text, t) if (re.search(r"[Ͱ-Ͽ]", t) or greek_q) else has_word(text, t)
+
+                v1_any_ok = not v1_terms or any(check_term(answer, t) for t in v1_terms)
+                v1_all_ok = not v1_all or all(check_term(answer, t) for t in v1_all)
+                v1_none_ok = not v1_none or not any(check_term(answer, t) for t in v1_none)
+                v1_ok = not v1_declined and v1_any_ok and v1_all_ok and v1_none_ok
+
+                terms_any = list(v1_terms) + (list(item.get("any") or []) if greek_q else [])
+                terms_all = list(v1_all) + (list(item.get("all") or []) if greek_q else [])
+                terms_none = list(v1_none) + (list(item.get("none") or []) if greek_q else [])
+
+                match_any = lambda text: not terms_any or any(has_term(text, t) if re.search(r"[Ͱ-Ͽ]", t) else has_word(text, t) for t in terms_any)
+                match_all = lambda text: not terms_all or all(has_term(text, t) if re.search(r"[Ͱ-Ͽ]", t) else has_word(text, t) for t in terms_all)
+                match_none = lambda text: not terms_none or not any(has_term(text, t) if re.search(r"[Ͱ-Ͽ]", t) else has_word(text, t) for t in terms_none)
+                match = lambda text: match_any(text) and match_all(text) and match_none(text)
+
                 c["v1_right"] += v1_ok
                 if v2_declined:
                     c["v2_false_declines"] += 1
                     v2 = strict = "declined"
-                elif not terms:
+                elif not terms_any and not terms_all:
                     c["ungraded"] += 1
                     v2 = strict = "ungraded"
                 else:

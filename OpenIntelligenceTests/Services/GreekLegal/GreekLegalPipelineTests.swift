@@ -131,6 +131,12 @@ struct GreekLegalEntityMaskerTests {
         #expect(GreekLegalEntityMasker.extractEntities(from: text).isEmpty)
     }
 
+    @Test func numberAbbreviationsAreNotMaskedAsArticle() {
+        let text = "ΚΥΡΩΣΗ ΣΥΜΒΑΣΗΣ υπ' αρ. 155 και υπ' αρ. 191 της Διεθνούς Οργάνωσης Εργασίας"
+        let entities = GreekLegalEntityMasker.extractEntities(from: text)
+        #expect(!entities.contains { $0.canonicalKey == "ART:155" || $0.canonicalKey == "ART:191" })
+    }
+
     @Test func documentNamesAreMaskedAsWritten() {
         let text = "Article 5 of passage 3-2.txt and passage 1-2 [C1]; see also report_2024.pdf."
         let (masked, names) = GreekLegalEntityMasker.maskDocumentNames(in: text, names: ["passage 3-2.txt", "passage 1-2.txt"])
@@ -686,6 +692,11 @@ struct GreekLegalVerificationTests {
         // Greece is not another jurisdiction.
         #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
             query: "How long does maternity leave last in Greece?", chunks: [maternity]) == nil)
+        // A worker originating from another country asks about their rights under Greek law.
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "Can a worker from Albania get annual leave under Greek law?", chunks: [maternity]) == nil)
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "Δικαιούται άδεια ένας εργαζόμενος από την Αλβανία;", chunks: [maternity]) == nil)
     }
 
     @Test func documentStatuteIsReadFromTheTitlePage() {
@@ -887,6 +898,7 @@ struct GreekLegalVerificationTests {
         // Fractions, ordinals, "one" and "a second" stay words.
         #expect(digits("a two-thirds majority, then three fifths, then one half") == "a two-thirds majority, then three fifths, then one half")
         #expect(digits("the twenty-fifth year, one month, a second notice") == "the twenty-fifth year, one month, a second notice")
+        #expect(digits("two months and six months of service") == "2 months and 6 months of service")
     }
 
     @Test func offTopicFigureIsDroppedButAnOnTopicOneStillRefuses() async {

@@ -1345,6 +1345,91 @@ struct ThreadListSnippetView: View {
     }
 }
 
+// MARK: - Specialized Greek Legal Tech Capabilities (Thesis PoC Capabilities)
+
+@available(iOS 26.0, macOS 26.0, *)
+struct RouteLabourContractIntent: AppIntent {
+    static var title: LocalizedStringResource = "Route Labour Contract Template"
+    static var description: IntentDescription = .init(
+        "Selects an appropriate Greek labour contract template grounded in Presidential Decree 62/2025 for an employment description.",
+        categoryName: "Legal"
+    )
+
+    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
+
+    @Parameter(title: "Request Description")
+    var request: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Route contract template for \(\.$request)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let match = try await LabourContractTemplateRouter.route(request: request)
+        let responseText: String
+        if let template = match.template {
+            responseText = "Selected template: \(template.titleEl) (\(template.titleEn)). Matched via \(match.method). Reasoning: \(match.reasoning)"
+        } else {
+            responseText = "No matching labour contract template found for this request. Reasoning: \(match.reasoning)"
+        }
+        return .result(dialog: IntentDialog(stringLiteral: responseText))
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+struct SummarizeStatuteIntent: AppIntent {
+    static var title: LocalizedStringResource = "Summarize Greek Statute"
+    static var description: IntentDescription = .init(
+        "Generates a verified, article-by-article hierarchical summary of an imported Greek statute.",
+        categoryName: "Legal"
+    )
+
+    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
+
+    @Parameter(title: "Document")
+    var document: OIDocumentEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Summarize statute \(\.$document)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let db = try await DatabaseService.shared.database()
+        let chunks = db.chunks(forDocument: document.id)
+        let passages = chunks.map { $0.content }
+        let statuteKey = chunks.first?.statuteKey
+        let summary = try await GreekLegalDocumentSummarizer.summarize(passages: passages, statuteKey: statuteKey)
+        return .result(dialog: IntentDialog(stringLiteral: summary.greek))
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+struct GreekLegalOpinionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Synthesize Greek Legal Opinion"
+    static var description: IntentDescription = .init(
+        "Synthesizes a structured multi-statute Greek legal opinion across enactments in a library container.",
+        categoryName: "Legal"
+    )
+
+    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
+
+    @Parameter(title: "Question")
+    var question: String
+
+    @Parameter(title: "Library Container")
+    var library: OILibraryEntity?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Synthesize legal opinion for \(\.$question)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let containerId = library?.id ?? (await MainActor.run { AppState.shared.activeLibraryId })
+        let opinion = try await RAGService.shared.greekLegalOpinion(question: question, containerId: containerId)
+        return .result(dialog: IntentDialog(stringLiteral: opinion.greek))
+    }
+}
+
 // MARK: - The system can stop the ask actions (26.4) and let them run long (27)
 
 @available(iOS 26.4, macOS 26.4, *) extension QueryDocumentsIntent: CancellableIntent {}
@@ -1352,6 +1437,9 @@ struct ThreadListSnippetView: View {
 @available(iOS 26.4, macOS 26.4, *) extension AskDocumentIntent: CancellableIntent {}
 @available(iOS 26.4, macOS 26.4, *) extension SummarizeDocumentIntent: CancellableIntent {}
 @available(iOS 26.4, macOS 26.4, *) extension CompareDocumentsIntent: CancellableIntent {}
+@available(iOS 26.4, macOS 26.4, *) extension RouteLabourContractIntent: CancellableIntent {}
+@available(iOS 26.4, macOS 26.4, *) extension SummarizeStatuteIntent: CancellableIntent {}
+@available(iOS 26.4, macOS 26.4, *) extension GreekLegalOpinionIntent: CancellableIntent {}
 
 /// The ask actions report progress on every version the app runs on, so before 27 Shortcuts shows
 /// the bar too (5.7). On 27 they are long-running tasks, which report it the same way.
@@ -1360,9 +1448,15 @@ struct ThreadListSnippetView: View {
 @available(iOS 26.0, macOS 26.0, *) extension AskDocumentIntent: ProgressReportingIntent {}
 @available(iOS 26.0, macOS 26.0, *) extension SummarizeDocumentIntent: ProgressReportingIntent {}
 @available(iOS 26.0, macOS 26.0, *) extension CompareDocumentsIntent: ProgressReportingIntent {}
+@available(iOS 26.0, macOS 26.0, *) extension RouteLabourContractIntent: ProgressReportingIntent {}
+@available(iOS 26.0, macOS 26.0, *) extension SummarizeStatuteIntent: ProgressReportingIntent {}
+@available(iOS 26.0, macOS 26.0, *) extension GreekLegalOpinionIntent: ProgressReportingIntent {}
 
 @available(iOS 27.0, macOS 27.0, *) extension QueryDocumentsIntent: LongRunningIntent {}
 @available(iOS 27.0, macOS 27.0, *) extension SearchLibraryIntent: LongRunningIntent {}
 @available(iOS 27.0, macOS 27.0, *) extension AskDocumentIntent: LongRunningIntent {}
 @available(iOS 27.0, macOS 27.0, *) extension SummarizeDocumentIntent: LongRunningIntent {}
 @available(iOS 27.0, macOS 27.0, *) extension CompareDocumentsIntent: LongRunningIntent {}
+@available(iOS 27.0, macOS 27.0, *) extension RouteLabourContractIntent: LongRunningIntent {}
+@available(iOS 27.0, macOS 27.0, *) extension SummarizeStatuteIntent: LongRunningIntent {}
+@available(iOS 27.0, macOS 27.0, *) extension GreekLegalOpinionIntent: LongRunningIntent {}
