@@ -204,6 +204,23 @@ actor LocalNeuralTranslator {
     /// Batch translation since the last release: sentences, seconds, seconds inside ONNX Runtime.
     private var batchStats: (sentences: Int, seconds: Double, modelSeconds: Double) = (0, 0, 0)
     private var modelSeconds = 0.0
+    /// `translate` calls since the last release, for the Xcode console: calls, segments, segments
+    /// answered from the cache, segments decoded by the model, wall-clock seconds. Until 2026-10-31
+    /// the translator printed only when a model loaded or was released, so a question's or an
+    /// answer's translation left no line in the console (owner, 2026-10-31).
+    private var callStats: (calls: Int, segments: Int, cached: Int, decoded: Int, seconds: Double) = (0, 0, 0, 0, 0)
+
+    /// The short name of a direction in log lines.
+    nonisolated static func logName(_ direction: TranslationDirection) -> String {
+        direction == .greekToEnglish ? "el→en" : "en→el"
+    }
+
+    /// A one-line preview of a text for the console.
+    nonisolated static func logPreview(_ text: String, limit: Int = 80) -> String {
+        let line = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        return line.count > limit ? String(line.prefix(limit)) + "…" : line
+    }
 
     /// Forgets every translated sentence (benchmarks).
     func clearCache() {
@@ -245,6 +262,11 @@ actor LocalNeuralTranslator {
                             batchStats.sentences, batchStats.seconds, batchStats.modelSeconds), category: .ingestion)
             batchStats = (0, 0, 0)
         }
+        if callStats.calls > 0 {
+            Log.info(String(format: "[Opus-MT] Since the last release: %d translation(s), %d segment(s) (%d from the cache, %d decoded) in %.1f s",
+                            callStats.calls, callStats.segments, callStats.cached, callStats.decoded, callStats.seconds), category: .ingestion)
+            callStats = (0, 0, 0, 0, 0)
+        }
         guard !models.isEmpty else { return }
         models.removeAll()
         Log.info("[Translator] Released translation models", category: .ingestion)
@@ -265,7 +287,12 @@ actor LocalNeuralTranslator {
               let crossURL = Self.resourceURL("\(direction.rawValue)_decoder_cross", "onnx"),
               let stepURL = Self.resourceURL("\(direction.rawValue)_decoder_step", "onnx"),
               let tokenizerURL = Self.resourceURL("\(direction.rawValue)_tokenizer", "json")
-        else { throw TranslatorError.modelsMissing(direction) }
+        else {
+            Log.error("[Opus-MT] \(direction.rawValue) model files are missing from the app bundle", category: .ingestion)
+            throw TranslatorError.modelsMissing(direction)
+        }
+        let loadStart = Date()
+        // ONNX Runtime's own log stays at warning: at info it prints every graph optimisation pass.
         let env = try self.env ?? ORTEnv(loggingLevel: .warning)
         self.env = env
         let options = try ORTSessionOptions()
@@ -280,7 +307,9 @@ actor LocalNeuralTranslator {
             batched: (try? step.inputNames())?.contains("encoder_attention_mask") ?? false
         )
         models[direction] = model
-        Log.info("[Translator] Loaded \(direction.rawValue)", category: .ingestion)
+        Log.info(String(format: "[Translator] Loaded %@ (%@) in %.2f s, %d ONNX Runtime thread(s), %@",
+                        direction.rawValue, Self.logName(direction), Date().timeIntervalSince(loadStart), Self.threadCount,
+                        model.batched ? "batched step graph" : "one sentence at a time"), category: .ingestion)
         return model
         #else
         throw TranslatorError.runtimeUnavailable
@@ -300,6 +329,9 @@ actor LocalNeuralTranslator {
     }
 
     func translate(_ text: String, direction: TranslationDirection) async throws -> String {
+        let started = Date()
+        let before = (cached: callStats.cached, decoded: callStats.decoded)
+        var segmentCount = 0
         var lines: [String] = []
         for line in Self.reflow(text).components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -309,11 +341,27 @@ actor LocalNeuralTranslator {
             }
             var translated: [String] = []
             for segment in Self.segments(trimmed) {
+                segmentCount += 1
                 translated.append(try translateSegment(segment, direction: direction))
             }
             lines.append(translated.joined(separator: " "))
         }
-        return lines.joined(separator: "\n")
+        let output = lines.joined(separator: "\n")
+        let seconds = Date().timeIntervalSince(started)
+        let cached = callStats.cached - before.cached
+        let decoded = callStats.decoded - before.decoded
+        callStats.calls += 1
+        callStats.segments += segmentCount
+        callStats.seconds += seconds
+        // One line per call that ran the model; calls answered from the cache alone (most of an
+        // import after `pretranslateGreekChunks`) are only counted, so an import doesn't print
+        // thousands of lines. Debug level: printed in Debug builds, never in Release.
+        if decoded > 0 {
+            Log.debug(String(format: "[Opus-MT] %@ %d chars, %d segment(s) (%d decoded, %d cached) in %.0f ms: '%@' → '%@'",
+                             Self.logName(direction), text.count, segmentCount, decoded, cached, seconds * 1000,
+                             Self.logPreview(text), Self.logPreview(output)), category: .ingestion)
+        }
+        return output
     }
 
     /// Whether a segment starts in mid-sentence: its first letter is lower-case.
@@ -429,7 +477,7 @@ actor LocalNeuralTranslator {
         guard ids.count > maxSegmentTokens else { return ids }
         let parts = splitLongSegment(segment)
         if parts.count > 1 { return nil }
-        print("[LocalNeuralTranslator] Warning: un-splittable segment exceeds \(maxSegmentTokens) tokens (\(ids.count)); truncating.")
+        Log.warning("[Opus-MT] An unsplittable segment of \(ids.count) tokens exceeds \(maxSegmentTokens); cut to \(maxSegmentTokens - 1) tokens: '\(logPreview(segment))'", category: .ingestion)
         return Array(ids.prefix(maxSegmentTokens - 1)) + [tokenizer.eosId]
     }
 
@@ -452,10 +500,14 @@ actor LocalNeuralTranslator {
     private func translateSegment(_ segment: String, direction: TranslationDirection) throws -> String {
         if direction == .greekToEnglish, Self.isWithoutGreek(segment) { return segment }
         let key = Self.cacheKey(segment, direction)
-        if let cached = cache[key] { return cached }
+        if let cached = cache[key] {
+            callStats.cached += 1
+            return cached
+        }
         let model = try model(direction)
         let output: String
         if let ids = Self.modelInput(segment, tokenizer: model.tokenizer) {
+            callStats.decoded += 1
             output = Self.finished(segment, tokens: try generate(batch: [ids], model: model)[0], tokenizer: model.tokenizer)
         } else {
             // A very long sentence: translate its parts.
@@ -704,7 +756,10 @@ actor LocalNeuralTranslator {
         let translated = try await translate(masked, direction: .englishToGreek)
         let greek = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: resolved, mode: .greekVerbatim)
         let withTerms = await restoringGlossaryGreek(greek, terms: terms)
-        return GreekLegalEntityMasker.unmaskEntities(in: withTerms, entities: names, mode: .verbatim)
+        let result = GreekLegalEntityMasker.unmaskEntities(in: withTerms, entities: names, mode: .verbatim)
+        // Answers, summaries and opinions are translated once each, so this line is at info.
+        Log.info("[Opus-MT] en→el answer: \(textEn.count) → \(result.count) chars, \(found.count) identifier(s) and \(terms.count) glossary term(s) kept, \(names.count) file name(s) masked: '\(Self.logPreview(result))'", category: .llm)
+        return result
     }
 
     /// The model's renderings of glossary terms, by English term ("serious reason" → «σοβαρός λόγος»).

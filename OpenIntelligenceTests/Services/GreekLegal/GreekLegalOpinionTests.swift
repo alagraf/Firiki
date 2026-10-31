@@ -144,7 +144,7 @@ struct GreekLegalOpinionTests {
         #expect(prompts[2].1.contains("How they combine:\nArticle 7 of Law 5239/2025 amended Article 194"))
         #expect(opinion.refusal == nil)
         #expect(opinion.dropped == ["Night work pays 75% more (Article 99 of Law 1234/2020)."], "\(opinion.dropped)")
-        #expect(opinion.english.contains("Applicable law:\n- Law 5239/2025, Article 7"))
+        #expect(opinion.english.contains("Applicable law:\nLaw 5239/2025, Article 7."))
         #expect(!opinion.english.contains("Law 5316/2026"), "a document that doesn't address the question is not applicable law")
         for title in ["Ερώτημα", "Εφαρμοστέο δίκαιο", "Τι προβλέπει κάθε κείμενο", "Πώς συνδυάζονται", "Συμπέρασμα", "Σημείωση"] {
             #expect(opinion.greek.contains(title + "\n"), "\(title)")

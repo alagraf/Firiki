@@ -300,14 +300,15 @@ nonisolated enum GreekLegalOpinionWriter {
         }
 
         let applicable = sources.filter { source in sections.contains { $0.source.document == source.document } }
-        let lawLines = applicable.map { source -> String in
+        let lawSources = applicable.map { source -> String in
             let articles = source.passages.compactMap { LegalCrossReferences.definedArticle(of: $0.chunk) }
                 .map { String($0.dropFirst("ART:".count)) }
             let unique = articles.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
-            return "- " + source.name + (unique.isEmpty ? "" : ", Article " + unique.joined(separator: ", Article "))
+            return source.name + (unique.isEmpty ? "" : ", Article " + unique.joined(separator: ", Article "))
         }
+        let lawText = lawSources.joined(separator: "; ") + (lawSources.isEmpty ? "" : ".")
         let englishParts: [(title: String, text: String)] = [
-            ("Applicable law", lawLines.joined(separator: "\n")),
+            ("Applicable law", lawText),
             ("What each provides", sections.map(\.text).joined(separator: "\n\n")),
             ("How they combine", usedCombination.joined(separator: " ")),
             ("Conclusion", conclusion),

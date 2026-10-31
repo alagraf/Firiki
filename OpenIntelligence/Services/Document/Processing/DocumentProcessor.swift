@@ -1086,7 +1086,7 @@ class DocumentProcessor {
             category: .ingestion
         )
 
-        var processedChunks: [ProcessedChunk]
+        var processedChunks: [ProcessedChunk] = []
 
         // JSON records: each record is cut from the cleaned text as its own passage. When the
         // headers did not survive the cleanup intact, nothing is cut and the text is chunked as prose.
@@ -1112,17 +1112,43 @@ class DocumentProcessor {
                 totalPages: nil)
             Log.info(
                 "[DocumentProcessor] Created \(processedChunks.count) JSON record passages", category: .ingestion)
-        } else if GreekLegalStructureChunker.applies(to: chunkableText) {
-            // Thesis fork (plan stage 3): a Greek statute is cut along its articles and numbered
-            // paragraphs, each passage starting with its article heading.
-            processedChunks = makeGreekLegalChunks(
-                in: chunkableText, maxWords: min(chunkerConfig.maxSize, 200), pageInfo: pageInfo,
-                documentCategory: documentCategory)
-            emitProgress(
-                stage: "chunking", detail: "✅ Created \(processedChunks.count) article passages", page: nil, totalPages: nil)
-            Log.info(
-                "[DocumentProcessor] Created \(processedChunks.count) Greek legal passages (article and paragraph)",
-                category: .ingestion)
+        } else if let legalClassification = await GreekLegalDocumentClassifier.classifyIfSpecialized(text: chunkableText, filename: filename) {
+            // Thesis fork: Context-aware chunking for specialized Greek and legal documents
+            // (Statutes, Lawyer's Notes/Memos, and Question & Answer documents)
+            switch legalClassification.kind {
+            case .statute:
+                processedChunks = makeGreekLegalChunks(
+                    in: chunkableText, maxWords: min(chunkerConfig.maxSize, 200), pageInfo: pageInfo,
+                    documentCategory: documentCategory)
+                emitProgress(
+                    stage: "chunking", detail: "✅ Created \(processedChunks.count) statute article passages (\(legalClassification.reason))", page: nil, totalPages: nil)
+                Log.info(
+                    "[DocumentProcessor] Created \(processedChunks.count) Greek statute passages (article and paragraph, \(legalClassification.reason))",
+                    category: .ingestion)
+
+            case .questionAnswer:
+                processedChunks = makeGreekLegalQAChunks(
+                    in: chunkableText, maxWords: min(chunkerConfig.maxSize, 200), pageInfo: pageInfo,
+                    documentCategory: documentCategory)
+                emitProgress(
+                    stage: "chunking", detail: "✅ Created \(processedChunks.count) Q&A paired passages", page: nil, totalPages: nil)
+                Log.info(
+                    "[DocumentProcessor] Created \(processedChunks.count) Q&A passages (\(legalClassification.reason))",
+                    category: .ingestion)
+
+            case .lawyerNotes:
+                processedChunks = makeGreekLegalNotesChunks(
+                    in: chunkableText, maxWords: min(chunkerConfig.maxSize, 200), pageInfo: pageInfo,
+                    documentCategory: documentCategory)
+                emitProgress(
+                    stage: "chunking", detail: "✅ Created \(processedChunks.count) lawyer memo passages", page: nil, totalPages: nil)
+                Log.info(
+                    "[DocumentProcessor] Created \(processedChunks.count) lawyer memo passages (\(legalClassification.reason))",
+                    category: .ingestion)
+
+            case .generic:
+                processedChunks = []
+            }
         } else if usedStructuredParsing && !structuredElements.isEmpty {
             // HUD telemetry: Chunking is CPU-intensive NaturalLanguage processing
             Task { @MainActor in
@@ -6619,6 +6645,76 @@ class DocumentProcessor {
                 wordCount: words,
                 characterCount: passage.text.count,
                 structureType: "legal_provision",
+                sectionPath: passage.sectionPath.isEmpty ? nil : passage.sectionPath,
+                documentCategory: documentCategory,
+                chunkType: .prose,
+                hasCrossReferences: !references.isEmpty,
+                resolvedReferences: references
+            )
+            return ProcessedChunk(text: passage.text, parentText: nil, metadata: metadata)
+        }
+    }
+
+    /// Thesis fork: passages of a Greek or legal Q&A document from `GreekLegalQAChunker`.
+    /// Each chunk pairs the question with its answer, retaining the question heading if split.
+    private func makeGreekLegalQAChunks(
+        in text: String, maxWords: Int, pageInfo: PageInfo, documentCategory: DocumentSemanticCategory?
+    ) -> [ProcessedChunk] {
+        let passages = GreekLegalQAChunker.passages(in: text, maxWords: maxWords).flatMap { passage in
+            GreekLegalQAChunker.pieces(of: passage) { self.countTokens($0) <= Self.safeTokenLimit }.map { piece in
+                GreekLegalQAChunker.Passage(text: piece, question: passage.question, answer: passage.answer, range: passage.range)
+            }
+        }
+        return passages.enumerated().map { index, passage in
+            let words = passage.text.split(whereSeparator: { $0.isWhitespace }).count
+            let page = pageInfo.pageTextRanges.first { $0.value.contains(passage.range.lowerBound) }?.key
+            let start = text.distance(from: text.startIndex, to: passage.range.lowerBound)
+            let references = GraphIndexService.extractReferenceTargets(from: passage.text)
+            let metadata = ChunkMetadata(
+                chunkIndex: index,
+                startPosition: start,
+                endPosition: start + text.distance(from: passage.range.lowerBound, to: passage.range.upperBound),
+                pageNumber: page,
+                sectionTitle: passage.question.isEmpty ? nil : passage.question,
+                hasNumericData: passage.text.rangeOfCharacter(from: .decimalDigits) != nil,
+                wordCount: words,
+                characterCount: passage.text.count,
+                structureType: "qa_item",
+                sectionPath: passage.question.isEmpty ? nil : [passage.question],
+                documentCategory: documentCategory,
+                chunkType: .prose,
+                hasCrossReferences: !references.isEmpty,
+                resolvedReferences: references
+            )
+            return ProcessedChunk(text: passage.text, parentText: nil, metadata: metadata)
+        }
+    }
+
+    /// Thesis fork: passages of a lawyer's notes, legal memorandum or opinion from `GreekLegalNotesChunker`.
+    /// Cuts along memo sections (Facts, Question, Analysis, Conclusion, numbered points).
+    private func makeGreekLegalNotesChunks(
+        in text: String, maxWords: Int, pageInfo: PageInfo, documentCategory: DocumentSemanticCategory?
+    ) -> [ProcessedChunk] {
+        let passages = GreekLegalNotesChunker.passages(in: text, maxWords: maxWords).flatMap { passage in
+            GreekLegalNotesChunker.pieces(of: passage) { self.countTokens($0) <= Self.safeTokenLimit }.map { piece in
+                GreekLegalNotesChunker.Passage(text: piece, header: passage.header, sectionPath: passage.sectionPath, range: passage.range)
+            }
+        }
+        return passages.enumerated().map { index, passage in
+            let words = passage.text.split(whereSeparator: { $0.isWhitespace }).count
+            let page = pageInfo.pageTextRanges.first { $0.value.contains(passage.range.lowerBound) }?.key
+            let start = text.distance(from: text.startIndex, to: passage.range.lowerBound)
+            let references = GraphIndexService.extractReferenceTargets(from: passage.text)
+            let metadata = ChunkMetadata(
+                chunkIndex: index,
+                startPosition: start,
+                endPosition: start + text.distance(from: passage.range.lowerBound, to: passage.range.upperBound),
+                pageNumber: page,
+                sectionTitle: passage.header,
+                hasNumericData: passage.text.rangeOfCharacter(from: .decimalDigits) != nil,
+                wordCount: words,
+                characterCount: passage.text.count,
+                structureType: "legal_memo_section",
                 sectionPath: passage.sectionPath.isEmpty ? nil : passage.sectionPath,
                 documentCategory: documentCategory,
                 chunkType: .prose,

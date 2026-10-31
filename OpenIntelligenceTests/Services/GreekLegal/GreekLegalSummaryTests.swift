@@ -77,14 +77,14 @@ struct GreekLegalSummaryTests {
         let notes = [Note(article: "8", text: "Terms continue for three (3) months"), Note(article: "8", text: "Then all terms continue."),
                      Note(article: "8", text: "A third line left out."), Note(article: "9", text: "Extension above 40%.")]
         #expect(GreekLegalDocumentSummarizer.provisions(from: notes) == [
-            "- Article 8: Terms continue for three (3) months. Then all terms continue.",
-            "- Article 9: Extension above 40%.",
+            "**Article 8:** Terms continue for three (3) months. Then all terms continue.",
+            "**Article 9:** Extension above 40%.",
         ])
         // Twenty articles: the twelve with the most notes, in the document's order.
         let many = (1...20).map { Note(article: "\($0)", text: String(repeating: "word ", count: $0 % 7 + 3)) }
         let bullets = GreekLegalDocumentSummarizer.provisions(from: many)
         #expect(bullets.count == 12)
-        let numbers = bullets.compactMap { Int($0.dropFirst("- Article ".count).prefix { $0.isNumber }) }
+        let numbers = bullets.compactMap { Int($0.dropFirst("**Article ".count).prefix { $0.isNumber }) }
         #expect(numbers == numbers.sorted() && !numbers.contains(7) && numbers.contains(6))
     }
 
@@ -101,7 +101,7 @@ struct GreekLegalSummaryTests {
         let notes = GreekLegalDocumentSummarizer.cleanedNotes(
             "=== Part 2 ===\nPart 2: The minimum wage applies to every private-sector employee.", headings: ["Part 1", "Part 2"], lines: 4)
         #expect(notes == [.init(article: "2", text: "The minimum wage applies to every private-sector employee.")])
-        #expect(GreekLegalDocumentSummarizer.provisions(from: notes, label: nil) == ["- The minimum wage applies to every private-sector employee."])
+        #expect(GreekLegalDocumentSummarizer.provisions(from: notes, label: nil) == ["The minimum wage applies to every private-sector employee."])
 
         let summary = try await GreekLegalDocumentSummarizer.summarize(
             passages: passages, statuteKey: "MD:8934",
@@ -112,7 +112,7 @@ struct GreekLegalSummaryTests {
             },
             translate: { $0 })
         #expect(summary.groups == 1)
-        #expect(summary.english == "The decision sets the minimum wage.\n\nMain provisions:\n- The minimum wage applies to every private-sector employee.")
+        #expect(summary.english == "The decision sets the minimum wage.\n\nMain provisions:\n\nThe minimum wage applies to every private-sector employee.")
     }
 
     @Test func unsupportedFiguresAndForeignArticlesAreDropped() {
@@ -157,8 +157,10 @@ struct GreekLegalSummaryTests {
             Law 5278/2026 is about collective agreements.
 
             Main provisions:
-            - Article 8: terms continue for three (3) months.
-            - Article 9: extension above 40%.
+
+            **Article 8:** terms continue for three (3) months.
+
+            **Article 9:** extension above 40%.
             """, "\(summary.english)")
     }
 }

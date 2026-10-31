@@ -1795,6 +1795,49 @@ tilted scans, table row preservation, statutory identity routing, and the final 
 
 **Verification:** markdown validated; benchmark figures aligned with `METHODS_SUMMARY.md` and `EXPERIMENTS.md`.
 
+#### 2.11.33: Context-aware document chunking, direct chat capability routing, formatted answers, and Opus-MT observability
+
+**Why:**
+1. Support diverse legal document typologies beyond codified statutes: legal memoranda, practitioner notes, and Q&A sets require structure preservation tailored to their own conventions. Previously, any document with three or more article citations was cut as a statute, splitting legal arguments across arbitrary article references. Q&A documents were chunked as general prose, risking separation of questions from answers.
+2. Enable direct execution of all legal capabilities (hierarchical statute summarization, cross-statute legal opinions, and labour contract template routing) from natural language prompts in the chat thread, removing friction from modal sheet menus.
+3. Replace bullet-point outputs in summaries and legal opinions with cohesive, professionally formatted legal text (bold headings, structured paragraphs, semicolon-delimited statutory authorities).
+4. Provide runtime observability into local translation via structured Xcode console logging (`[Opus-MT]` prefix, segment caching statistics, token truncation diagnostics).
+5. Clean template headers by removing external tool watermarks ("Claude Code") from the legal disclaimers.
+
+**What:**
+1. `GreekLegalDocumentClassifier.swift`: classifies text into `statute`, `lawyerNotes`, `questionAnswer`, or `generic` using deterministic layout rules (Gazette headers, sequential articles, Q&A prefixes, memo headings) backed by schema-constrained foundation model inference.
+2. `GreekLegalQAChunker.swift`: chunks Q&A documents keeping questions and answers atomically paired; when long answers are split across token limits, repeats the question header at the top of every piece.
+3. `GreekLegalNotesChunker.swift`: chunks legal memoranda and practitioner notes along doctrinal headings (*Ιστορικό*, *Ερώτημα*, *Νομική Ανάλυση*, *Συμπέρασμα*); in-text article references are preserved as citations rather than chunk division points.
+4. `DocumentProcessor.swift`: routes chunkable text through `classifyIfSpecialized`, creating passages via `makeGreekLegalChunks`, `makeGreekLegalQAChunks`, or `makeGreekLegalNotesChunks`.
+5. `GreekLegalChatRouter.swift`: identifies capability intents from user prompts (`statuteSummary`, `legalOpinion`, `contractRouting`, `standardQA`), extracts statutory target identifiers (e.g., "5278/2026", "62/2025"), matches documents in the library, and returns direct execution results.
+6. `ChatScreen.swift`: intercepts chat queries in `sendMessageNow` and delivers capability results directly into the conversation stream.
+7. `LocalNeuralTranslator.swift`: tracks cumulative invocation counts, segment caching, token decodes, and latency via `callStats`, emitting `[Opus-MT]` diagnostic logs and warnings when long segments lack internal commas.
+8. `GreekLegalDocumentSummarizer.swift` & `GreekLegalOpinionWriter.swift`: formatted paragraph text and bold headers instead of bulleted lists.
+9. Contract templates (`01_indefinite_full_time.md` through `10_urgent_needs.md`): neutral legal disclaimer without tool references.
+
+**Files:**
+- `OpenIntelligence/Services/Document/Localization/GreekLegalDocumentClassifier.swift`
+- `OpenIntelligence/Services/Document/Localization/GreekLegalQAChunker.swift`
+- `OpenIntelligence/Services/Document/Localization/GreekLegalNotesChunker.swift`
+- `OpenIntelligence/Services/Legal/GreekLegalChatRouter.swift`
+- `OpenIntelligence/Services/Document/Processing/DocumentProcessor.swift`
+- `OpenIntelligence/Features/Chat/Conversation/ChatScreen.swift`
+- `OpenIntelligence/Services/Document/Localization/LocalNeuralTranslator.swift`
+- `OpenIntelligence/Services/Legal/GreekLegalDocumentSummarizer.swift`
+- `OpenIntelligence/Services/Legal/GreekLegalOpinionWriter.swift`
+- `OpenIntelligence/Resources/LabourContractTemplates/*.md`
+- `OpenIntelligenceTests/Services/GreekLegal/GreekLegalChatRouterTests.swift`
+- `OpenIntelligenceTests/Services/GreekLegal/GreekLegalContextChunkingTests.swift`
+- `OpenIntelligenceTests/Services/GreekLegal/GreekLegalSummaryTests.swift`
+- `OpenIntelligenceTests/Services/GreekLegal/GreekLegalOpinionTests.swift`
+
+**Verification:**
+- `GreekLegalChatRouterTests`: 6 tests passed.
+- `GreekLegalContextChunkingTests`: 7 tests passed.
+- `GreekLegalSummaryTests`: 6 tests passed.
+- `GreekLegalOpinionTests`: 7 tests passed.
+- Full suite executed in iPhone 18 Pro simulator (`** TEST EXECUTE SUCCEEDED **`).
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):

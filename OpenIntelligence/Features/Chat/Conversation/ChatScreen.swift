@@ -3359,6 +3359,38 @@ struct ChatScreen: View {
                 // Check for cancellation after query resolution
                 try Task.checkCancellation()
 
+                // Thesis fork: direct execution of Greek LegalTech capabilities from chat
+                // (statute summarization, cross-statute legal opinion, contract template routing)
+                if let directCapability = await GreekLegalChatRouter.handleChatQuery(
+                    capturedQuery,
+                    containerId: capturedUsedContainerId,
+                    ragService: capturedService
+                ) {
+                    await MainActor.run {
+                        guard self.currentQuerySessionId == querySessionId else { return }
+                        self.currentRetrievedChunks = directCapability.retrievedChunks ?? []
+                        self.currentMetadata = directCapability.metadata
+                        self.currentStructuredAnswer = directCapability.structuredAnswer
+                        self.isStreamFinished = true
+
+                        var assistant = ChatMessage(
+                            role: .assistant,
+                            content: directCapability.content,
+                            metadata: directCapability.metadata,
+                            retrievedChunks: directCapability.retrievedChunks,
+                            structuredAnswer: directCapability.structuredAnswer
+                        )
+                        assistant.containerId = capturedUsedContainerId
+                        assistant.traceQuery = query
+
+                        self.appendAndPersistMessage(assistant, for: capturedUsedContainerId)
+                        self.continuedQueryCoordinator.complete(sessionId: querySessionId, success: true)
+                        self.stage = .complete
+                        DSHaptics.success()
+                    }
+                    return
+                }
+
                 // Use the user's raw prompt for RAG.
                 // QueryRewriterService inside RAGService already handles ambiguity and follow-ups.
                 // A hidden Writing Tools proofread pass here can silently change short safety queries

@@ -256,7 +256,7 @@ unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 20
 
 ## Context-aware chunking (owner, 2026-10-31)
 
-- [ ] **Chunk a document by what kind of document it is.** If the file is a statute, keep today's
+- [x] **Chunk a document by what kind of document it is.** If the file is a statute, keep today's
   chunking (`GreekLegalStructureChunker`: one passage per numbered paragraph of each article, with
   its heading). But a file may instead be a lawyer's notes or a Q&A, and those need passages that
   follow their own structure.
@@ -289,7 +289,7 @@ unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 20
 
 ## Capabilities from the chat (owner, 2026-10-31)
 
-- [ ] **Call every capability straight from the chat, without the menu.** Today the summary, the
+- [x] **Call every capability straight from the chat, without the menu.** Today the summary, the
   legal opinion and template routing open from the Greek legal assistant sheet
   (`Features/Chat/Response/GreekLegalAssistantSheet.swift`, tabs Γνωμοδότηση / Πρότυπα / Σύνοψη,
   opened from `ChatScreen.swift` ~line 1233 and `DocumentDetailsView.swift` ~line 139). The owner wants
@@ -315,7 +315,7 @@ unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 20
     as a chat reply with its sources. Record in EXPERIMENTS.md, FORK_CHANGES, CHANGELOG 5.7 and
     METHODS_SUMMARY.
 
-- [ ] **Capability answers as formatted text, not bullets.** The summary lists its provisions as
+- [x] **Capability answers as formatted text, not bullets.** The summary lists its provisions as
   "- Article N: …" lines (`GreekLegalDocumentSummarizer.swift` ~line 247), the opinion lists its
   sources as "- name, Article N" lines (`GreekLegalOpinionWriter.swift` ~line 307), and the sheet
   shows them as bullets. Make them read as formatted text instead: short headings and
@@ -325,7 +325,7 @@ unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 20
   provisions, citations, gate C/F) still pass; rerun the summary and opinion dev sets to show the
   scores are unchanged. Applies wherever the answer is shown (chat and sheet), in Greek and English.
 
-- [ ] **Remove "Claude Code" from the templates' legal disclaimer.** All 10 templates in
+- [x] **Remove "Claude Code" from the templates' legal disclaimer.** All 10 templates in
   `OpenIntelligence/Resources/LabourContractTemplates/*.md` (line 16) say «Συντάχθηκε από το Claude
   Code με βάση τον Κώδικα Εργατικού Δικαίου …». Change it to «Συντάχθηκε με βάση τον Κώδικα
   Εργατικού Δικαίου …», keeping the rest of the disclaimer (PoC draft, not legal advice, checked by

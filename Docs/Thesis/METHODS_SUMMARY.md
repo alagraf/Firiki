@@ -42,12 +42,15 @@ fix that stage in a general way; run again and compare.
   line spans more than half its width (one-column Gazette pages measured 56–79%, two-column ones
   under 40%).
 
-## 2. Structure-aware chunking
-- Greek statutes are split along their own structure: one passage per numbered paragraph of each
+## 2. Structure-aware and context-aware chunking
+- **Document typology classification:** Incoming documents are classified into four structural kinds via `GreekLegalDocumentClassifier`: statutory enactments, Q&A documents, lawyer's notes / legal memoranda, and general prose, using deterministic layout rules backed by schema-constrained foundation model inference.
+- **Greek statutes:** Split along their own structure: one passage per numbered paragraph of each
   article, each starting with its article heading, long paragraphs split at sentence ends.
   Generic size-based chunking had cut provisions in half and separated paragraphs from their
   article.
-- Tables keep one row a line through chunking and translation, with a row the PDF reader splits
+- **Q&A corpora:** Processed via `GreekLegalQAChunker`, keeping questions and answers atomically paired; when a long answer is split across token budgets, the question header is repeated at the head of every piece so grounding context is never severed.
+- **Lawyer's notes / memos:** Segmented along memo section headings (`GreekLegalNotesChunker`: *Facts*, *Question*, *Applicable Law*, *Analysis*, *Conclusion*). Statutory references within paragraphs are preserved as citations without fragmenting the argument.
+- **Tables:** Keep one row a line through chunking and translation, with a row the PDF reader splits
   in two put back together; joined into prose, a severance table was translated as "16 years and
   more than 12 months" and the model mixed its rows.
 
@@ -249,6 +252,8 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-10-31: context-aware chunking (statute, lawyer's notes, Q&A, generic) with `GreekLegalDocumentClassifier`, `GreekLegalQAChunker`, and `GreekLegalNotesChunker`.
+- 2026-10-31: direct in-chat capability execution (`GreekLegalChatRouter`), formatted legal text outputs without bullets, neutral contract template headers, and Opus-MT structured observability logging (`callStats`).
 - 2026-10-30: EU holdout rerun graded by hand (38 of 39 right, 9 of 9 refused; as before).
 - 2026-10-30: EU holdout run again (unchanged); every experiment recorded in `EXPERIMENTS.md`.
 - 2026-10-30: Labour Code test split over the full Code (refusals, the Constitution question).

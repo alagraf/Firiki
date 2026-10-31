@@ -244,7 +244,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
             let text = (lines[article] ?? []).prefix(linesPerBullet).map { line in
                 line.last.map { ".…!?".contains($0) } == true ? line : line + "."
             }
-            return (label.map { "- \($0) \(article): " } ?? "- ") + text.joined(separator: " ")
+            return (label.map { "**\($0) \(article):** " } ?? "") + text.joined(separator: " ")
         }
     }
 
@@ -352,7 +352,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
         let openingText = LocalNeuralTranslator.segments(
             opening.components(separatedBy: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
         ).prefix(2).joined(separator: " ")
-        let draft = openingText + (bullets.isEmpty ? "" : "\n\nMain provisions:\n" + bullets.joined(separator: "\n"))
+        let draft = openingText + (bullets.isEmpty ? "" : "\n\nMain provisions:\n\n" + bullets.joined(separator: "\n\n"))
         let (english, dropped) = droppingUnsupported(draft, passages: passages, articles: articles, statuteKey: statuteKey)
         if !dropped.isEmpty {
             Log.info("[LegalSummary] Dropped \(dropped.count) sentence(s) with an unsupported figure or article", category: .llm)
