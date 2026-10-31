@@ -1365,12 +1365,16 @@ struct RouteLabourContractIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let match = try await LabourContractTemplateRouter.route(request: request)
+        let wanted = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else {
+            throw $request.needsValueError("Please provide a description of the employment arrangement.")
+        }
+        let match = await LabourContractTemplateRouter.route(wanted)
         let responseText: String
         if let template = match.template {
-            responseText = "Selected template: \(template.titleEl) (\(template.titleEn)). Matched via \(match.method). Reasoning: \(match.reasoning)"
+            responseText = "Selected template: \(template.titleEl) (\(template.titleEn)). Matched via \(match.method.rawValue). Reason: \(match.reason)"
         } else {
-            responseText = "No matching labour contract template found for this request. Reasoning: \(match.reasoning)"
+            responseText = "No matching labour contract template found for this request. Reason: \(match.reason)"
         }
         return .result(dialog: IntentDialog(stringLiteral: responseText))
     }
@@ -1394,10 +1398,18 @@ struct SummarizeStatuteIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let db = try await DatabaseService.shared.database()
-        let chunks = db.chunks(forDocument: document.id)
-        let passages = chunks.map { $0.content }
-        let statuteKey = chunks.first?.statuteKey
+        let ragService = await MainActor.run { IntentSupport.engine() }
+        let docRecord = OIDocumentEntityQuery.loadDocumentRecords().first { $0.id == document.id }
+        let containerId = await MainActor.run {
+            docRecord?.containerId ?? ragService.containerService.activeContainerId
+        }
+        let database = try await ragService.dbForContainer(containerId)
+        let chunks = try await database.chunks(forDocument: document.id).sorted { $0.metadata.chunkIndex < $1.metadata.chunkIndex }
+        guard !chunks.isEmpty else {
+            throw OIIntentError("No indexed passages found for document \(document.filename).")
+        }
+        let passages = chunks.map(\.content)
+        let statuteKey = chunks.lazy.compactMap { $0.legal?.documentStatuteKey }.first
         let summary = try await GreekLegalDocumentSummarizer.summarize(passages: passages, statuteKey: statuteKey)
         return .result(dialog: IntentDialog(stringLiteral: summary.greek))
     }
@@ -1424,8 +1436,15 @@ struct GreekLegalOpinionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let containerId = library?.id ?? (await MainActor.run { AppState.shared.activeLibraryId })
-        let opinion = try await RAGService.shared.greekLegalOpinion(question: question, containerId: containerId)
+        let wanted = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else {
+            throw $question.needsValueError("What is your legal question?")
+        }
+        let ragService = await MainActor.run { IntentSupport.engine() }
+        let containerId = await MainActor.run {
+            library?.id ?? ragService.containerService.activeContainerId
+        }
+        let opinion = try await ragService.greekLegalOpinion(question: wanted, containerId: containerId)
         return .result(dialog: IntentDialog(stringLiteral: opinion.greek))
     }
 }
