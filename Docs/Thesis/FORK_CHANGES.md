@@ -1777,6 +1777,24 @@ answer read): 13 of 13, 13 of 13 and 12 of 13 right (English; Greek passages wit
 questions; all Greek), 3 of 3 refused in each, against 13, 12 and 13 of 13 for `holdout_fork3`.
 Nothing was changed because of it.
 
+#### 2.11.32 Firiki README update: PoC capabilities, tilted OCR and empirical results
+
+**Why:** update the open-source `README.md` to document the completed PoC capabilities (multi-document
+labour law Q&A, legislative statute summarization, multi-document legal opinions, contract template
+routing, and iOS App Intents), the oriented text line box (`TextLineBox`) deskewing mechanism for
+tilted scans, table row preservation, statutory identity routing, and the final empirical benchmarks.
+
+**What:** comprehensive expansion of `README.md` covering:
+1. The 4 PoC capabilities and native iOS App Shortcuts (`RouteLabourContractIntent`, `SummarizeStatuteIntent`, `GreekLegalOpinionIntent`).
+2. OCR oriented line bounding boxes with bilinear sampling (improving tilted scan word recall from 48% to 96% and full scanned PDFs to 98%).
+3. Table row preservation (Art. 333 severance schedule) and document statute identity (`documentStatuteKey`) with off-statute query refusals.
+4. Expanded usage workflows and evaluation commands for template routing, summarization, and opinions.
+5. Consolidated empirical evaluation table reflecting all latest benchmark measurements (Full Code test split, template routing, multi-document library, summarization, legal opinions, and the hand-graded EU directives holdout).
+
+**Files:** `README.md`.
+
+**Verification:** markdown validated; benchmark figures aligned with `METHODS_SUMMARY.md` and `EXPERIMENTS.md`.
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):
