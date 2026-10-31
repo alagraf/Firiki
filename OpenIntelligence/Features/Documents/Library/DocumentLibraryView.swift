@@ -258,7 +258,8 @@ struct DocumentLibraryView: View {
             ForEach(filteredDocuments) { document in
                 NavigationLink(destination: DocumentDetailsView(
                     document: document,
-                    embeddingProviderId: containerService.activeContainer?.embeddingProviderId
+                    embeddingProviderId: containerService.activeContainer?.embeddingProviderId,
+                    ragService: ragService
                 )) {
                     ModernDocumentCard(document: document, ragService: ragService)
                 }
@@ -1578,7 +1579,8 @@ struct DocumentLibraryView: View {
                 if let document = ragService.documents.first(where: { $0.id == id }) {
                     DocumentDetailsView(
                         document: document,
-                        embeddingProviderId: containerService.activeContainer?.embeddingProviderId)
+                        embeddingProviderId: containerService.activeContainer?.embeddingProviderId,
+                        ragService: ragService)
                 }
             }
             .sheet(isPresented: $showingFilePicker) {

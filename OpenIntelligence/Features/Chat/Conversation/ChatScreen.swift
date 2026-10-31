@@ -306,6 +306,9 @@ struct ChatScreen: View {
     @State private var writingToolsResult: String = ""
     @State private var writingToolsTitle: String = ""
     @State private var showWritingToolsResult: Bool = false
+    // MARK: - Greek Legal Assistant (Thesis PoC Capabilities)
+    @State private var showGreekLegalAssistant: Bool = false
+    @State private var greekLegalInitialTab: LegalCapabilityTab = .opinion
     /// The file a conversation export wrote, while its share sheet is up.
     @State private var conversationExport: ConversationExportFile? = nil
     @State private var writingToolsProcessing: Bool = false
@@ -848,6 +851,19 @@ struct ChatScreen: View {
                         }
                     }
 
+                    // MARK: - Greek Legal Assistant (PoC Capabilities 2, 3, 4)
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            greekLegalInitialTab = .opinion
+                            showGreekLegalAssistant = true
+                        } label: {
+                            Image(systemName: "scale.3d")
+                                .imageScale(.large)
+                                .foregroundStyle(DSColors.accent)
+                        }
+                        .help("Greek Legal Assistant (PoC Capabilities)")
+                    }
+
                     // MARK: - AI Hub (RAG Transforms + Image Playground)
                     ToolbarItem(placement: .topBarTrailing) {
                         aiHubToolbarButton
@@ -889,6 +905,14 @@ struct ChatScreen: View {
                             Toggle(isOn: $settings.showTechnicalDetails) {
                                 Label("Technical Details", systemImage: "waveform.path.ecg")
                             }
+
+                            Divider()
+                            Button {
+                                greekLegalInitialTab = .opinion
+                                showGreekLegalAssistant = true
+                            } label: {
+                                Label("Greek Legal AI Hub", systemImage: "scale.3d")
+                            }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                                 .imageScale(.large)
@@ -905,6 +929,16 @@ struct ChatScreen: View {
                             Image(systemName: "sidebar.left")
                                 .imageScale(.large)
                         }
+                    }
+
+                    ToolbarItem {
+                        Button {
+                            greekLegalInitialTab = .opinion
+                            showGreekLegalAssistant = true
+                        } label: {
+                            Label("Greek Legal AI", systemImage: "scale.3d")
+                        }
+                        .help("Greek Legal Assistant (PoC Capabilities)")
                     }
 
                     ToolbarItem {
@@ -941,6 +975,14 @@ struct ChatScreen: View {
                             Divider()
                             Toggle(isOn: $settings.showTechnicalDetails) {
                                 Label("Technical Details", systemImage: "waveform.path.ecg")
+                            }
+
+                            Divider()
+                            Button {
+                                greekLegalInitialTab = .opinion
+                                showGreekLegalAssistant = true
+                            } label: {
+                                Label("Greek Legal AI Hub", systemImage: "scale.3d")
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle")
@@ -1186,6 +1228,21 @@ struct ChatScreen: View {
             }
             .sheet(item: $conversationExport) { file in
                 ActivityView(activityItems: [file.url])
+            }
+            // MARK: - Greek Legal Assistant Sheet (Thesis PoC Capabilities)
+            .sheet(isPresented: $showGreekLegalAssistant) {
+                GreekLegalAssistantSheet(
+                    ragService: ragService,
+                    initialTab: greekLegalInitialTab,
+                    onInsertReply: { content in
+                        let replyMessage = ChatMessage(
+                            role: .assistant,
+                            content: content
+                        )
+                        messages.append(replyMessage)
+                        DSHaptics.success()
+                    }
+                )
             }
     }
 
@@ -2836,6 +2893,31 @@ struct ChatScreen: View {
                 illustrateLastResponse()
             } label: {
                 Label("Illustrate", systemImage: "photo.on.rectangle.angled")
+            }
+
+            Divider()
+
+            Section("Greek Legal AI (PoC)") {
+                Button {
+                    greekLegalInitialTab = .opinion
+                    showGreekLegalAssistant = true
+                } label: {
+                    Label("Legal Opinion (Γνωμοδότηση)", systemImage: "scale.3d")
+                }
+
+                Button {
+                    greekLegalInitialTab = .router
+                    showGreekLegalAssistant = true
+                } label: {
+                    Label("Contract Router (Πρότυπα)", systemImage: "signature")
+                }
+
+                Button {
+                    greekLegalInitialTab = .summarizer
+                    showGreekLegalAssistant = true
+                } label: {
+                    Label("Statute Summarizer (Σύνοψη)", systemImage: "doc.text.below.ecg")
+                }
             }
         } label: {
             Image(systemName: "apple.intelligence")

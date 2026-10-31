@@ -13,13 +13,25 @@ struct DocumentDetailsView: View {
     let document: Document
     let embeddingProviderId: String?
     let highlightedChunk: RetrievedChunk?
+    var ragService: RAGService? = nil
     /// The file shown in Quick Look while it is open (5.7).
     @State private var quickLookURL: URL?
+    @State private var showLegalAssistant: Bool = false
+
+    private var effectiveRAGService: RAGService {
+        ragService ?? IntentSupport.engine()
+    }
     
-    init(document: Document, embeddingProviderId: String?, highlightedChunk: RetrievedChunk? = nil) {
+    init(
+        document: Document,
+        embeddingProviderId: String?,
+        highlightedChunk: RetrievedChunk? = nil,
+        ragService: RAGService? = nil
+    ) {
         self.document = document
         self.embeddingProviderId = embeddingProviderId
         self.highlightedChunk = highlightedChunk
+        self.ragService = ragService
     }
 
     /// Human-readable name for the embedding provider
@@ -112,8 +124,24 @@ struct DocumentDetailsView: View {
                     .help("Open the document in Quick Look")
                 }
             }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showLegalAssistant = true
+                } label: {
+                    Label("Summarize Statute", systemImage: "doc.text.below.ecg")
+                }
+                .help("Generate an article-by-article verified Greek legal summary")
+            }
         }
         .quickLookPreview($quickLookURL)
+        .sheet(isPresented: $showLegalAssistant) {
+            GreekLegalAssistantSheet(
+                ragService: effectiveRAGService,
+                initialTab: .summarizer,
+                preselectedDocument: document
+            )
+        }
         // Siri and Apple Intelligence take "this document" to mean this one, and another of the
         // person's devices can continue it (5.7).
         .annotateActiveDocument(OIDocumentEntityQuery.entity(for: document, libraryNames: [:]))
@@ -178,6 +206,26 @@ struct DocumentDetailsView: View {
                         )
                     }
                 }
+
+                Divider()
+
+                Button {
+                    showLegalAssistant = true
+                } label: {
+                    HStack(spacing: DSSpacing.sm) {
+                        Image(systemName: "doc.text.below.ecg")
+                            .foregroundStyle(DSColors.accent)
+                        Text("Σύνοψη Νομοθετήματος (Greek Legal Summary)")
+                            .font(DSTypography.body.weight(.medium))
+                            .foregroundStyle(DSColors.primaryText)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(DSTypography.meta)
+                            .foregroundStyle(DSColors.secondaryText)
+                    }
+                    .padding(.vertical, DSSpacing.xs)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
