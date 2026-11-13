@@ -181,7 +181,7 @@ fix that stage in a general way; run again and compare.
   Changes are tuned on the development set; the test set is used for held-out measurement.
 
 ## 8. Results so far
-Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with Apple's on-device model (`AFM 3 Core Advanced`, 8,192-token window); not yet checked on a physical iPhone. All numbers below were recorded on 28–30 October 2026 (up to commit `e85ae0cc` / `ffff0241`), prior to the 31 October code commits (`2af92e2e`–`f10190e1`), which refined import/chunking, translation, and refusal rules after the evaluation runs. (Commit hashes are from before the 13 Nov 2026 identity rewrite; `COMMIT_HASH_MAP.md` (local, git-ignored) gives the current ones.)
+Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with Apple's on-device model (`AFM 3 Core Advanced`, 8,192-token window); not yet checked on a physical iPhone. All numbers below except the 13–14 November rows were recorded on 28–30 October 2026 (up to commit `e85ae0cc` / `ffff0241`), prior to the 31 October code commits (`2af92e2e`–`f10190e1`), which refined import/chunking, translation, and refusal rules after the evaluation runs. (Commit hashes are from before the 13 Nov 2026 identity rewrite; `COMMIT_HASH_MAP.md` (local, git-ignored) gives the current ones.)
 
 | Date | Question set | Result |
 |---|---|---|
@@ -206,6 +206,10 @@ Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with
 | 2026-10-30 | EU holdout, this fork, rerun after the PoC work (automatic corrected grading) | unchanged: 12 of 12 graded right, 3 of 3 refused in each condition |
 | 2026-10-30 | EU holdout, same rerun, graded by hand (final) | English 13 of 13; Greek passages, English questions 13 of 13; all Greek 12 of 13 (1 wrong); 3 of 3 refused in each (2026-10-29: 13, 12, 13 of 13) |
 | 2026-10-30 | Labour Code, test (23), full 260-page Code, once | 15 of 23 (12 before); 3 of 3 refused, including the question about the Constitution's Article 16; 1 wrong refusal |
+| 2026-11-13 | Re-measured after the rename to Firiki, billing removal and the Greek text-layer check: contract templates dev / test | 44 of 44 / 20 of 22 (43 of 44 / 20 of 22 before) |
+| 2026-11-13 | Same build: OCR, share of words found, clean / scan / photo; whole scanned PDF | 95% / 95% / 95%; 97% (same OCR text as 29 Oct; the word scoring rejoins hyphenated line ends since 31 Oct) |
+| 2026-11-14 | Same build: summary dev / test; opinion dev / test (citations, key facts, refused) | 5 of 6 / 4 of 5; 10 of 12, 11 of 20, 0 / 5 of 8, 7 of 10, 0 (test citations 3 of 8 before) |
+| 2026-11-13 | Lecture notes with a wrong-letter Greek font, before / after the PaddleOCR text-layer check: passages about overtime | 0 / 38 of 713; a correct Labour Code excerpt kept its text layer |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
 minutes after the faster translation.
@@ -271,6 +275,8 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-14: contract templates, summaries, opinions and OCR re-measured on the renamed app;
+  unchanged within run variation.
 - 2026-11-13: a Greek PDF's text layer is checked with PaddleOCR; one with wrong-letter fonts is
   read by OCR instead (lecture notes 0 → 38 overtime passages; Labour Code text kept).
 - 2026-11-09: Greek wording of summaries, opinions and template answers repaired; a ministerial

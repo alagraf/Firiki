@@ -55,7 +55,8 @@ All four work by typing in the normal chat (the request is recognised automatica
           │
           ▼
  ① Read        Greek OCR (PaddleOCR PP-OCRv5 via ONNX Runtime), tilt-aware line boxes,
-               Gazette layout and reading order, header removal, hyphen rejoining
+               Gazette layout and reading order, header removal, hyphen rejoining; a PDF whose
+               Greek text layer is garbled is detected (PaddleOCR vs. the layer) and re-read by OCR
           │
           ▼
  ② Structure   One passage per article paragraph, article title kept with each passage,
@@ -106,34 +107,40 @@ reason and how it was verified, is in [`Docs/Thesis/FORK_CHANGES.md`](Docs/Thesi
 **Changes to the original app**
 
 - **Ingestion** (`DocumentProcessor`, `StructuredDocumentParser`): Greek pages routed to the Greek
-  OCR, Greek legal chunking, translation at import, table rows kept, single-column detection.
+  OCR, a Greek text layer checked against PaddleOCR (the original check used Vision, which reads no
+  Greek, so it skipped Greek pages), Greek legal chunking, translation at import, table rows kept,
+  single-column detection.
 - **Retrieval and answering** (`RAGService`, `QueryRuntimeCoordinator`, `VerificationGateService`):
   Greek legal mode, search by named law, on-device context budget whenever cloud compute is off,
   the original medical domain-isolation rules replaced by the legal statute-isolation check.
 - **Chat and app** (`ChatScreen`, `GroundedAnswerView`, `ResponseDetailsView`, `RAGAppIntents`):
   in-chat routing of the four capabilities, legal review card, three new App Intents.
-- **Repository**: the original author's release process, agent rules and Notion sync removed;
-  thesis agent rules in `AGENTS.md`.
+- **Repository**: renamed Firiki (targets, bundle IDs `com.alagraf.firiki…`, app group, `firiki://`
+  links, new icon); billing, plans, limits, store prompts and release tooling removed, so everything
+  is unlocked; the original author's agent rules and Notion sync removed; thesis agent rules in
+  `AGENTS.md`.
 
 ---
 
 ## Results
 
-Measured on official Greek texts, 28–30 October 2026, in the iOS 27 Simulator on an M3 Pro Mac with
-Apple's on-device model (AFM 3 Core Advanced, 8,192-token window).
+Measured on official Greek texts in the iOS 27 Simulator on an M3 Pro Mac with Apple's on-device
+model (AFM 3 Core Advanced, 8,192-token window). The question sets were measured on 28–30 October
+2026; OCR, contract templates, summaries and opinions were measured again on 13–14 November 2026,
+after the rename to Firiki (the Nov column).
 
-| Task | Result | Starting point |
-|---|---|---|
-| Greek OCR, share of words read (10 pages: clean / scanned / photographed) | **96% / 96% / 96%** | Apple Vision 5%; scans 48% before tilt-aware line boxes |
-| Greek OCR, whole scanned PDF | **98%** of words | 62% |
-| Greek Constitution, 10 questions | **9 of 10** (right article found 10 of 10); 8 of 10 in later runs | 6 of 10 |
-| Labour Code, development set (46 questions) | **38 of 46**; 5 of 5 out-of-scope questions refused | 24 of 46 |
-| Labour Code, test set (23 questions, full 260-page Code) | **15 of 23**; 3 of 3 refused | 11 of 23 |
-| Five-document library (development 24 / test 12) | **14 of 24 / 6 of 12** | 13 of 24 |
-| Contract template choice (development 44 / test 22, half in Greek) | **43 of 44 / 20 of 22** | keywords alone: 26 of 44 / 8 of 22 |
-| Statute summary, Law 5278/2026 | **5 of 6** key provisions, 3 of 3 articles cited | 2 of 6, 0 of 3 |
-| Legal opinion (development 6 / test 4) | citations **10 of 12 / 3 of 8**; key facts **11 of 20 / 7 of 10** | — |
-| Independent EU labour-law set, never tuned on (16 questions × 3 language conditions, graded by hand, two runs) | **38 of 39** answerable right and **9 of 9** unanswerable refused, in each run | Original app, all-Greek condition: 0 of 13 answered in Greek, 0 of 3 refused |
+| Task | Result | Nov re-run | Starting point |
+|---|---|---|---|
+| Greek OCR, share of words read (10 pages: clean / scanned / photographed) | **96% / 96% / 96%** | 95% / 95% / 95%, same OCR text (word scoring changed 31 Oct) | Apple Vision 5%; scans 48% before tilt-aware line boxes |
+| Greek OCR, whole scanned PDF | **98%** of words | 97% | 62% |
+| Greek Constitution, 10 questions | **9 of 10** (right article found 10 of 10); 8 of 10 in later runs | — | 6 of 10 |
+| Labour Code, development set (46 questions) | **38 of 46**; 5 of 5 out-of-scope questions refused | — | 24 of 46 |
+| Labour Code, test set (23 questions, full 260-page Code) | **15 of 23**; 3 of 3 refused | — | 11 of 23 |
+| Five-document library (development 24 / test 12) | **14 of 24 / 6 of 12** | — | 13 of 24 |
+| Contract template choice (development 44 / test 22, half in Greek) | **43 of 44 / 20 of 22** | 44 of 44 / 20 of 22 | keywords alone: 26 of 44 / 8 of 22 |
+| Statute summary, Law 5278/2026 (development) / Decision 8934/2026 (test; no longer held out, it shaped the reading by parts) | **5 of 6** key provisions, 3 of 3 articles cited / 4 of 5 | 5 of 6 / 4 of 5 | 2 of 6, 0 of 3 / 0 of 5 held out |
+| Legal opinion (development 6 / test 4) | citations **10 of 12 / 3 of 8**; key facts **11 of 20 / 7 of 10** | citations 10 of 12 / 5 of 8; key facts 11 of 20 / 7 of 10 | — |
+| Independent EU labour-law set, never tuned on (16 questions × 3 language conditions, graded by hand, two runs) | **38 of 39** answerable right and **9 of 9** unanswerable refused, in each run | — | Original app, all-Greek condition: 0 of 13 answered in Greek, 0 of 3 refused |
 
 How to read these numbers:
 - Each figure is a single run. The model's drafts vary between runs: 2 to 8 of the 46 Labour Code
@@ -144,7 +151,10 @@ How to read these numbers:
   rather than a clean held-out set. [`Docs/Thesis/EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md)
   lists which.
 - Later refinements (31 October, 9 November 2026: chunking, translation wording, refusals) were
-  checked with unit tests and in the Mac app, but the figures above weren't re-measured.
+  checked with unit tests and in the Mac app. The Nov column re-measures the four capabilities and
+  OCR on the current build; the question sets (Constitution, Labour Code, library, EU holdout)
+  weren't re-measured. The Nov differences (one template request, two opinion citations) are
+  within run-to-run variation.
 - Nothing has been measured on a physical iPhone yet (speed, memory, answer quality).
 
 Full records: [`EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md),
@@ -240,6 +250,20 @@ TEST_RUNNER_OI_TEMPLATE_ROUTING=1 TEST_RUNNER_OI_TEMPLATE_ROUTING_SPLIT=test ./s
 Others: `TEST_RUNNER_OI_OCR_BENCH=1` (`GreekOCRBenchmarkTests`), `TEST_RUNNER_OI_GREEK_SUMMARY=1`
 (`GreekLegalSummaryEvaluation`), `TEST_RUNNER_OI_GREEK_OPINION=1` (`GreekLegalOpinionEvaluation`),
 each with a `…_SPLIT=dev|test` variable.
+
+The summary and opinion evaluations read the five-document library from the Simulator and stop
+with "import the library first" when it isn't there. Import it once (about 30 minutes) with the
+library question set, limited to one question:
+
+```bash
+TEST_RUNNER_OI_GREEK_EVAL=1 TEST_RUNNER_OI_GREEK_EVAL_SET=GreekLabourLibrary TEST_RUNNER_OI_GREEK_EVAL_IDS=1 OI_TEST_TIMEOUT_SECONDS=5400 ./scripts/thesis_run_tests.sh /private/tmp/library.log -only-testing:FirikiTests/GreekConstitutionEvaluationTests
+```
+
+The whole unit suite runs with no `-only-testing:` (about 5 minutes). On a Mac whose region is
+Greece, `AnswerUsageTallyTests.testTheDetailsLine` fails (it expects "1,100" and gets "1.100");
+that is the only known failure. The script builds in `/private/tmp/oi-build` by default; macOS
+clears old files in `/tmp` overnight, so if a build later fails with a missing package
+`Info.plist` or `info.json`, build into a fresh folder with `FIRIKI_DERIVED_DATA=/private/tmp/<new>`.
 
 ---
 

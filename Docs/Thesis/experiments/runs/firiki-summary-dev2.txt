@@ -1,0 +1,7 @@
+# firiki-summary-dev2: result lines of firiki-summary-dev2.log (log last written 2026-11-13 23:57)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.005) seconds
+[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=13 notes=12054 chars, 83 s
+[GreekSummary] | 1 | dev | provisions 5 of 6 | articles cited 3 of 3 | dropped 0 | missing: ["extension threshold 40% of the sector\'s employees (art. 9)"] |
+[GreekSummary] summary split=dev: provisions covered 5 of 6
+✔ Test run with 1 test in 1 suite passed after 83.483 seconds.

@@ -2191,3 +2191,20 @@ derives the tinted one. The Live Activity icon is a link to `AppIcon-1024.png` a
 - **Not checked:** answers to the owner's two questions (the simulator has no Apple Intelligence;
   to be asked in the Mac app after re-importing the notes). The notes have no article 58, so that
   question is still refused unless the Labour Code is in the library.
+
+## 14 Nov 2026: re-measurement recorded, README updated, `firiki-rename` merged into `main`
+
+**Why:** the owner asked to record the re-measurement of the full suite and the README's
+evaluations (EXPERIMENTS E12), update the README to match, and merge the branch.
+
+**What:** ten run files `experiments/runs/firiki-*.txt` and their index rows; E12 in
+`EXPERIMENTS.md`; four rows and a revision line in `METHODS_SUMMARY.md` §8. `README.md`: a
+"Nov re-run" column in Results (templates 44 of 44 / 20 of 22, summary 5 of 6 / 4 of 5, opinion
+citations 10 of 12 / 5 of 8, OCR 95% / 97% with the scoring change noted), the summary test split
+marked as no longer held out, the Greek text-layer check in "How it works" and in the changes to
+the original app, the rename and billing removal under Repository, and in "Tests and
+evaluations" how to import the library the summary and opinion evaluations need, the full-suite
+command with its one known failure, and the `/tmp` cleanup workaround. `main` fast-forwarded to
+`firiki-rename` (no merge commit); nothing pushed.
+
+**Verification:** documentation only; the results are those of E12.

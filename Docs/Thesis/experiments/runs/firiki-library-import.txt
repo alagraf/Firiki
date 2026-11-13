@@ -1,0 +1,13 @@
+# firiki-library-import: result lines of firiki-library-import.log (log last written 2026-11-13 23:54)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourLibrary corpus=library (pd_62_2025_fek_a121.pdf, n_5239_2025_fek_a178.pdf, n_5278_2026_fek_a22.pdf, n_5316_2026_fek_a105.pdf, ya_8934_2026_fek_b1759.pdf) split=all
+[GreekEval] model availability: available
+[GreekEval] imported 5 documents (6331 passages) in 1920 s
+[GreekEval] cleared 0 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 1 | easy | dev | PASS | article 7 retrieved: yes, documents: yes | abstained: no | named: no | missing: [] | 223 s |
+[GreekEval] answer pass 1 of 1; retrieval hit 1 of 1; false abstentions 0; abstention correct 0 of 0
+[GreekEval] right documents retrieved 1 of 1
+[GreekEval] summary set=GreekLabourLibrary corpus=library split=all: passed 1 of 1
+✔ Test run with 1 test in 1 suite passed after 2144.395 seconds.

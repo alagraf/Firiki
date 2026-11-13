@@ -1,0 +1,7 @@
+# firiki-summary-test2: result lines of firiki-summary-test2.log (log last written 2026-11-13 23:58)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekSummary] document ya_8934_2026_fek_b1759.pdf statute=MD:8934 passages=37 groups=4 notes=2408 chars, 36 s
+[GreekSummary] | 2 | test | provisions 4 of 5 | articles cited 0 of 0 | dropped 0 | missing: ["for the whole country"] |
+[GreekSummary] summary split=test: provisions covered 4 of 5
+✔ Test run with 1 test in 1 suite passed after 36.826 seconds.

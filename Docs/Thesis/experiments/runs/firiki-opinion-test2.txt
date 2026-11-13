@@ -1,0 +1,9 @@
+# firiki-opinion-test2: result lines of firiki-opinion-test2.log (log last written 2026-11-14 00:10)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekOpinion] | 7 | test | written | citations 1 of 2 | other articles cited [3, 14, 49, 258, 396] | facts 1 of 3 | dropped 0 | 30 s |
+[GreekOpinion] | 8 | test | written | citations 0 of 2 | other articles cited [10, 202, 221, 222, 223, 225] | facts 2 of 2 | dropped 0 | 26 s |
+[GreekOpinion] | 9 | test | written | citations 2 of 2 | other articles cited [18, 549] | facts 2 of 3 | dropped 0 | 20 s |
+[GreekOpinion] | 10 | test | written | citations 2 of 2 | other articles cited [191, 192] | facts 2 of 2 | dropped 1 | 20 s |
+[GreekOpinion] summary split=test: citations 5 of 8, key facts 7 of 10, refused 0 of 4
+✔ Test run with 1 test in 1 suite passed after 98.356 seconds.

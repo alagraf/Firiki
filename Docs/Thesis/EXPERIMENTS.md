@@ -224,6 +224,31 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   58, so that question is rightly refused unless the Labour Code is in the library. The threshold
   was not tuned: 0.15 is the existing bar, and the two documents sit far from it.
 
+## E12. Re-measurement after the rename to Firiki (2026-11-13/14, once each)
+
+- **Why:** the owner asked for the full suite and every evaluation the README names before merging
+  `firiki-rename` (rename, billing removal, Greek text-layer check, new icon) into `main`. Build
+  `e3fcc368`. Nothing was changed because of these results.
+- **Setup:** the new bundle ID started the Simulator's library empty, so the first summary and
+  opinion runs stopped with "import the library first" (`firiki-summary-dev` and the three after
+  it; no result). The five-document library was imported through the library question set limited
+  to dev question 1 (`firiki-library-import`: 6,331 passages in 1,920 s; question 1 passed), then
+  the four runs were repeated (`…2`). The last one was built in a fresh folder after macOS's
+  overnight `/tmp` cleanup broke the package cache.
+
+| Run | Result | Before |
+|---|---|---|
+| `firiki-full` (unit suite) | 1,291 XCTest, 8 skipped, 1 failure (Greek-region number format); 128 Swift Testing passed | 1,366, 11 skipped, 4 failures (2 billing tests since deleted, 1 window-scene test, the format one) |
+| `firiki-readme-unit` (README's 6 suites) | 54 passed | — |
+| `firiki-routing-dev` / `-test` | 44 of 44 (42 by the model) / 20 of 22 | 43 of 44 / 20 of 22 (`routing3`) |
+| `firiki-ocrbench` | PaddleOCR 94.9% of words on clean, photo and scan; Vision 5%; whole scanned PDF 97.0% | 96.0% / 98.0% (`ocrbench4`); CER and WER identical, so the OCR text is the same: the bag-of-words scoring changed on 31 Oct (`4c234b5c`, line-end hyphens rejoined) |
+| `firiki-summary-dev2` / `-test2` | 5 of 6 / 4 of 5 | 5 of 6 / 4 of 5 (`summary8`, `summarytest2`) |
+| `firiki-opinion-dev2` / `-test2` | citations 10 of 12, key facts 11 of 20, refused 0 of 6 / citations 5 of 8, key facts 7 of 10, refused 0 of 4 | identical / citations 3 of 8 (`opinion6`, `opiniontest1`) |
+
+- **Outcome:** no regression. The two gains (one template request, two opinion citations on the
+  test split) are single runs and within run-to-run variation. This is the second run of the
+  opinion and template test splits and the third of the summary test split.
+
 ## Open failures known from dev (not fixed)
 
 - Library dev 13 (pay information): the model answered "within five (5) paragraphs" where the law
