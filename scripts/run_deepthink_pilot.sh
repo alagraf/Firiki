@@ -18,7 +18,7 @@
 #     way for comparability even when running by hand.
 set -euo pipefail
 
-APP="${APP:-/private/tmp/oi-mac-pilot/Build/Products/Debug/OpenIntelligence.app}"
+APP="${APP:-/private/tmp/oi-mac-pilot/Build/Products/Debug/Firiki.app}"
 LIMIT="${LIMIT:-3}"
 MODES="${MODES:-deep-think}"
 # Deep Think took 279s for one query on device. The harness default of 600s per run
@@ -36,7 +36,7 @@ if [ ! -d "$APP" ]; then
   echo "error: no app at $APP" >&2
   echo "build it with:" >&2
   echo "  cd /private/tmp/oi-src && DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \\" >&2
-  echo "    xcodebuild -scheme OpenIntelligence -destination 'platform=macOS' -configuration Debug \\" >&2
+  echo "    xcodebuild -scheme Firiki -destination 'platform=macOS' -configuration Debug \\" >&2
   echo "    -derivedDataPath /private/tmp/oi-mac-pilot -skipPackagePluginValidation \\" >&2
   echo "    CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build" >&2
   exit 1

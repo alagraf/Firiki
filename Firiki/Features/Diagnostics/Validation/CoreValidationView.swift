@@ -1,0 +1,768 @@
+//
+//  CoreValidationView.swift
+//  Firiki
+//
+//  Core pipeline validation and testing utility
+//  Created by GitHub Copilot on 10/10/25.
+//
+
+import SwiftUI
+
+struct CoreValidationView: View {
+    @ObservedObject var ragService: RAGService
+    @ObservedObject private var telemetryCenter = TelemetryCenter.shared
+
+    @State private var testResults: [TestResult] = []
+    @State private var isRunning = false
+    @State private var currentTest = ""
+    @State private var overallStatus: TestStatus = .notStarted
+    @State private var embeddingSnapshot: RAGService.EmbeddingDiagnosticsSnapshot? = nil
+
+    private var recentEmbeddingEvents: [TelemetryEvent] {
+        let filtered = telemetryCenter.events.filter {
+            $0.title.contains("Embedding dimension auto-adjusted")
+        }
+        return Array(filtered.suffix(5))
+    }
+
+    var body: some View {
+        ZStack {
+            DSColors.background
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: DSSpacing.lg) {
+                    // Hero Status Card
+                    ModernStatusCard(status: overallStatus, isRunning: isRunning, currentTest: currentTest)
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.top, DSSpacing.lg)
+
+                    if let snapshot = embeddingSnapshot {
+                        EmbeddingStatusCard(snapshot: snapshot)
+                            .padding(.horizontal, DSSpacing.lg)
+                        if !recentEmbeddingEvents.isEmpty {
+                            EmbeddingTelemetryList(events: recentEmbeddingEvents)
+                                .padding(.horizontal, DSSpacing.lg)
+                        }
+                    }
+
+                    // Run Tests Button
+                    Button(action: runAllTests) {
+                        HStack(spacing: DSSpacing.md) {
+                            Image(systemName: isRunning ? "arrow.triangle.2.circlepath" : "play.circle.fill")
+                                .font(.title3)
+                                .rotationEffect(isRunning ? .degrees(360) : .degrees(0))
+                                .animation(isRunning ? .linear(duration: 1).repeatForever(autoreverses: false) : DSAnimations.fastEase, value: isRunning)
+
+                            Text(isRunning ? "Running Tests..." : "Run Core Validation")
+                                .font(.headline)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(DSSpacing.lg)
+                        .background(isRunning ? Color.secondary : DSColors.accent)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
+                    }
+                    .disabled(isRunning)
+                    .padding(.horizontal, DSSpacing.lg)
+
+                    // Test Results
+                    if !testResults.isEmpty {
+                        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                            HStack {
+                                Text("Test Results")
+                                    .font(.title3)
+
+                                Spacer()
+
+                                // Pass/Fail count
+                                HStack(spacing: DSSpacing.md) {
+                                    HStack(spacing: DSSpacing.xs) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.green)
+                                        Text("\(testResults.filter { $0.status == .passed }.count)")
+                                            .font(.caption)
+                                            .monospacedDigit()
+                                    }
+
+                                    HStack(spacing: DSSpacing.xs) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.red)
+                                        Text("\(testResults.filter { $0.status == .failed }.count)")
+                                            .font(.caption)
+                                            .monospacedDigit()
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, DSSpacing.lg)
+
+                            LazyVStack(spacing: DSSpacing.md) {
+                                ForEach(testResults) { result in
+                                    ModernTestResultCard(result: result)
+                                }
+                            }
+                            .padding(.horizontal, DSSpacing.lg)
+                        }
+                    }
+
+                    // Test Info
+                    ModernTestInfoSection()
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.bottom, DSSpacing.lg)
+                }
+            }
+        }
+        .navigationTitle("Core Validation")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if embeddingSnapshot == nil {
+                embeddingSnapshot = await ragService.embeddingDiagnosticsSnapshot()
+            }
+        }
+    }
+
+    // MARK: - Test Runner
+
+    private func runAllTests() {
+        Task {
+            await MainActor.run {
+                isRunning = true
+                testResults = []
+                overallStatus = .running
+            }
+
+            let snapshot = await ragService.embeddingDiagnosticsSnapshot()
+            await MainActor.run {
+                self.embeddingSnapshot = snapshot
+            }
+            let vectorDimension = snapshot.dimension
+            let makeEmbeddingService = { snapshot.makeEmbeddingService() }
+
+            // Test 1: Document Processor
+            await runTest(name: "DocumentProcessor - Basic Parsing") {
+                // This would test actual document processing
+                // For now, just validate the service exists
+                let processor = DocumentProcessor()
+                return processor.targetChunkSize == 350
+            }
+
+            // Test 2: Embedding Service
+            await runTest(name: "EmbeddingService - Availability") {
+                let embeddingService = makeEmbeddingService()
+                return embeddingService.isAvailable
+            }
+
+            await runTest(name: "EmbeddingService - Dimension Check") {
+                let embeddingService = makeEmbeddingService()
+                guard embeddingService.isAvailable else { return false }
+
+                do {
+                    let embedding = try await embeddingService.generateEmbedding(for: "Test text for validation")
+                    return embedding.count == vectorDimension
+                } catch {
+                    return false
+                }
+            }
+
+            await runTest(name: "EmbeddingService - Edge Case (Empty)") {
+                let embeddingService = makeEmbeddingService()
+                do {
+                    _ = try await embeddingService.generateEmbedding(for: "")
+                    return false // Should have thrown error
+                } catch {
+                    return true // Correctly handled edge case
+                }
+            }
+
+            // Test 3: Vector Database
+            await runTest(name: "VectorDatabase - Store and Count") {
+                let vectorDB = InMemoryVectorDatabase(dimension: vectorDimension)
+                let testChunk = DocumentChunk(
+                    documentId: UUID(),
+                    content: "Test content",
+                    embedding: Array(repeating: 0.1, count: vectorDimension),
+                    metadata: ChunkMetadata(chunkIndex: 0, startPosition: 0, endPosition: 12)
+                )
+
+                do {
+                    try await vectorDB.store(chunk: testChunk)
+                    let count = try await vectorDB.count()
+                    return count == 1
+                } catch {
+                    return false
+                }
+            }
+
+            await runTest(name: "VectorDatabase - Search Functionality") {
+                let vectorDB = InMemoryVectorDatabase(dimension: vectorDimension)
+                let testEmbedding = Array(repeating: Float(0.1), count: vectorDimension)
+                let testChunk = DocumentChunk(
+                    documentId: UUID(),
+                    content: "Test content",
+                    embedding: testEmbedding,
+                    metadata: ChunkMetadata(chunkIndex: 0, startPosition: 0, endPosition: 12)
+                )
+
+                do {
+                    try await vectorDB.store(chunk: testChunk)
+                    let results = try await vectorDB.search(embedding: testEmbedding, topK: 1)
+                    return results.count == 1 && results[0].similarityScore > 0.99
+                } catch {
+                    return false
+                }
+            }
+
+            await runTest(name: "VectorDatabase - Edge Case (Empty Search)") {
+                let vectorDB = InMemoryVectorDatabase(dimension: vectorDimension)
+                let testEmbedding = Array(repeating: Float(0.1), count: vectorDimension)
+
+                do {
+                    let results = try await vectorDB.search(embedding: testEmbedding, topK: 5)
+                    return results.isEmpty // Should return empty array for empty DB
+                } catch {
+                    return false
+                }
+            }
+
+            // Test 4: Device Capabilities
+            await runTest(name: "Device Capabilities Check") {
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async {
+                        let capabilities = RAGService.checkDeviceCapabilities()
+                        continuation.resume(returning: capabilities.canRunRAG)
+                    }
+                }
+            }
+
+            // Test 5: LLM Service
+            await runTest(name: "LLM Service - Availability") {
+                ragService.isLLMAvailable
+            }
+
+            // Test 6: RAGService - Small Talk Bypass ('hi')
+            await runTest(name: "RAGService - Small Talk Bypass ('hi')") {
+                // Use a dedicated test service to avoid main-thread constraints of Apple FM
+                let testService = RAGService(
+                    documentProcessor: DocumentProcessor(),
+                    embeddingService: makeEmbeddingService(),
+                    vectorDatabase: InMemoryVectorDatabase(dimension: vectorDimension),
+                    llmService: ScreenshotMockLLMService()
+                )
+                do {
+                    let resp = try await testService.query("hi", topK: 5, config: .precise)
+                    return resp.retrievedChunks.isEmpty && !resp.generatedResponse.isEmpty
+                } catch {
+                    return false
+                }
+            }
+
+            // Test 7: RAGService - Direct Chat (No Docs)
+            await runTest(name: "RAGService - Direct Chat (No Docs)") {
+                // Empty in-memory DB ensures direct chat path
+                let testService = RAGService(
+                    documentProcessor: DocumentProcessor(),
+                    embeddingService: makeEmbeddingService(),
+                    vectorDatabase: InMemoryVectorDatabase(dimension: vectorDimension),
+                    llmService: ScreenshotMockLLMService()
+                )
+                do {
+                    let resp = try await testService.query("Briefly explain what a RAG pipeline does.", topK: 3, config: .precise)
+                    return resp.retrievedChunks.isEmpty && !resp.generatedResponse.isEmpty
+                } catch {
+                    return false
+                }
+            }
+
+            // Test 8: Tools - search_documents truncation and citation
+            await runTest(name: "Tools - search_documents truncation + citation") {
+                // Seed a temporary service with one long chunk and verify truncation + source formatting
+                let vectorDB = InMemoryVectorDatabase(dimension: vectorDimension)
+                let testService = RAGService(
+                    documentProcessor: DocumentProcessor(),
+                    embeddingService: makeEmbeddingService(),
+                    vectorDatabase: vectorDB,
+                    llmService: ScreenshotMockLLMService()
+                )
+
+                let longText = String(repeating: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ", count: 40) // > 600 chars
+                let doc = Document(
+                    filename: "Foo.txt",
+                    fileURL: URL(fileURLWithPath: "/tmp/Foo.txt"),
+                    contentType: .text,
+                    totalChunks: 1,
+                    processingMetadata: nil
+                )
+
+                do {
+                    // Prepare embedding and chunk
+                    let embedder = makeEmbeddingService()
+                    let embedding = try await embedder.generateEmbedding(for: longText)
+                    let chunk = DocumentChunk(
+                        documentId: doc.id,
+                        content: longText,
+                        embedding: embedding,
+                        metadata: ChunkMetadata(
+                            chunkIndex: 0,
+                            startPosition: 0,
+                            endPosition: longText.count,
+                            pageNumber: 1
+                        )
+                    )
+
+                    try await vectorDB.store(chunk: chunk)
+                    await MainActor.run {
+                        testService.documents.append(doc)
+                    }
+
+                    // Call tool and verify truncation marker and citation
+                    let toolOutput = try await testService.searchDocuments(query: "Lorem ipsum")
+                    let hasTruncation = toolOutput.contains(" [...]")
+                    let hasDocName = toolOutput.contains("Foo.txt")
+                    let hasFoundCount = toolOutput.contains("Found 1 relevant chunks")
+                    return hasTruncation && hasDocName && hasFoundCount
+                } catch {
+                    return false
+                }
+            }
+
+            // Finalize
+            await MainActor.run {
+                isRunning = false
+
+                let passedCount = testResults.filter { $0.status == .passed }.count
+                let totalCount = testResults.count
+
+                if passedCount == totalCount {
+                    overallStatus = .passed
+                } else if passedCount == 0 {
+                    overallStatus = .failed
+                } else {
+                    overallStatus = .partial
+                }
+            }
+        }
+    }
+
+    private func runTest(name: String, test: () async -> Bool) async {
+        await MainActor.run {
+            currentTest = name
+        }
+
+        let startTime = Date()
+        let passed = await test()
+        let duration = Date().timeIntervalSince(startTime)
+
+        let result = TestResult(
+            name: name,
+            status: passed ? .passed : .failed,
+            duration: duration,
+            message: passed ? "✓" : "Failed"
+        )
+
+        await MainActor.run {
+            testResults.append(result)
+        }
+    }
+}
+
+// MARK: - Modern Supporting Views
+
+struct ModernStatusCard: View {
+    let status: TestStatus
+    let isRunning: Bool
+    let currentTest: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            HStack(spacing: DSSpacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(DSColors.chipBackground(for: status.color))
+                        .frame(width: 48, height: 48)
+
+                    Image(systemName: status.icon)
+                        .font(.title3)
+                        .foregroundStyle(status.color)
+                }
+
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text("Core Pipeline Validation")
+                        .font(.headline)
+
+                    if status != .notStarted && status != .running {
+                        Text(status.message)
+                            .font(.caption)
+                            .foregroundStyle(DSColors.readable(status.color))
+                    }
+                }
+            }
+
+            if isRunning && !currentTest.isEmpty {
+                HStack(spacing: DSSpacing.sm) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+
+                    Text(currentTest)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.top, DSSpacing.xs)
+            }
+        }
+        .padding(DSSpacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .fill(DSColors.surface)
+        )
+    }
+}
+
+struct EmbeddingStatusCard: View {
+    let snapshot: RAGService.EmbeddingDiagnosticsSnapshot
+
+    /// Human-readable provider description
+    private var providerDescription: String {
+        switch snapshot.embeddingProviderId {
+        case "nl_contextual_embedding":
+            return "Contextual (High Accuracy)"
+        case "nl_embedding":
+            return "Standard NL"
+        case "coreml_sentence_embedding":
+            return "CoreML Sentence"
+        case "coreai_sentence_embedding":
+            return "CoreAI Sentence"
+        case "apple_fm_embed":
+            return "Apple FM"
+        default:
+            return snapshot.embeddingProviderId
+        }
+    }
+
+    private var isHighAccuracy: Bool {
+        snapshot.embeddingProviderId.contains("contextual") || snapshot.embeddingProviderId.contains("fm")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            Text("Active Embedding Configuration")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                Label {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(providerDescription)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("• \(snapshot.dimension)D")
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        if isHighAccuracy {
+                            Text("🎯")
+                                .font(.caption)
+                        }
+                    }
+                } icon: {
+                    Image(systemName: isHighAccuracy ? "sparkles" : "brain.head.profile")
+                        .foregroundStyle(DSColors.accent)
+                }
+
+                Label {
+                    Text(snapshot.containerName)
+                        .font(.subheadline)
+                } icon: {
+                    Image(systemName: "tray.full")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: DSSpacing.lg) {
+                StatusPill(text: snapshot.autoAdaptEnabled ? "Auto-adapt ON" : "Auto-adapt OFF", systemImage: "arrow.2.squarepath")
+                StatusPill(text: snapshot.retrievalConfig.summary, systemImage: "slider.horizontal.3")
+            }
+
+            Text("Docs: \(snapshot.documentCount) • Chunks: \(snapshot.chunkCount)")
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .padding(DSSpacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .fill(DSColors.surface)
+        )
+    }
+}
+
+struct EmbeddingTelemetryList: View {
+    let events: [TelemetryEvent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            HStack {
+                Label("Recent Embedding Events", systemImage: "waveform.path.ecg")
+                    .font(.headline)
+                Spacer()
+                Text("Last \(events.count)")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(events) { event in
+                HStack(alignment: .top, spacing: DSSpacing.sm) {
+                    Text(event.formattedTimestamp)
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 60, alignment: .leading)
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                        Text(event.title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        if !event.metadata.isEmpty {
+                            Text(event.metadata.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " • "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(DSSpacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .fill(DSColors.surface)
+        )
+    }
+}
+
+private struct StatusPill: View {
+    let text: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: DSSpacing.xs) {
+            Image(systemName: systemImage)
+            Text(text)
+                .font(.caption)
+        }
+        .font(.caption2.weight(.semibold))
+        .padding(.horizontal, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xs)
+        .background(
+            Capsule()
+                .fill(DSColors.chipBackground(for: DSColors.accent))
+        )
+        .foregroundStyle(DSColors.accent)
+    }
+}
+
+struct ModernTestResultCard: View {
+    let result: TestResult
+
+    var body: some View {
+        HStack(spacing: DSSpacing.lg) {
+            // Status icon
+            ZStack {
+                Circle()
+                    .fill(DSColors.chipBackground(for: result.status.color))
+                    .frame(width: 40, height: 40)
+
+                Image(systemName: result.status.icon)
+                    .foregroundStyle(result.status.color)
+            }
+
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                Text(result.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+
+                Text(result.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(String(format: "%.2fs", result.duration))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, DSSpacing.sm)
+                .padding(.vertical, DSSpacing.xs)
+                .background(
+                    Capsule()
+                        .fill(DSColors.surfaceElevated)
+                )
+        }
+        .padding(DSSpacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .fill(DSColors.surface)
+        )
+    }
+}
+
+struct ModernTestInfoSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            HStack(spacing: DSSpacing.sm) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundStyle(DSColors.accent)
+                Text("What This Tests")
+                    .font(.title3)
+            }
+
+            VStack(spacing: DSSpacing.md) {
+                ModernTestInfoItem(
+                    icon: "doc.text",
+                    color: DSColors.accent,
+                    text: "Document processing and chunking"
+                )
+                ModernTestInfoItem(
+                    icon: "cube.box",
+                    color: DSColors.accent,
+                    text: "Embedding generation (512-dim)"
+                )
+                ModernTestInfoItem(
+                    icon: "cylinder",
+                    color: DSColors.accent,
+                    text: "Vector database operations"
+                )
+                ModernTestInfoItem(
+                    icon: "wand.and.stars",
+                    color: DSColors.accent,
+                    text: "LLM service availability"
+                )
+                ModernTestInfoItem(
+                    icon: "exclamationmark.triangle",
+                    color: DSColors.accent,
+                    text: "Edge case handling"
+                )
+            }
+        }
+        .padding(DSSpacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .fill(DSColors.surface)
+        )
+    }
+}
+
+struct ModernTestInfoItem: View {
+    let icon: String
+    let color: Color
+    let text: String
+
+    var body: some View {
+        HStack(spacing: DSSpacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: DSCorners.chip, style: .continuous)
+                    .fill(DSColors.chipBackground(for: color))
+                    .frame(width: 36, height: 36)
+
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+            }
+
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Legacy Components (for compatibility)
+
+struct StatusCard: View {
+    let status: TestStatus
+    let isRunning: Bool
+    let currentTest: String
+
+    var body: some View {
+        ModernStatusCard(status: status, isRunning: isRunning, currentTest: currentTest)
+    }
+}
+
+struct TestResultRow: View {
+    let result: TestResult
+
+    var body: some View {
+        ModernTestResultCard(result: result)
+    }
+}
+
+struct TestInfoSection: View {
+    var body: some View {
+        ModernTestInfoSection()
+    }
+}
+
+struct TestInfoItem: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        ModernTestInfoItem(icon: icon, color: DSColors.accent, text: text)
+    }
+}
+
+// MARK: - Models
+
+struct TestResult: Identifiable {
+    let id = UUID()
+    let name: String
+    let status: TestStatus
+    let duration: TimeInterval
+    let message: String
+}
+
+enum TestStatus {
+    case notStarted
+    case running
+    case passed
+    case failed
+    case partial
+
+    var color: Color {
+        switch self {
+        case .notStarted: return .secondary
+        case .running: return .accentColor
+        case .passed: return .green
+        case .failed: return .red
+        case .partial: return .orange
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .notStarted: return "circle"
+        case .running: return "arrow.triangle.2.circlepath"
+        case .passed: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        case .partial: return "exclamationmark.circle.fill"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .notStarted: return "Tests not run"
+        case .running: return "Running tests..."
+        case .passed: return "All tests passed ✅"
+        case .failed: return "Tests failed ❌"
+        case .partial: return "Some tests failed ⚠️"
+        }
+    }
+}
+
+// MARK: - Preview
+
+#Preview {
+    CoreValidationView(ragService: RAGService())
+}

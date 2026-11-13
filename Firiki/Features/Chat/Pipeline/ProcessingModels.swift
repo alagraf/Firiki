@@ -1,0 +1,67 @@
+//
+//  ProcessingModels.swift
+//  Firiki
+//
+//  Shared enums and small UI helpers for ChatV2 processing state
+//  Created by Cline on 10/28/25.
+//
+
+import SwiftUI
+
+enum ChatExecutionLocation {
+    case unknown
+    case onDevice
+    case privateCloudCompute
+
+    var icon: String {
+        switch self {
+        case .unknown: return "circle.dotted"  // Subtle loading indicator instead of confusing question mark
+        case .onDevice: return "iphone"
+        case .privateCloudCompute: return "cloud.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .unknown: return .gray
+        case .onDevice: return .green
+        case .privateCloudCompute: return .blue
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .unknown: return "Processing"
+        case .onDevice: return "On-Device"
+        case .privateCloudCompute: return "Private Cloud Compute"
+        }
+    }
+}
+
+enum ChatProcessingStage: CaseIterable {
+    case idle
+    case embedding
+    case searching
+    case generating
+    case complete
+
+    var description: String {
+        switch self {
+        case .idle: return ""
+        case .embedding: return "Embedding"
+        case .searching: return "Searching"
+        case .generating: return "Generating"
+        case .complete: return "Complete"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .idle: return ""
+        case .embedding: return "brain.head.profile"
+        case .searching: return "magnifyingglass"
+        case .generating: return "sparkles"
+        case .complete: return "checkmark.circle.fill"
+        }
+    }
+}

@@ -1,0 +1,133 @@
+//
+//  AppLinkTests.swift
+//  FirikiTests
+//
+//  One form of link for every surface. These pin that each destination's link reads back as the
+//  same destination, that the three addresses 5.6 understood still mean what they did, and that a
+//  Spotlight result names the item that was tapped.
+//
+
+import Combine
+import XCTest
+
+@testable import FirikiEngine
+
+final class AppLinkTests: XCTestCase {
+    private let id = UUID(uuidString: "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0")!
+
+    func testEveryDestinationRoundTripsThroughItsLink() {
+        let destinations: [AppDestination] = [
+            .chat, .documents, .settings, .importQueue, .addDocument, .search, .scanDocument,
+            .newConversation(libraryId: nil), .newConversation(libraryId: id),
+            .library(id), .document(id),
+        ]
+        for destination in destinations {
+            let url = AppLink.url(for: destination)
+            XCTAssertEqual(url.scheme, "firiki")
+            XCTAssertEqual(AppLink.destination(for: url), destination, url.absoluteString)
+        }
+    }
+
+    func testTheAddressesOlderBuildsUsedStillWork() {
+        XCTAssertEqual(AppLink.destination(for: URL(string: "firiki://documents")!), .documents)
+        XCTAssertEqual(AppLink.destination(for: URL(string: "firiki://documents/ingestion")!), .importQueue)
+        XCTAssertEqual(AppLink.destination(for: URL(string: "firiki://chat")!), .chat)
+        XCTAssertEqual(AppLink.url(for: .importQueue).absoluteString, "firiki://documents/ingestion")
+    }
+
+    func testFilesHandedOverHaveNoLinkOfTheirOwn() {
+        let files = AppDestination.importFiles([URL(fileURLWithPath: "/tmp/Lease.pdf")])
+        XCTAssertEqual(AppLink.destination(for: AppLink.url(for: files)), .documents)
+    }
+
+    func testOtherAddressesAreNotLinks() {
+        XCTAssertNil(AppLink.destination(for: URL(string: "https://example.com/documents")!))
+        XCTAssertNil(AppLink.destination(for: URL(string: "firiki://billing")!))
+        XCTAssertNil(AppLink.destination(for: URL(string: "firiki://document/not-an-id")!))
+        XCTAssertNil(AppLink.destination(for: URL(fileURLWithPath: "/tmp/Lease.pdf")))
+    }
+
+    func testASpotlightResultNamesItsItem() {
+        XCTAssertEqual(AppLink.destination(forSpotlightIdentifier: "document-\(id.uuidString)"), .document(id))
+        XCTAssertEqual(AppLink.destination(forSpotlightIdentifier: "container-\(id.uuidString)"), .library(id))
+        XCTAssertNil(
+            AppLink.destination(forSpotlightIdentifier: "chunk-\(id.uuidString)"),
+            "a passage indexed before 5.7 does not name its document")
+        // From 5.7 a passage's entry names its document, which a tap opens.
+        let passage = UUID()
+        XCTAssertEqual(
+            AppLink.destination(forSpotlightIdentifier: "passage-\(id.uuidString)-\(passage.uuidString)"), .document(id))
+        XCTAssertNil(AppLink.destination(forSpotlightIdentifier: "passage-not-a-uuid"))
+        XCTAssertNil(AppLink.destination(forSpotlightIdentifier: "nonsense"))
+    }
+
+    @MainActor
+    func testARequestIsTakenOnceAndOnlyByTheScreenThatShowsIt() {
+        _ = AppNavigationRequest.shared.takeAll { _ in true }
+        AppNavigationRequest.post(.addDocument)
+        XCTAssertNil(AppNavigationRequest.shared.take { $0 == .scanDocument }, "the chat must not take the picker's request")
+        XCTAssertEqual(AppNavigationRequest.shared.take { $0 == .addDocument }, .addDocument)
+        XCTAssertNil(AppNavigationRequest.shared.take { $0 == .addDocument }, "a request is used up once taken")
+    }
+
+    /// Three files sent together arrive as three requests. Through the first version of this, the
+    /// request held one slot and only the last file was imported.
+    @MainActor
+    func testSeveralFilesSentTogetherAllWait() {
+        _ = AppNavigationRequest.shared.takeAll { _ in true }
+        let files = ["a.pdf", "b.pdf", "c.pdf"].map { URL(fileURLWithPath: "/tmp/" + $0) }
+        for file in files { AppNavigationRequest.post(.importFiles([file])) }
+        AppNavigationRequest.post(.addDocument)
+
+        let taken = AppNavigationRequest.shared.takeAll { destination in
+            if case .importFiles = destination { return true }
+            return false
+        }
+        XCTAssertEqual(taken, files.map { .importFiles([$0]) })
+        XCTAssertEqual(AppNavigationRequest.shared.waiting, [.addDocument], "what another screen shows is left waiting")
+        _ = AppNavigationRequest.shared.takeAll { _ in true }
+    }
+
+    /// A subscriber is handed the queue as it stands after the change, never the one before it.
+    @MainActor
+    func testASubscriberSeesTheQueueAfterTheChange() {
+        _ = AppNavigationRequest.shared.takeAll { _ in true }
+        var seen: [[AppDestination]] = []
+        let subscription = AppNavigationRequest.shared.changes.sink { seen.append($0) }
+        AppNavigationRequest.post(.chat)
+        _ = AppNavigationRequest.shared.take { $0 == .chat }
+        subscription.cancel()
+        XCTAssertEqual(seen, [[], [.chat], []])
+    }
+
+    /// A question from the Mac's menu bar is sent at once; one from the Services menu waits in the
+    /// field. Neither has a link form, so no address carries the question (5.7).
+    /// A file "Open in" handed over is shown before it is added, from the Documents tab (5.7).
+    func testAnOpenedFileGoesToDocumentsAndCarriesNoAddress() {
+        let file = URL(fileURLWithPath: "/tmp/Lease.pdf")
+        XCTAssertEqual(AppLink.url(for: .openedFiles([file])).absoluteString, "firiki://documents")
+        XCTAssertNotEqual(AppDestination.openedFiles([file]), .importFiles([file]))
+    }
+
+    func testAQuestionFromTheMenuBarIsSentAndCarriesNoText() {
+        XCTAssertEqual(AppDestination.ask("Pets?"), .ask("Pets?", sendsAtOnce: false))
+        XCTAssertNotEqual(AppDestination.ask("Pets?"), .ask("Pets?", sendsAtOnce: true))
+        XCTAssertEqual(AppLink.url(for: .ask("Pets?", sendsAtOnce: true)).absoluteString, "firiki://chat")
+        // Think Deeper on Siri's answer card: the same question, sent at once, in Deep Think.
+        XCTAssertNotEqual(AppDestination.ask("Pets?", sendsAtOnce: true), .ask("Pets?", sendsAtOnce: true, inDeepThink: true))
+        XCTAssertEqual(
+            AppLink.url(for: .ask("Pets?", sendsAtOnce: true, inDeepThink: true)).absoluteString, "firiki://chat")
+        // The card's buttons name the library the question ran in, which the app makes the active one.
+        let library = UUID()
+        XCTAssertNotEqual(
+            AppDestination.ask("Pets?", sendsAtOnce: true, inDeepThink: true),
+            .ask("Pets?", sendsAtOnce: true, inDeepThink: true, libraryId: library))
+        XCTAssertEqual(
+            AppLink.url(for: .continueAnswer(question: "Pets?", answer: "No pets.", libraryId: library)).absoluteString,
+            "firiki://chat")
+        // Ask a Follow-up on Siri's answer card opens the chat; no address carries the question or the answer.
+        XCTAssertEqual(
+            AppLink.url(for: .continueAnswer(question: "Pets?", answer: "No pets.")).absoluteString,
+            "firiki://chat")
+    }
+}

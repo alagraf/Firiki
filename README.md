@@ -101,7 +101,7 @@ reason and how it was verified, is in [`Docs/Thesis/FORK_CHANGES.md`](Docs/Thesi
 | Verification | `Services/RAG/Safety/LegalVerificationPolicy`, `GreekLegalAnswerService`, `Retrieval/LegalCrossReferences` | Legal checks, Greek refusals, cross-references between articles |
 | Privacy | `Infrastructure/Configuration/StrictLocalControlGuard` | Blocks backups, cloud sync, web import and Private Cloud Compute |
 | Interface | `Features/Chat/Response/GreekLegalAssistantSheet`, `GreekLegalReviewCard` | The Greek Legal AI sheet and the answer's legal review card |
-| Evaluation | `OpenIntelligenceTests/Services/GreekLegal/` (10 suites), `Benchmarks/Greek*`, `Benchmarks/LabourContractTemplates`, `scripts/thesis/` | Unit tests, benchmark sets and the evaluation harness |
+| Evaluation | `FirikiTests/Services/GreekLegal/` (10 suites), `Benchmarks/Greek*`, `Benchmarks/LabourContractTemplates`, `scripts/thesis/` | Unit tests, benchmark sets and the evaluation harness |
 
 **Changes to the original app**
 
@@ -177,25 +177,25 @@ cd Firiki
 
 The Greek↔English Opus-MT models (about 700 MB) aren't stored in git. This script downloads
 `opus-mt-tc-big-el-en` and `opus-mt-tc-big-en-el` from Hugging Face, converts them to INT8 ONNX and
-puts them in `OpenIntelligence/Resources/MLModels/Translation/`:
+puts them in `Firiki/Resources/MLModels/Translation/`:
 
 ```bash
 ./scripts/thesis_fetch_translation_models.sh
 ```
 
-The Greek OCR models (12 MB) are already in `OpenIntelligence/Resources/MLModels/GreekOCR/`.
+The Greek OCR models (12 MB) are already in `Firiki/Resources/MLModels/GreekOCR/`.
 
 ### 3. Build and run
 
 ```bash
-open OpenIntelligence.xcodeproj
+open Firiki.xcodeproj
 ```
 
-Choose the **OpenIntelligence** scheme, then **My Mac** (recommended for demos) or a connected
+Choose the **Firiki** scheme, then **My Mac** (recommended for demos) or a connected
 iPhone, and run. No API keys or `.env` file are needed: nothing calls a server.
 
 A command-line build check (iOS Simulator, iPhone 18 Pro by default; set
-`OPENINTELLIGENCE_SIMULATOR_DESTINATION` to change it):
+`FIRIKI_SIMULATOR_DESTINATION` to change it):
 
 ```bash
 bash scripts/build_simulator_smoke.sh
@@ -227,14 +227,14 @@ example `GreekLegalVerificationTests`), not the file (`GreekLegalPipelineTests.s
 suites), or the tests silently don't run.
 
 ```bash
-./scripts/thesis_run_tests.sh /private/tmp/greek_tests.log -only-testing:OpenIntelligenceTests/GreekLegalVerificationTests -only-testing:OpenIntelligenceTests/StrictLocalControlGuardTests -only-testing:OpenIntelligenceTests/GreekLegalOpinionTests -only-testing:OpenIntelligenceTests/GreekLegalSummaryTests -only-testing:OpenIntelligenceTests/GreekLegalChatRouterTests -only-testing:OpenIntelligenceTests/LabourContractTemplateTests
+./scripts/thesis_run_tests.sh /private/tmp/greek_tests.log -only-testing:FirikiTests/GreekLegalVerificationTests -only-testing:FirikiTests/StrictLocalControlGuardTests -only-testing:FirikiTests/GreekLegalOpinionTests -only-testing:FirikiTests/GreekLegalSummaryTests -only-testing:FirikiTests/GreekLegalChatRouterTests -only-testing:FirikiTests/LabourContractTemplateTests
 ```
 
 The benchmark evaluations need Apple Intelligence on the Mac and are switched on by environment
 variables, for example:
 
 ```bash
-TEST_RUNNER_OI_TEMPLATE_ROUTING=1 TEST_RUNNER_OI_TEMPLATE_ROUTING_SPLIT=test ./scripts/thesis_run_tests.sh /private/tmp/routing.log -only-testing:OpenIntelligenceTests/LabourContractTemplateRoutingEvaluation
+TEST_RUNNER_OI_TEMPLATE_ROUTING=1 TEST_RUNNER_OI_TEMPLATE_ROUTING_SPLIT=test ./scripts/thesis_run_tests.sh /private/tmp/routing.log -only-testing:FirikiTests/LabourContractTemplateRoutingEvaluation
 ```
 
 Others: `TEST_RUNNER_OI_OCR_BENCH=1` (`GreekOCRBenchmarkTests`), `TEST_RUNNER_OI_GREEK_SUMMARY=1`

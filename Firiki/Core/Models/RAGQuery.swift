@@ -1,0 +1,275 @@
+//
+//  RAGQuery.swift
+//  Firiki
+//
+//  Created by Gunnar Hostetler on 10/9/25.
+//
+
+import Foundation
+
+/// Represents a user query in the RAG pipeline
+struct RAGQuery: Sendable {
+    let id: UUID
+    let query: String
+    let timestamp: Date
+    let topK: Int
+
+    init(id: UUID = UUID(), query: String, timestamp: Date = Date(), topK: Int = 3) {
+        self.id = id
+        self.query = query
+        self.timestamp = timestamp
+        self.topK = topK
+    }
+}
+
+/// Result of a RAG query including retrieved context and generated response
+struct RAGResponse: Sendable {
+    let id: UUID
+    let queryId: UUID
+    let retrievedChunks: [RetrievedChunk]
+    let generatedResponse: String
+    let metadata: ResponseMetadata
+    let confidenceScore: Float // 0.0-1.0 aggregate confidence
+    let qualityWarnings: [String] // Warnings about result quality
+    let structuredAnswer: StructuredAnswer? // AppleRAG §6 structured output
+    /// Thesis fork: the Greek legal review of this answer (English draft, gate summary, abstention).
+    let legalReview: LegalAnswerReview?
+
+    init(id: UUID = UUID(),
+         queryId: UUID,
+         retrievedChunks: [RetrievedChunk],
+         generatedResponse: String,
+         metadata: ResponseMetadata,
+         confidenceScore: Float = 1.0,
+         qualityWarnings: [String] = [],
+         structuredAnswer: StructuredAnswer? = nil,
+         legalReview: LegalAnswerReview? = nil)
+    {
+        self.legalReview = legalReview
+        self.id = id
+        self.queryId = queryId
+        self.retrievedChunks = retrievedChunks
+        self.generatedResponse = generatedResponse
+        self.metadata = metadata
+        self.confidenceScore = confidenceScore
+        self.qualityWarnings = qualityWarnings
+        self.structuredAnswer = structuredAnswer
+    }
+}
+
+/// A document chunk retrieved for context with its similarity score
+struct RetrievedChunk: Codable, Sendable {
+    let chunk: DocumentChunk
+    let similarityScore: Float
+    let rank: Int
+    let sourceDocument: String // Filename for citation
+    let pageNumber: Int? // Page number if available
+
+    nonisolated init(chunk: DocumentChunk, similarityScore: Float, rank: Int, sourceDocument: String = "", pageNumber: Int? = nil) {
+        self.chunk = chunk
+        self.similarityScore = similarityScore
+        self.rank = rank
+        self.sourceDocument = sourceDocument
+        self.pageNumber = pageNumber
+    }
+}
+
+/// Performance and execution metadata for a RAG response
+struct ResponseMetadata: Codable, Sendable {
+    let timeToFirstToken: TimeInterval?
+    let totalGenerationTime: TimeInterval
+    let tokensGenerated: Int
+    let tokensPerSecond: Float?
+    let modelUsed: String
+    let retrievalTime: TimeInterval
+    let retrievalConfigSummary: String // e.g., "Balanced", "High Accuracy", "Custom"
+    let gatingDecision: String?
+    let toolCallsMade: Int?
+    let embeddingProvider: String? // e.g., "nl_embedding", "nl_contextual_embedding"
+
+    /// Whether the agentic (multi-step reasoning) mode was used for this response.
+    /// When false, single-pass retrieval was used. Users can request deeper analysis
+    /// via the "Go Deeper" button if they want agentic processing.
+    let usedAgenticMode: Bool
+
+    /// The quality mode used: "Standard", "Deep Think", or "Maximum"
+    let qualityModeName: String?
+
+    /// The original query that triggered this response (for re-query with deeper mode)
+    let originalQuery: String?
+
+    /// Reasoning trace from chained sessions (shows how the AI "thought through" the problem)
+    /// Each string is one step: ["🔍 Analyzing: found X...", "🧠 Patterns: theme is Y...", etc.]
+    let reasoningTrace: [String]?
+
+    /// The specific execution route taken for this response
+    let executionRoute: ExecutionRoute?
+
+    /// Token budget allocation for this response
+    let tokenBudget: TokenBudget?
+
+    /// Durable intended-versus-actual model routing telemetry.
+    /// Optional so responses persisted before PCC dynamic routing remain decodable.
+    let executionReceipt: ModelExecutionReceipt?
+    /// Apple's count for this answer (5.7): the input, cached input, output and reasoning tokens of every model
+    /// call it made, added up (`AnswerUsageTally`). Nil before iOS and macOS 27 and on answers saved before 5.7.
+    var appleUsage: GenerationUsage? = nil
+    /// Thesis fork: the Greek legal review (English draft, gates, model assets), shown under
+    /// Response Details. Nil outside Greek legal mode and in messages saved before it.
+    var legalReview: LegalAnswerReview? = nil
+
+    struct ExecutionRoute: Codable, Sendable, Equatable {
+        let path: String // "On-Device", "Private Cloud Compute", etc.
+        let reason: String // Why this path was chosen
+        let policyApplied: String? // Name of the routing policy
+        let emoji: String
+    }
+
+    struct TokenBudget: Codable, Sendable, Equatable {
+        let totalLimit: Int
+        let systemPrompt: Int
+        let retrievedContext: Int
+        let generation: Int
+        let remaining: Int
+    }
+
+    nonisolated init(timeToFirstToken: TimeInterval? = nil,
+         totalGenerationTime: TimeInterval,
+         tokensGenerated: Int,
+         tokensPerSecond: Float? = nil,
+         modelUsed: String,
+         retrievalTime: TimeInterval,
+         retrievalConfigSummary: String = "Balanced",
+         gatingDecision: String? = nil,
+         toolCallsMade: Int? = nil,
+         embeddingProvider: String? = nil,
+         usedAgenticMode: Bool = false,
+         qualityModeName: String? = nil,
+         originalQuery: String? = nil,
+         reasoningTrace: [String]? = nil,
+         executionRoute: ExecutionRoute? = nil,
+         tokenBudget: TokenBudget? = nil,
+         executionReceipt: ModelExecutionReceipt? = nil,
+         appleUsage: GenerationUsage? = nil)
+    {
+        self.timeToFirstToken = timeToFirstToken
+        self.totalGenerationTime = totalGenerationTime
+        self.tokensGenerated = tokensGenerated
+        self.tokensPerSecond = tokensPerSecond
+        self.modelUsed = modelUsed
+        self.retrievalTime = retrievalTime
+        self.retrievalConfigSummary = retrievalConfigSummary
+        self.gatingDecision = gatingDecision
+        self.toolCallsMade = toolCallsMade
+        self.embeddingProvider = embeddingProvider
+        self.usedAgenticMode = usedAgenticMode
+        self.qualityModeName = qualityModeName
+        self.originalQuery = originalQuery
+        self.reasoningTrace = reasoningTrace
+        self.executionRoute = executionRoute
+        self.tokenBudget = tokenBudget
+        self.executionReceipt = executionReceipt
+        self.appleUsage = appleUsage
+    }
+
+    // MARK: - Computed Properties
+
+    /// True if using High Accuracy retrieval config (formerly "strict mode")
+    var isHighAccuracyMode: Bool {
+        retrievalConfigSummary == "High Accuracy"
+    }
+
+    /// True if this response used single-pass and could benefit from deeper analysis
+    var canGoDeeper: Bool {
+        !usedAgenticMode && originalQuery != nil
+    }
+
+    nonisolated func withReasoningTrace(_ fallbackTrace: [String]?) -> ResponseMetadata {
+        let resolvedTrace: [String]?
+        if let reasoningTrace, !reasoningTrace.isEmpty {
+            resolvedTrace = reasoningTrace
+        } else if let fallbackTrace, !fallbackTrace.isEmpty {
+            resolvedTrace = fallbackTrace
+        } else {
+            resolvedTrace = nil
+        }
+
+        return ResponseMetadata(
+            timeToFirstToken: timeToFirstToken,
+            totalGenerationTime: totalGenerationTime,
+            tokensGenerated: tokensGenerated,
+            tokensPerSecond: tokensPerSecond,
+            modelUsed: modelUsed,
+            retrievalTime: retrievalTime,
+            retrievalConfigSummary: retrievalConfigSummary,
+            gatingDecision: gatingDecision,
+            toolCallsMade: toolCallsMade,
+            embeddingProvider: embeddingProvider,
+            usedAgenticMode: usedAgenticMode,
+            qualityModeName: qualityModeName,
+            originalQuery: originalQuery,
+            reasoningTrace: resolvedTrace,
+            executionRoute: executionRoute,
+            tokenBudget: tokenBudget,
+            executionReceipt: executionReceipt,
+            appleUsage: appleUsage
+        )
+    }
+
+    /// The same metadata with `token` appended to `gatingDecision`, which is a comma-separated record
+    /// of what the pipeline decided about this answer.
+    nonisolated func appendingGatingDecision(_ token: String) -> ResponseMetadata {
+        ResponseMetadata(
+            timeToFirstToken: timeToFirstToken,
+            totalGenerationTime: totalGenerationTime,
+            tokensGenerated: tokensGenerated,
+            tokensPerSecond: tokensPerSecond,
+            modelUsed: modelUsed,
+            retrievalTime: retrievalTime,
+            retrievalConfigSummary: retrievalConfigSummary,
+            gatingDecision: gatingDecision.map { "\($0),\(token)" } ?? token,
+            toolCallsMade: toolCallsMade,
+            embeddingProvider: embeddingProvider,
+            usedAgenticMode: usedAgenticMode,
+            qualityModeName: qualityModeName,
+            originalQuery: originalQuery,
+            reasoningTrace: reasoningTrace,
+            executionRoute: executionRoute,
+            tokenBudget: tokenBudget,
+            executionReceipt: executionReceipt,
+            appleUsage: appleUsage
+        )
+    }
+
+    nonisolated func compactedForPersistence(maxReasoningSteps: Int = 8, maxCharactersPerStep: Int = 280) -> ResponseMetadata {
+        let compactedTrace = reasoningTrace?
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(maxReasoningSteps)
+            .map { step in
+                guard step.count > maxCharactersPerStep else { return step }
+                return String(step.prefix(maxCharactersPerStep)) + "..."
+            }
+
+        return ResponseMetadata(
+            timeToFirstToken: timeToFirstToken,
+            totalGenerationTime: totalGenerationTime,
+            tokensGenerated: tokensGenerated,
+            tokensPerSecond: tokensPerSecond,
+            modelUsed: modelUsed,
+            retrievalTime: retrievalTime,
+            retrievalConfigSummary: retrievalConfigSummary,
+            gatingDecision: gatingDecision,
+            toolCallsMade: toolCallsMade,
+            embeddingProvider: embeddingProvider,
+            usedAgenticMode: usedAgenticMode,
+            qualityModeName: qualityModeName,
+            originalQuery: originalQuery,
+            reasoningTrace: compactedTrace?.isEmpty == true ? nil : compactedTrace,
+            executionRoute: executionRoute,
+            tokenBudget: tokenBudget,
+            executionReceipt: executionReceipt,
+            appleUsage: appleUsage
+        )
+    }
+}

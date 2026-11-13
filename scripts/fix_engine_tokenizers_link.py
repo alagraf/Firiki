@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Add the transitive `Tokenizers` product to the OpenIntelligenceEngine target's link line.
+"""Add the transitive `Tokenizers` product to the FirikiEngine target's link line.
 
 WHY THIS EXISTS
 ---------------
-`xcodebuild test` cannot link `OpenIntelligenceEngine.framework`. Every `Tokenizers.*` symbol
+`xcodebuild test` cannot link `FirikiEngine.framework`. Every `Tokenizers.*` symbol
 comes back undefined:
 
     Undefined symbol: static Tokenizers.AutoTokenizer.from(directory:) ...
@@ -12,7 +12,7 @@ comes back undefined:
 The cause is one level deeper than a missing dependency, and the target's existing declaration is
 correct, so reading the target block does not reveal it:
 
-  * `OpenIntelligence/swift-transformers` is a **shim** package. Its only source file is
+  * `Firiki/swift-transformers` is a **shim** package. Its only source file is
     `@_exported import Tokenizers`. It contains no code of its own.
   * The real module, `Tokenizers`, comes from a **separate remote package**,
     `https://github.com/DePasqualeOrg/swift-tokenizers.git`, pinned at 0.7.1.
@@ -35,7 +35,7 @@ override applying to every target and is exactly what this script avoids.
 
 WHAT IT CHANGES
 ---------------
-`OpenIntelligence.xcodeproj/project.pbxproj`, which is a hard-boundary file under CLAUDE.md.
+`Firiki.xcodeproj/project.pbxproj`, which is a hard-boundary file under CLAUDE.md.
 Run this only after deciding to make that edit. It writes a `.bak` first and refuses to run twice.
 
   1. a `PBXBuildFile` for the `Tokenizers` product
@@ -53,7 +53,7 @@ USAGE
 
 Then:
 
-    xcodebuild test -scheme OpenIntelligence \
+    xcodebuild test -scheme Firiki \
       -destination "platform=iOS Simulator,id=25E29FA1-6A22-4A86-AE9F-A6F48411E6D0" \
       -derivedDataPath /private/tmp/oi-build
 
@@ -69,7 +69,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PBXPROJ = ROOT / "OpenIntelligence.xcodeproj/project.pbxproj"
+PBXPROJ = ROOT / "Firiki.xcodeproj/project.pbxproj"
 
 
 def set_target_project(path: Path) -> None:
@@ -91,7 +91,7 @@ ENGINE_FRAMEWORKS_PHASE = "E0A100062F0F5F5F00AABA0C"
 # explicitly on the Engine stops Xcode inferring it for the app: before this change the app
 # linked Tokenizers through automatic transitive resolution, and adding an explicit declaration
 # anywhere in the project turned that inference off. Measured 2026-09-11: with only the Engine
-# wired, the Engine linked and `Ld OpenIntelligence.app/OpenIntelligence.debug.dylib` then failed
+# wired, the Engine linked and `Ld Firiki.app/Firiki.debug.dylib` then failed
 # with exactly the symbols the Engine had just stopped failing on. Wiring one and not the other
 # moves the failure rather than fixing it.
 APP_TARGET = "B0D565DD2E98AC50001274A2"
@@ -145,8 +145,8 @@ def already_applied(src: str) -> bool:
     it everywhere.
     """
     return (
-        declares_tokenizers(src, ENGINE_TARGET, "OpenIntelligenceEngine")
-        and declares_tokenizers(src, APP_TARGET, "OpenIntelligence")
+        declares_tokenizers(src, ENGINE_TARGET, "FirikiEngine")
+        and declares_tokenizers(src, APP_TARGET, "Firiki")
     )
 
 
@@ -157,7 +157,7 @@ def _unused_engine_target_block(src: str) -> str:
     the window ended before `packageProductDependencies` and its absence was reported as the
     target not declaring the dependency.
     """
-    start = src.find(f"{ENGINE_TARGET} /* OpenIntelligenceEngine */ = {{")
+    start = src.find(f"{ENGINE_TARGET} /* FirikiEngine */ = {{")
     if start < 0:
         sys.exit(f"Engine target {ENGINE_TARGET} not found; the project layout has changed")
     end = src.find("\n\t\t};", start)
@@ -173,7 +173,7 @@ def preflight(src: str) -> None:
     for phase, label in ((ENGINE_FRAMEWORKS_PHASE, "Engine"), (APP_FRAMEWORKS_PHASE, "app")):
         if f"{phase} /* Frameworks */" not in src:
             sys.exit(f"{label} Frameworks phase {phase} not found")
-    for ident, name in ((ENGINE_TARGET, "OpenIntelligenceEngine"), (APP_TARGET, "OpenIntelligence")):
+    for ident, name in ((ENGINE_TARGET, "FirikiEngine"), (APP_TARGET, "Firiki")):
         if "packageProductDependencies = (" not in target_block(src, ident, name):
             sys.exit(
                 f"the {name} target has no packageProductDependencies block. That is NOT the "
@@ -230,7 +230,7 @@ def apply(src: str) -> str:
         )
 
     # 4. Into each target's packageProductDependencies.
-    for ident, name in ((ENGINE_TARGET, "OpenIntelligenceEngine"), (APP_TARGET, "OpenIntelligence")):
+    for ident, name in ((ENGINE_TARGET, "FirikiEngine"), (APP_TARGET, "Firiki")):
         src = _append_into(
             src,
             r"(packageProductDependencies = \()(.*?)(\);)",
@@ -261,7 +261,7 @@ def main() -> int:
     src = read()
 
     if already_applied(src):
-        print("Already applied: the OpenIntelligenceEngine target declares the Tokenizers product.")
+        print("Already applied: the FirikiEngine target declares the Tokenizers product.")
         return 0
 
     preflight(src)
@@ -283,7 +283,7 @@ def main() -> int:
     print(f"Applied. Backup at {backup.relative_to(ROOT)}")
     print("Now run the test action; it should reach ** TEST SUCCEEDED **:")
     print(
-        '  xcodebuild test -scheme OpenIntelligence -destination '
+        '  xcodebuild test -scheme Firiki -destination '
         '"platform=iOS Simulator,id=25E29FA1-6A22-4A86-AE9F-A6F48411E6D0" '
         "-derivedDataPath /private/tmp/oi-build"
     )

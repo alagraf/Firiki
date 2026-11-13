@@ -1,6 +1,6 @@
 # Labour contract templates and the routing set (PoC capability 4)
 
-`OpenIntelligence/Resources/LabourContractTemplates/` (in `contracts/` here until 2026-10-29, when the router
+`Firiki/Resources/LabourContractTemplates/` (in `contracts/` here until 2026-10-29, when the router
 was built and they moved into the app): 10 Greek labour contract templates, drafted by Claude Code from the Labour Code
 (Π.Δ. 62/2025) and the laws of `../GreekLabourLibrary` (owner's choice, 2026-10-29). Each is marked
 as a proof-of-concept draft that is not legal advice. Every clause that states a rule cites its
@@ -31,6 +31,6 @@ and urgent-needs hiring replace them, and seasonal work is a case of the fixed-t
 with the template id or `none`, split 44 dev / 22 test. Worded as users ask, not from the templates'
 keywords. Tune the router on dev only.
 
-The router is `LabourContractTemplateRouter` (`OpenIntelligence/Services/Legal/`); the routing set
+The router is `LabourContractTemplateRouter` (`Firiki/Services/Legal/`); the routing set
 runs through it with `TEST_RUNNER_OI_TEMPLATE_ROUTING=1` (`_SPLIT=dev` or `test`), see
-`OpenIntelligenceTests/Services/GreekLegal/LabourContractTemplateRouterTests.swift`.
+`FirikiTests/Services/GreekLegal/LabourContractTemplateRouterTests.swift`.

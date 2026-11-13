@@ -1,0 +1,275 @@
+//
+//  VisualIntelligenceIntents.swift
+//  Firiki
+//
+//  Visual Intelligence integration for camera-based document analysis.
+//  Extends AppIntents to support Visual Intelligence actions:
+//  - Analyze photos/screenshots for document ingestion
+//  - Extract text from camera captures via Visual Intelligence
+//  - Search documents using visual context from camera
+//
+
+import AppIntents
+import Foundation
+import SwiftUI
+import Vision
+
+// MARK: - Analyze Image Intent
+
+/// Analyze an image using Visual Intelligence and RAG
+/// Triggered from camera Control Center or share sheet
+@available(iOS 26.0, *)
+struct AnalyzeImageIntent: AppIntent {
+    static var title: LocalizedStringResource = "Ask About an Image"
+    static var description: IntentDescription = .init(
+        "Extract and analyze text from an image using your document library",
+        categoryName: "Visual Intelligence",
+        searchKeywords: ["image", "photo", "camera", "visual", "analyze", "ocr"]
+    )
+
+    static var openAppWhenRun: Bool = false
+
+    @Parameter(title: "Image", description: "The image to analyze")
+    var imageFile: IntentFile
+
+    @Parameter(
+        title: "Question",
+        description: "Optional question about the image content",
+        default: ""
+    )
+    var question: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Analyze \(\.$imageFile)") {
+            \.$question
+        }
+    }
+
+    /// Returns the answer when a question was asked, otherwise the text read from the image, so the
+    /// next step of a shortcut has something to work with. Through 5.6 it showed a card and
+    /// returned nothing, and a failure came back as a successful result.
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetView {
+        Log.info("[VisualIntelligence] Analyze Image intent invoked", category: .pipeline)
+
+        let imageData = imageFile.data
+
+        // Extract text using Vision OCR
+        let extractedText = try await extractText(from: imageData)
+
+        guard !extractedText.isEmpty else {
+            throw OIIntentError("No text was found in the image.")
+        }
+
+        // If a question was asked, query RAG with the extracted context
+        if !question.isEmpty {
+            let ragService = await MainActor.run { RAGService.activePresentedInstance ?? RAGService() }
+            let config = InferenceConfig(maxTokens: 300, temperature: 0.7)
+
+            do {
+                let metadata = VisualEvidenceMetadata(
+                    timestamp: Date(),
+                    ocrWordCount: extractedText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count,
+                    barcodeCount: 0,
+                    detectedObjects: [],
+                    boundingBoxes: nil
+                )
+                let response = try await ragService.query(
+                    question,
+                    topK: 3,
+                    config: config,
+                    externalEvidence: [.imageOCR(extractedText, metadata)]
+                )
+                let answer = response.generatedResponse
+
+                return .result(
+                    value: answer,
+                    dialog: IntentDialog(stringLiteral: String(answer.prefix(500))),
+                    view: VisualAnalysisSnippetView(
+                        extractedText: String(extractedText.prefix(200)),
+                        answer: answer,
+                        question: question
+                    )
+                )
+            } catch {
+                throw OIIntentError(
+                    "The text in the image was read, but the question could not be answered: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        // No question: the text read from the image is the result.
+        return .result(
+            value: extractedText,
+            dialog: IntentDialog(stringLiteral: "Found \(extractedText.split(separator: " ").count) words of text."),
+            view: VisualAnalysisSnippetView(
+                extractedText: extractedText,
+                answer: nil,
+                question: nil
+            )
+        )
+    }
+
+    /// Extract text from image data using Vision framework
+    private func extractText(from imageData: Data) async throws -> String {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.revision = VNRecognizeTextRequestRevision3
+
+        let handler = VNImageRequestHandler(data: imageData, options: [:])
+        try handler.perform([request])
+
+        guard let observations = request.results else {
+            return ""
+        }
+
+        let texts = observations
+            .compactMap { $0.topCandidates(1).first?.string }
+        return texts.joined(separator: "\n")
+    }
+}
+
+// MARK: - Ingest from Camera Intent
+
+// The Mac has no document camera in this app, so the action is not offered there.
+#if os(iOS)
+/// Capture and ingest a document from the camera
+@available(iOS 26.0, *)
+struct IngestFromCameraIntent: AppIntent {
+    static var title: LocalizedStringResource = "Scan a Document"
+    static var description: IntentDescription = .init(
+        "Opens Firiki on the camera so you can capture a document and add it to your active library.",
+        categoryName: "Visual Intelligence",
+        searchKeywords: ["camera", "capture", "scan", "document"]
+    )
+
+    static var openAppWhenRun: Bool = true  // Need camera UI
+
+    /// Through 5.6 this opened the app and nothing else. It now asks the chat screen for the camera.
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        await MainActor.run { AppNavigationRequest.post(.scanDocument) }
+        return .result(
+            dialog: "Opening the camera in Firiki."
+        )
+    }
+}
+#endif
+
+// MARK: - Visual Search Intent
+
+/// Search documents using a photo as context
+@available(iOS 26.0, *)
+struct VisualSearchIntent: AppIntent {
+    static var title: LocalizedStringResource = "Search with a Photo"
+    static var description: IntentDescription = .init(
+        "Search your documents using text from a photo",
+        categoryName: "Visual Intelligence",
+        searchKeywords: ["visual", "search", "photo", "find"]
+    )
+
+    static var openAppWhenRun: Bool = false
+
+    @Parameter(title: "Photo", description: "Photo to extract search context from")
+    var photo: IntentFile
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Search documents using \(\.$photo)")
+    }
+
+    /// Returns what the search wrote, and throws where it used to return a successful result
+    /// holding an apology.
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetView {
+        Log.info("[VisualIntelligence] Visual Search intent invoked", category: .pipeline)
+
+        let imageData = photo.data
+
+        // Extract text from the photo
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+
+        let handler = VNImageRequestHandler(data: imageData, options: [:])
+        try handler.perform([request])
+
+        let extractedText = request.results?
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: " ") ?? ""
+
+        guard !extractedText.isEmpty else {
+            throw OIIntentError("No text was found in the photo to search with.")
+        }
+
+        // Use extracted text as a query
+        let ragService = await MainActor.run { RAGService.activePresentedInstance ?? RAGService() }
+        let config = InferenceConfig(maxTokens: 300, temperature: 0.7)
+
+        do {
+            let metadata = VisualEvidenceMetadata(
+                timestamp: Date(),
+                ocrWordCount: extractedText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count,
+                barcodeCount: 0,
+                detectedObjects: [],
+                boundingBoxes: nil
+            )
+            let response = try await ragService.query(
+                "Find content relevant to the photo",
+                topK: 5,
+                config: config,
+                externalEvidence: [.imageOCR(extractedText, metadata)]
+            )
+
+            return .result(
+                value: response.generatedResponse,
+                dialog: IntentDialog(stringLiteral: String(response.generatedResponse.prefix(400))),
+                view: VisualAnalysisSnippetView(
+                    extractedText: String(extractedText.prefix(200)),
+                    answer: response.generatedResponse,
+                    question: "Visual search from photo"
+                )
+            )
+        } catch {
+            throw OIIntentError("The search did not finish: \(error.localizedDescription)")
+        }
+    }
+}
+
+
+
+// MARK: - Snippet Views
+
+@available(iOS 16.0, *)
+struct VisualAnalysisSnippetView: View {
+    let extractedText: String
+    let answer: String?
+    let question: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let question = question {
+                Text(question)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let answer = answer {
+                Text(answer)
+                    .font(.body)
+                    .lineLimit(8)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Extracted Text")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                Text(extractedText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+            }
+        }
+        .padding()
+    }
+}

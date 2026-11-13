@@ -2,12 +2,12 @@
 # Run the test suite on a physically connected iPhone.
 #
 # Nothing in this project had ever run on real hardware before 2026-08-18, and the reason was not
-# effort. `OpenIntelligenceEngine.framework` is built with an absolute macOS install name,
-# `/Library/Frameworks/OpenIntelligenceEngine.framework/OpenIntelligenceEngine`, and is not embedded
+# effort. `FirikiEngine.framework` is built with an absolute macOS install name,
+# `/Library/Frameworks/FirikiEngine.framework/FirikiEngine`, and is not embedded
 # anywhere in the app. The app itself does not link it, so the app runs fine. The test bundle does
 # link it, so on device it fails at load with:
 #
-#     Library not loaded: /Library/Frameworks/OpenIntelligenceEngine.framework/OpenIntelligenceEngine
+#     Library not loaded: /Library/Frameworks/FirikiEngine.framework/FirikiEngine
 #
 # In the simulator that path happens to resolve, which is why 238 tests pass there and zero ran here.
 #
@@ -25,7 +25,7 @@ set -euo pipefail
 DEV=/Applications/Xcode-beta.app/Contents/Developer
 DD="${DD:-/private/tmp/oi-dev}"
 SRC="${SRC:-/private/tmp/oi-src}"
-ONLY="${ONLY:-}"          # e.g. ONLY=OpenIntelligenceTests/EmbeddingProviderAgreementTests
+ONLY="${ONLY:-}"          # e.g. ONLY=FirikiTests/EmbeddingProviderAgreementTests
 SIGN_ID="${SIGN_ID:-Apple Development: Gunnar Hostetler (3YEN53ZQDU)}"
 
 # xcodebuild wants the CoreDevice UUID; xctrace wants the hardware UDID. They are different values
@@ -49,29 +49,29 @@ rsync -a --exclude 'BenchmarkRuns/' --exclude '.simulator-smoke.nosync/' --exclu
 echo "==> build-for-testing"
 cd "$SRC"
 DEVELOPER_DIR=$DEV xcodebuild build-for-testing \
-  -scheme OpenIntelligence \
+  -scheme Firiki \
   -destination "platform=iOS,id=$UDID" \
   -derivedDataPath "$DD" \
   -allowProvisioningUpdates -quiet
 
 PROD="$DD/Build/Products/Debug-iphoneos"
-APP="$PROD/OpenIntelligence.app"
-XC="$APP/PlugIns/OpenIntelligenceTests.xctest"
-FW=OpenIntelligenceEngine.framework
-RPATH="@rpath/OpenIntelligenceEngine.framework/OpenIntelligenceEngine"
-ABS="/Library/Frameworks/OpenIntelligenceEngine.framework/OpenIntelligenceEngine"
+APP="$PROD/Firiki.app"
+XC="$APP/PlugIns/FirikiTests.xctest"
+FW=FirikiEngine.framework
+RPATH="@rpath/FirikiEngine.framework/FirikiEngine"
+ABS="/Library/Frameworks/FirikiEngine.framework/FirikiEngine"
 
 echo "==> capturing entitlements before they can be lost"
 codesign -d --entitlements :- "$APP" > /private/tmp/oi-app-ent.plist 2>/dev/null
-APPEX="$APP/PlugIns/OpenIntelligenceLiveActivities.appex"
+APPEX="$APP/PlugIns/FirikiLiveActivities.appex"
 [ -d "$APPEX" ] && codesign -d --entitlements :- "$APPEX" > /private/tmp/oi-appex-ent.plist 2>/dev/null || true
 
 echo "==> embedding the engine framework into the test bundle"
 mkdir -p "$XC/Frameworks"
 rm -rf "$XC/Frameworks/$FW"
 cp -R "$PROD/$FW" "$XC/Frameworks/"
-install_name_tool -id "$RPATH" "$XC/Frameworks/$FW/OpenIntelligenceEngine" 2>/dev/null
-install_name_tool -change "$ABS" "$RPATH" "$XC/OpenIntelligenceTests" 2>/dev/null
+install_name_tool -id "$RPATH" "$XC/Frameworks/$FW/FirikiEngine" 2>/dev/null
+install_name_tool -change "$ABS" "$RPATH" "$XC/FirikiTests" 2>/dev/null
 
 echo "==> re-signing, innermost first, entitlements preserved"
 codesign -f -s "$SIGN_ID" "$XC/Frameworks/$FW" >/dev/null 2>&1
@@ -81,6 +81,6 @@ codesign -f -s "$SIGN_ID" --entitlements /private/tmp/oi-app-ent.plist "$APP" >/
 codesign -v "$APP" || { echo "error: signature invalid after patching" >&2; exit 1; }
 
 echo "==> running on device"
-ARGS=(-scheme OpenIntelligence -destination "platform=iOS,id=$UDID" -derivedDataPath "$DD")
+ARGS=(-scheme Firiki -destination "platform=iOS,id=$UDID" -derivedDataPath "$DD")
 [ -n "$ONLY" ] && ARGS+=(-only-testing:"$ONLY")
 DEVELOPER_DIR=$DEV xcodebuild test-without-building "${ARGS[@]}"

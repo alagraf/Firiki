@@ -1,13 +1,13 @@
 {
  "schema": "codemap-config/1",
- "project": "OpenIntelligence",
+ "project": "Firiki",
  "script": ".claude/codemap/codemap.py",
  "source_roots": [
-  "OpenIntelligence",
-  "OpenIntelligenceLiveActivities"
+  "Firiki",
+  "FirikiLiveActivities"
  ],
  "test_roots": [
-  "OpenIntelligenceTests"
+  "FirikiTests"
  ],
  "source_extensions": [
   ".swift"
@@ -25,13 +25,10 @@
   ".DS_Store",
   "*.xcuserstate"
  ],
- "xcodeproj": "OpenIntelligence.xcodeproj",
+ "xcodeproj": "Firiki.xcodeproj",
  "features": [
   "app-lifecycle",
   "onboarding-checklist",
-  "what-s-new-and-version-history",
-  "billing-and-quotas",
-  "app-store-rating-prompt",
   "camera-document-capture",
   "document-ingestion-pipeline",
   "semantic-chunking",
@@ -72,19 +69,19 @@
   "glossary",
   "design-system-and-markdown",
   "system-ui-integrations",
-  "openintelligence-engine-sdk"
+  "firiki-engine-sdk"
  ],
  "unmapped_notes": {
-  "OpenIntelligence/OpenIntelligence.entitlements": "The app's code-signing entitlements, shared by every feature. Tier 1 in Docs/RepoOS/03_FORBIDDEN_EDIT_BOUNDARIES.md: the PCC entitlement is deliberately absent pending developer-account approval.",
-  "OpenIntelligence/Resources/Assets/Assets.xcassets": "App icon, colors and images for the whole app; task router route 14 governs changes to it."
+  "Firiki/Firiki.entitlements": "The app's code-signing entitlements, shared by every feature. Tier 1 in Docs/RepoOS/03_FORBIDDEN_EDIT_BOUNDARIES.md: the PCC entitlement is deliberately absent pending developer-account approval.",
+  "Firiki/Resources/Assets/Assets.xcassets": "App icon, colors and images for the whole app; task router route 14 governs changes to it."
  },
  "derive": {
   "sources": [
-   "OpenIntelligence/**/*.swift",
-   "OpenIntelligenceLiveActivities/**/*.swift"
+   "Firiki/**/*.swift",
+   "FirikiLiveActivities/**/*.swift"
   ],
   "tests": [
-   "OpenIntelligenceTests/**/*.swift"
+   "FirikiTests/**/*.swift"
   ],
   "docs": [
    "CLAUDE.md",
@@ -95,27 +92,27 @@
    "Docs/ai/DECISIONS.md"
   ],
   "ignore": [
-   "OpenIntelligence/swift-transformers/**"
+   "Firiki/swift-transformers/**"
   ],
   "plumbing": [
    "TelemetryCenter",
    "HardwareTelemetryReporter",
    "HardwareTelemetryState",
-   "OpenIntelligenceResourceBundle"
+   "FirikiResourceBundle"
   ]
  },
  "test_owners": {
   "_how": "Tests whose file name mirrors no single source file, assigned 2026-09-28 to the slice owning the app type they mention most (SpatialOffsetArithmeticTests by the function its header names). The builder claims every other test by the source path it mirrors.",
-  "OpenIntelligenceTests/Services/AIPlatform/CustomReasoningProfileTests.swift": "apple-foundation-models",
-  "OpenIntelligenceTests/Services/Document/LayoutReadingOrderTests.swift": "document-ingestion-pipeline",
-  "OpenIntelligenceTests/Services/Document/SpatialOffsetArithmeticTests.swift": "document-ingestion-pipeline",
-  "OpenIntelligenceTests/Services/Infrastructure/Configuration/LogShareBufferTests.swift": "settings-and-configuration",
-  "OpenIntelligenceTests/Services/Infrastructure/Configuration/PCCConsentPreferenceMigrationTests.swift": "settings-and-configuration",
-  "OpenIntelligenceTests/Services/RAG/Orchestration/BibliographyPenaltyTests.swift": "rag-orchestration-core",
-  "OpenIntelligenceTests/Services/RAG/Orchestration/RebuildSelectionTests.swift": "rag-orchestration-core",
-  "OpenIntelligenceTests/Services/RAG/Orchestration/ResponseMetadataGatingTests.swift": "rag-orchestration-core",
-  "OpenIntelligenceTests/Services/Storage/IngestionQueueTombstoneTests.swift": "icloud-workspace-synchronization",
-  "OpenIntelligenceTests/Services/AIPlatform/AdaptiveInferenceProfileTests.swift": "apple-foundation-models",
-  "OpenIntelligenceTests/Services/RAG/Orchestration/ResponseTailTrimmingTests.swift": "rag-orchestration-core"
+  "FirikiTests/Services/AIPlatform/CustomReasoningProfileTests.swift": "apple-foundation-models",
+  "FirikiTests/Services/Document/LayoutReadingOrderTests.swift": "document-ingestion-pipeline",
+  "FirikiTests/Services/Document/SpatialOffsetArithmeticTests.swift": "document-ingestion-pipeline",
+  "FirikiTests/Services/Infrastructure/Configuration/LogShareBufferTests.swift": "settings-and-configuration",
+  "FirikiTests/Services/Infrastructure/Configuration/PCCConsentPreferenceMigrationTests.swift": "settings-and-configuration",
+  "FirikiTests/Services/RAG/Orchestration/BibliographyPenaltyTests.swift": "rag-orchestration-core",
+  "FirikiTests/Services/RAG/Orchestration/RebuildSelectionTests.swift": "rag-orchestration-core",
+  "FirikiTests/Services/RAG/Orchestration/ResponseMetadataGatingTests.swift": "rag-orchestration-core",
+  "FirikiTests/Services/Storage/IngestionQueueTombstoneTests.swift": "icloud-workspace-synchronization",
+  "FirikiTests/Services/AIPlatform/AdaptiveInferenceProfileTests.swift": "apple-foundation-models",
+  "FirikiTests/Services/RAG/Orchestration/ResponseTailTrimmingTests.swift": "rag-orchestration-core"
  }
 }

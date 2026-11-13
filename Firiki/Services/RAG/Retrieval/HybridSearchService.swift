@@ -1,0 +1,1675 @@
+//
+//  HybridSearchService.swift
+//  Firiki
+//
+//  True parallel hybrid search: independent vector + FTS5 searches merged via RRF.
+//
+//  ## Architecture
+//
+//  Two fully independent ranked result lists run in parallel:
+//  1. Vector search (HNSW index) → ranked by cosine similarity
+//  2. FTS5 search (SQLite native bm25()) → ranked at chunk granularity
+//
+//  Reciprocal Rank Fusion merges the UNION of both sets — a chunk found
+//  only by FTS5 (keyword-only match) gets a fair RRF score from its BM25
+//  rank alone, without needing a synthetic vector similarity score.
+//
+//  ## Silicon-Native Vector Math
+//
+//  Uses Apple Accelerate framework for hardware-accelerated similarity:
+//  - vDSP.sumOfSquares: L2 norm computation (AMX/Neural Engine)
+//  - vDSP_dotpr: Dot product (Neural Engine optimized)
+//
+//  See: https://developer.apple.com/documentation/accelerate/vdsp
+//       https://developer.apple.com/documentation/accelerate/blas
+//
+
+import Foundation
+import os
+import NaturalLanguage
+import Accelerate
+
+/// Snapshot of BM25 corpus statistics for off-main scoring
+struct BM25Snapshot: Sendable {
+    let documentFrequencies: [String: Int]
+    let avgDocLength: Float
+    let totalDocuments: Int
+}
+
+
+/// BM25 (Best Matching 25) keyword scoring for hybrid search
+struct BM25Scorer {
+    private final class Storage {
+        var documentFrequencies: [String: Int] = [:]
+        var avgDocLength: Float = 0
+        var totalDocuments: Int = 0
+    }
+
+    private let k1: Float = 1.5  // Term frequency saturation parameter
+    private let b: Float = 0.5   // Length normalization: lowered from 0.75 because all chunks are ~260 words (uniform length makes length normalization less important)
+    private let storage = Storage()
+
+    /// Index documents for BM25 scoring
+    func indexDocuments(_ chunks: [DocumentChunk]) {
+        storage.totalDocuments = chunks.count
+        var docLengths: [Float] = []
+        var termDocCounts: [String: Set<UUID>] = [:]
+
+        for chunk in chunks {
+            let terms = tokenize(chunk.content)
+            docLengths.append(Float(terms.count))
+
+            // Count which documents contain each term
+            let uniqueTerms = Set(terms)
+            for term in uniqueTerms {
+                termDocCounts[term, default: []].insert(chunk.id)
+            }
+        }
+
+        // Calculate document frequencies and average length
+        storage.documentFrequencies = termDocCounts.mapValues { $0.count }
+        storage.avgDocLength = docLengths.reduce(0, +) / Float(max(storage.totalDocuments, 1))
+    }
+
+    /// Calculate BM25 score for a query against a document
+    func score(query: String, document: String) -> Float {
+        return score(queryTerms: tokenize(query), document: document)
+    }
+
+    /// Calculate BM25 score for pre-tokenized query terms against a document.
+    /// OPTIMIZED: Avoids re-tokenizing the same query for every candidate document.
+    func score(queryTerms: [String], document: String) -> Float {
+        let docTerms = tokenize(document)
+        let docLength = Float(docTerms.count)
+
+        // Count term frequencies in document
+        var termFreqs: [String: Int] = [:]
+        for term in docTerms {
+            termFreqs[term, default: 0] += 1
+        }
+
+        var score: Float = 0
+        for queryTerm in queryTerms {
+            let tf = Float(termFreqs[queryTerm] ?? 0)
+            let df = Float(storage.documentFrequencies[queryTerm] ?? 1)
+
+            // IDF (Inverse Document Frequency)
+            let idf = log((Float(storage.totalDocuments) - df + 0.5) / (df + 0.5) + 1)
+
+            // BM25 formula
+            let numerator = tf * (k1 + 1)
+            let denominator = tf + k1 * (1 - b + b * (docLength / max(storage.avgDocLength, 0.0001)))
+
+            score += idf * (numerator / denominator)
+        }
+
+        return score
+    }
+
+    func tokenize(_ text: String) -> [String] {
+        let normalized = text.lowercased()
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = normalized
+
+        return tokenizer.tokens(for: normalized.startIndex ..< normalized.endIndex).compactMap { range in
+            let token = String(normalized[range]).trimmingCharacters(in: .punctuationCharacters)
+            guard !token.isEmpty else { return nil }
+            return token
+        }
+    }
+}
+
+extension BM25Scorer {
+    /// Build a snapshot of current BM25 stats for use by RAGEngine
+    func makeSnapshot() -> BM25Snapshot {
+        return BM25Snapshot(
+            documentFrequencies: storage.documentFrequencies,
+            avgDocLength: storage.avgDocLength,
+            totalDocuments: storage.totalDocuments
+        )
+    }
+
+    /// Build a BM25 snapshot from the provided candidate chunks.
+    /// This is used when we haven't pre-indexed the entire corpus.
+    func snapshot(from candidates: [RetrievedChunk]) -> BM25Snapshot {
+        var termDocCounts: [String: Set<UUID>] = [:]
+        var totalLen: Float = 0
+        var docCount = 0
+
+        for r in candidates {
+            let terms = tokenize(r.chunk.content)
+            totalLen += Float(terms.count)
+            docCount += 1
+
+            let uniqueTerms = Set(terms)
+            for t in uniqueTerms {
+                termDocCounts[t, default: []].insert(r.chunk.id)
+            }
+        }
+
+        let df = termDocCounts.mapValues { $0.count }
+        let avgLen = docCount > 0 ? totalLen / Float(docCount) : 0
+        return BM25Snapshot(
+            documentFrequencies: df,
+            avgDocLength: avgLen,
+            totalDocuments: docCount
+        )
+    }
+}
+
+/// Hybrid search combining vector similarity and BM25 keyword matching
+class HybridSearchService {
+    private let vectorDatabase: VectorDatabase
+    private var bm25Scorer = BM25Scorer()
+    private var engine: RAGEngine { RAGEngine.shared }
+    // OPTIMIZED: Cached tokenizer for keyword extraction and BM25 scoring
+    private let cachedTokenizer = NLTokenizer(unit: .word)
+
+    // Fusion weights (can be tuned)
+    private let vectorWeight: Float
+    private let keywordWeight: Float
+
+    /// Deterministic total order: score descending, then chunk id ascending.
+    ///
+    /// `sorted(by:)` is not stable in Swift, and equal scores are routine — RRF collides by
+    /// construction, and BM25 ties constantly on a small corpus. Worse, several of these lists are
+    /// built from a `Dictionary`, whose iteration order is randomised per process. Together that
+    /// means the rank of tied chunks differs between two runs of the same binary on the same data,
+    /// which moves `recall@1` and MRR and makes any benchmark number irreproducible.
+    ///
+    /// The id tiebreak is arbitrary. The point is that it is the *same* arbitrary every run.
+    ///
+    /// That intent was right and the mechanism did not deliver it. `chunk.id` is a fresh UUID
+    /// generated at ingestion, so it is the same arbitrary only *within* one ingestion. Re-ingest
+    /// the same file and every tie resolves differently, which was measured on 2026-08-16: two
+    /// identical runs of the same build over the same documents produced 30 against 14 MMR
+    /// selections, 9457 against 9507 context characters, and 190 against 350 character answers.
+    /// Holding the ids fixed collapsed that to byte-identical output, which is what identified this
+    /// as the cause rather than the model.
+    ///
+    /// One tie at a top-N cutoff is enough to cascade: it changes which candidates survive, which
+    /// moves the keyword hit rate (measured 90% against 91% for the same term over the same corpus),
+    /// which changes the boost, which pushes scores across the 0.28 confidence floor, which dropped
+    /// 77 chunks in one run and none in the other.
+    ///
+    /// `(sourceDocument, chunkIndex)` is stable across re-ingestion, across devices, and across two
+    /// users holding the same document, which the UUID never was.
+    ///
+    /// The document's id comes last (5.7): at the stages that sort with this key a passage's name is often
+    /// empty (a vector hit) or "Unknown" (a keyword-only hit), so passages of two documents at the same place
+    /// still tied, and kept whatever order a dictionary gave them (review of 2026-10-17). The id is fixed for
+    /// as long as the document is in the library, and it only decides between passages whose name and place
+    /// are the same.
+    /// Nonisolated (5.7): `RAGEngine` sorts with it off the main actor, and as a main-actor method under the module's
+    /// default isolation every such call was a warning that is an error in the Swift 6 language mode.
+    nonisolated static func stableTieBreakKey(_ chunk: RetrievedChunk) -> String {
+        // Zero-padded so lexical comparison orders the index numerically.
+        "\(chunk.sourceDocument)#\(String(format: "%08d", chunk.chunk.metadata.chunkIndex))#\(chunk.chunk.documentId.uuidString)"
+    }
+
+    nonisolated static func byScoreThenId(_ lhs: RetrievedChunk, _ rhs: RetrievedChunk) -> Bool {
+        lhs.similarityScore != rhs.similarityScore
+            ? lhs.similarityScore > rhs.similarityScore
+            : stableTieBreakKey(lhs) < stableTieBreakKey(rhs)
+    }
+
+    init(vectorDatabase: VectorDatabase, vectorWeight: Float = 0.7, keywordWeight: Float = 0.3) {
+        self.vectorDatabase = vectorDatabase
+        self.vectorWeight = vectorWeight
+        self.keywordWeight = keywordWeight
+    }
+
+    /// Index documents for hybrid search
+    func indexChunks(_ chunks: [DocumentChunk]) async throws {
+        // Index for BM25
+        bm25Scorer.indexDocuments(chunks)
+
+        // Store in vector database
+        for chunk in chunks {
+            try await vectorDatabase.store(chunk: chunk)
+        }
+
+        Log.debug("Indexed \(chunks.count) chunks for hybrid retrieval", category: .pipeline)
+    }
+
+    /// Perform hybrid search with reciprocal rank fusion
+    /// - Parameters:
+    ///   - query: The search query string (may include expansions for BM25)
+    ///   - originalQuery: The user's original query (used for keyword boost & FTS5). Falls back to `query` if nil.
+    ///   - embedding: Query embedding vector
+    ///   - topK: Number of top results to return
+    ///   - cachedChunks: Optional pre-fetched chunks to avoid re-loading allChunks() for lexical recall
+    ///   - containerId: Optional container ID to enable FTS5-accelerated BM25 scoring
+    /// - Parameter trace: optional per-query stage recorder used by the retrieval benchmark. Nil in
+    ///   production, where the only cost is one nil check per stage. See `RetrievalTraceCollector`
+    ///   for why this is a parameter rather than a wider return type or a shared sink.
+    func search(query: String, originalQuery: String? = nil, embedding: [Float], topK: Int, cachedChunks: [DocumentChunk]? = nil, containerId: UUID? = nil, isOverviewQuery: Bool = false, trace: RetrievalTraceCollector? = nil) async throws -> [RetrievedChunk] {
+        let boostQuery = originalQuery ?? query
+        // A question limited to named documents is searched inside them and nowhere else. Every
+        // other path below starts from the whole library (the vector index and FTS5 both ignore
+        // `cachedChunks`), so filtering their result afterwards can leave nothing when a small
+        // document shares a library with a large one.
+        if let scope = RAGQueryScope.documentIds, !scope.isEmpty {
+            return try await searchInsideScope(
+                scope, query: query, boostQuery: boostQuery, embedding: embedding, topK: topK,
+                cachedChunks: cachedChunks, containerId: containerId)
+        }
+        // Auto-select FTS5 path if containerId provided and FTS5 data available
+        if let cid = containerId, await isFTS5Available(containerId: cid) {
+            Log.debug("[Hybrid] Using FTS5-accelerated BM25 for container \(cid)", category: .pipeline)
+            return try await searchWithFTS5(query: query, originalQuery: boostQuery, embedding: embedding, topK: topK, containerId: cid, cachedChunks: cachedChunks, isOverviewQuery: isOverviewQuery, trace: trace)
+        }
+
+        Log.debug("Hybrid search starting (vector: \(vectorWeight), keyword: \(keywordWeight))", category: .pipeline)
+
+        // 1. Vector search - retrieve more candidates for better coverage
+        // ENHANCEMENT: Scale vector candidates with topK for large corpus support
+        let vectorCandidateMultiplier = topK > 50 ? 2 : 3  // Less aggressive multiplier for large topK
+        let vectorResults = try await vectorDatabase.search(embedding: embedding, topK: topK * vectorCandidateMultiplier)
+
+        let vectorResultsFiltered = isOverviewQuery ? RAPTORSummaryRouter.filterSummaryRetrievedChunks(vectorResults) : vectorResults
+        var candidatePool = vectorResultsFiltered
+
+        if shouldRunLexicalRecall(query: query, vectorCount: vectorResultsFiltered.count, topK: topK) {
+            // UNIVERSAL: Always runs, but candidate pool scales with vector confidence.
+            // Healthy vector = smaller pool (fast). Weak vector = full pool (thorough).
+            let maxRecall = lexicalRecallLimit(query: query, vectorCount: vectorResultsFiltered.count, topK: topK)
+            let lexicalCandidates = try await lexicalRecallCandidates(
+                query: query,
+                embedding: embedding,
+                maxCandidates: maxRecall,
+                cachedChunks: cachedChunks,
+                isOverviewQuery: isOverviewQuery
+            )
+            if !lexicalCandidates.isEmpty {
+                let existing = Set(candidatePool.map { $0.chunk.id })
+                let unique = lexicalCandidates.filter { !existing.contains($0.chunk.id) }
+                if !unique.isEmpty {
+                    candidatePool.append(contentsOf: unique)
+                    Log.debug(
+                        "Lexical recall added \(unique.count) candidates (max: \(maxRecall))",
+                        category: .pipeline
+                    )
+                }
+            }
+        }
+
+        let vectorRanked = reindex(
+            candidatePool.sorted(by: Self.byScoreThenId)
+        )
+
+        // 2. BM25 keyword search (off-main via RAGEngine)
+        // Build a snapshot from current candidates to ensure valid DF/length stats
+        let snapshot = bm25Scorer.snapshot(from: vectorRanked)
+        let keywordResults = await engine.bm25Scores(
+            query: query,
+            candidates: vectorRanked,
+            snapshot: snapshot
+        )
+
+        // 3. Reciprocal Rank Fusion (RRF) off-main
+        let fusedResults = await engine.reciprocalRankFusion(
+            vectorResults: vectorRanked,
+            keywordResults: keywordResults,
+            k: 60,  // RRF constant (standard value)
+            vectorWeight: vectorWeight,
+            keywordWeight: keywordWeight
+        )
+
+        // 4. Apply EXACT KEYWORD MATCH BOOST
+        // OPTIMIZED: Use original query for keyword boost, not expanded query.
+        // Expanded query contains corpus terms ("vehicle", "indicator") that match
+        // 284/300 chunks, making the boost meaningless.
+        let boostedResults = applyKeywordMatchBoost(query: boostQuery, results: fusedResults)
+
+        // 5. Apply STRUCTURE-AWARE BOOST for spec queries (iOS 26+ structured parsing)
+        let structureBoostedResults = applyStructureTypeBoost(query: boostQuery, results: boostedResults)
+
+        // 6. Take top K from boosted results, guaranteeing the lexical arm's best hits survive
+        // the cut. See `guaranteeingLexicalSurvivors` for the measured cases behind this.
+        let lexicalBestFirst = keywordResults
+            .filter { $0.score > 0 }
+            .sorted {
+                $0.score != $1.score
+                    ? $0.score > $1.score
+                    : Self.stableTieBreakKey($0.chunk) < Self.stableTieBreakKey($1.chunk)
+            }
+            .map(\.chunk)
+        let topResults = guaranteeingLexicalSurvivors(
+            top: Array(structureBoostedResults.prefix(topK)),
+            lexicalBestFirst: lexicalBestFirst,
+            topK: topK
+        )
+
+        // Stage capture for the retrieval benchmark. Recorded here rather than at each stage
+        // because every stage's output is still in scope, which keeps the instrumentation to one
+        // place instead of six scattered call sites. Order of `record` calls is irrelevant;
+        // `RetrievalTraceCollector.stages(inOrder:)` sorts into pipeline order on read.
+        //
+        // This service does not record `.rerank` or `.final`, because it does neither: reranking
+        // runs afterwards in `RAGService`, and what this returns is the reranker's input. Recording
+        // its own output as `.final` would report a number for a stage the pipeline has not
+        // reached, and would collide with the real one.
+        if let trace {
+            trace.record(.vector, results: vectorResultsFiltered)
+            trace.record(.lexical, results: keywordResults.map(\.chunk))
+            trace.record(.fusion, results: fusedResults)
+            trace.record(.boosted, results: structureBoostedResults)
+        }
+
+        Log.debug(
+            "Hybrid fusion: \(topResults.count) results from \(vectorResults.count) vector + \(keywordResults.count) BM25",
+            category: .pipeline
+        )
+
+        let finalResults = sanitizeRetrievedChunks(reindex(topResults))
+        trace?.record(.candidates, results: finalResults)
+        return finalResults
+    }
+
+    /// Union the top-K cut with the lexical arm's best hits, so they cannot die before the
+    /// reranker sees them.
+    ///
+    /// The top-K cut is taken in boosted-list order, and RRF merges the lexical arm's handful of
+    /// precise hits into a dense list that spans essentially the whole corpus — the dense arm has
+    /// no similarity floor, so with k=60 a lexical rank-1 chunk contributes once against a dense
+    /// contribution paid to every chunk in the store. A gold chunk can therefore leave fusion
+    /// below the cut line while sitting at rank 1 of the lexical list.
+    ///
+    /// Measured 2026-08-20 on QASPER, per-case: `qasper_1911.10742_f7662b11` had gold at lexical
+    /// rank 1 of 3, absent from fusion's top 10, cut from the reranker's pool, and rescued only by
+    /// the post-rerank cascade. `qasper_1604.02038_bc8526d4` flipped pass→miss between two runs
+    /// solely because upstream reordering changed which gold chunks survived this cut — the
+    /// cross-encoder ranked gold #1 when handed one 90-chunk pool and #7 when handed the other.
+    ///
+    /// The cap exists only for pathological broad-match queries; observed lexical lists are 3–9
+    /// items, so normally every hit survives. Appended at the tail: position within the pool does
+    /// not matter, because the cross-encoder scores the whole pool and is the one stage measured
+    /// to add ranking quality (+30 MRR points, `BenchmarkRuns/LEDGER.md`).
+    private func guaranteeingLexicalSurvivors(
+        top: [RetrievedChunk],
+        lexicalBestFirst: [RetrievedChunk],
+        topK: Int
+    ) -> [RetrievedChunk] {
+        let cap = max(4, topK / 6)
+        let topIds = Set(top.map { $0.chunk.id })
+        let survivors = lexicalBestFirst.filter { !topIds.contains($0.chunk.id) }.prefix(cap)
+        guard !survivors.isEmpty else { return top }
+        Log.info(
+            "[Hybrid] Lexical survival: \(survivors.count) hit(s) re-attached below the top-\(topK) cut",
+            category: .pipeline
+        )
+        return top + Array(survivors)
+    }
+
+    /// Boost chunks that contain EXACT matches of important query keywords.
+    /// OPTIMIZED: Uses additive score adjustment instead of full re-sort.
+    /// Previous full re-sort completely overrode RRF fusion — now keyword matches
+    /// add 0.05 per match (0.10 for boundary matches), capped at 0.20.
+    /// Strong enough to meaningfully elevate keyword-matching chunks while preserving RRF ordering.
+    ///
+    /// 10x: Uses DYNAMIC hit-rate filtering instead of hardcoded stopwords.
+    /// Any keyword that matches >30% of candidate chunks has zero discriminative value
+    /// (it's a corpus-common word for THIS document, regardless of domain) and gets
+    /// zero boost. Works for any domain, any document, forever — no hardcoded lists.
+    func applyKeywordMatchBoost(query: String, results: [RetrievedChunk]) -> [RetrievedChunk] {
+        let queryKeywords = extractImportantKeywords(from: query)
+        guard !queryKeywords.isEmpty, !results.isEmpty else { return results }
+
+        // PROPORTIONAL HIT-RATE SCALING: For each keyword, measure how many chunks contain it.
+        // Instead of binary disable at 30%, scale the boost proportionally:
+        // 0% hit rate → full boost, 50%+ → zero boost (linear decay).
+        // This preserves SOME boost for domain-critical terms like "insulin" in a diabetes
+        // manual (might hit 40% of chunks but still deserves partial boost) while eliminating
+        // boost for truly universal terms (60%+ hit rate = corpus noise).
+        let decayCeiling = 0.50  // hit rate at which boost reaches zero
+        let totalChunks = Double(results.count)
+        var discriminativeKeywords: [(keyword: String, scaleFactor: Double)] = []
+
+        for keyword in queryKeywords {
+            let hitCount = results.filter { $0.chunk.content.lowercased().contains(keyword) }.count
+            let hitRate = Double(hitCount) / totalChunks
+            let scaleFactor = max(0.0, 1.0 - (hitRate / decayCeiling))
+            if scaleFactor > 0.0 {
+                discriminativeKeywords.append((keyword: keyword, scaleFactor: scaleFactor))
+            } else {
+                Log.debug("[Hybrid] Keyword '\(keyword)' hit \(Int(hitRate * 100))% of chunks — zero boost (≥\(Int(decayCeiling * 100))%)", category: .retrieval)
+            }
+        }
+
+        guard !discriminativeKeywords.isEmpty else {
+            Log.debug("[Hybrid] All keywords above \(Int(decayCeiling * 100))% hit rate, skipping boost", category: .retrieval)
+            return results
+        }
+
+        var boostedResults: [RetrievedChunk] = []
+        var boostedCount = 0
+
+        for result in results {
+            let contentLower = result.chunk.content.lowercased()
+            var weightedMatchScore = 0.0
+
+            for (keyword, scaleFactor) in discriminativeKeywords {
+                if contentLower.contains(keyword) {
+                    weightedMatchScore += 1.0 * scaleFactor
+                    // Extra for exact word boundary matches
+                    if contentLower.contains(" \(keyword) ") ||
+                       contentLower.contains(" \(keyword).") ||
+                       contentLower.contains(" \(keyword),") ||
+                       contentLower.hasPrefix("\(keyword) ") ||
+                       contentLower.hasSuffix(" \(keyword)") {
+                        weightedMatchScore += 1.0 * scaleFactor
+                    }
+                }
+            }
+
+            if weightedMatchScore > 0 {
+                let boost = min(0.20, weightedMatchScore * 0.05)
+                let boosted = RetrievedChunk(
+                    chunk: result.chunk,
+                    similarityScore: result.similarityScore + Float(boost),
+                    rank: result.rank,
+                    sourceDocument: result.sourceDocument,
+                    pageNumber: result.pageNumber
+                )
+                boostedResults.append(boosted)
+                boostedCount += 1
+            } else {
+                boostedResults.append(result)
+            }
+        }
+
+        // Ties keep one order from run to run (5.7): see `byScoreThenId`.
+        boostedResults.sort(by: Self.byScoreThenId)
+
+        if boostedCount > 0 {
+            let keywordNames = discriminativeKeywords.map { "\($0.keyword)(\(Int($0.scaleFactor * 100))%)" }
+            Log.debug("[Hybrid] Keyword boost: \(boostedCount)/\(results.count) chunks boosted for \(keywordNames) (filtered \(queryKeywords.count - discriminativeKeywords.count) at ≥\(Int(decayCeiling * 100))% hit rate)", category: .retrieval)
+        }
+
+        return boostedResults
+    }
+
+    /// Boost table/list chunks when query seeks specific data (domain-agnostic).
+    /// OPTIMIZED: Additive score adjustment instead of full re-sort (same fix as keyword boost).
+    private func applyStructureTypeBoost(query: String, results: [RetrievedChunk]) -> [RetrievedChunk] {
+        let queryLower = query.lowercased()
+
+        let isSpecQuery = detectSpecificationQuery(queryLower)
+        guard isSpecQuery else { return results }
+
+        var boostedResults: [RetrievedChunk] = []
+        var boostedCount = 0
+
+        for result in results {
+            var boostPoints = 0
+
+            // Check if chunk has structureType metadata (from iOS 26+ structured parsing)
+            if let structureType = result.chunk.metadata.structureType {
+                switch structureType {
+                case "table":
+                    boostPoints += 5
+                case "list":
+                    boostPoints += 2
+                default:
+                    break
+                }
+            }
+
+            // Also check if content looks like a table (fallback for legacy chunks)
+            let content = result.chunk.content
+            if content.contains("|") && content.components(separatedBy: "|").count >= 4 {
+                boostPoints += 3
+            }
+
+            if result.chunk.metadata.hasNumericData {
+                boostPoints += 1
+            }
+
+            // Check for specification patterns in content (universal, not domain-specific)
+            // CRITICAL: Patterns must use \b word boundaries to prevent false matches.
+            // Previously `\d+\s*m` matched "7 m" in "page 7-7 mentions" → 300/300 chunks boosted = useless.
+            let specPatterns: [(pattern: String, weight: Int)] = [
+                (#"\d+(?:\.\d+)?\s*(?:L|qt|gal|ml|mL|mg|g|kg|lb|oz)\b"#, 2),
+                (#"\d+(?:\.\d+)?\s*(?:psi|kPa|bar|Pa|atm|mmHg)\b"#, 2),
+                (#"\d+(?:\.\d+)?\s*(?:mm|cm|km|in|ft|yd)\b"#, 2),  // No bare 'm' — matches everything
+                (#"\d+(?:\.\d+)?\s*(?:V|A|W|kW|mA|Ah|kWh|Hz|MHz|GHz)\b"#, 2),
+                // Standards references. `(?-i:…)` locally cancels the `.caseInsensitive`
+                // this loop compiles with, because the option was defeating the pattern:
+                // it made `[A-Z0-9-]` match lowercase, and with no boundary the bare
+                // alternatives matched inside ordinary words. `UL` scored inside
+                // "Stim**ul**ation" and `EN` inside "**en**dogenous", so a neuroscience
+                // sentence earned +3 specification points for containing normal English.
+                // Real standards are written uppercase, so requiring that costs nothing
+                // and the `\b` anchors stop mid-word matches outright.
+                (#"\b(?-i:(?:ISO|IEEE|ANSI|ASTM|IEC|DIN|EN|UL|NFPA))[-\s]?(?-i:[A-Z0-9][A-Z0-9-]*)\b"#, 3),
+            ]
+
+            for (pattern, weight) in specPatterns {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                   regex.firstMatch(in: content, options: [], range: NSRange(content.startIndex..., in: content)) != nil {
+                    boostPoints += weight
+                }
+            }
+
+            if boostPoints >= 5 {
+                // Additive boost: 0.04 per point, capped at 0.30
+                // CRITICAL: Require minimum 5 boost points before applying any boost.
+                // ≥3 was still too permissive: hasNumericData(1) + any measurement like
+                // "12V" or "25 mm"(2) = 3 → 295/300 chunks boosted = near-universal = useless.
+                // ≥5 requires: structureType=table(5), or list(2)+specPattern(2)+numeric(1),
+                // or pipe-table(3)+specPattern(2). Much more selective.
+                // Cap of 0.30 helps bridge the reranker's prose bias (~0.78 prose vs ~0.30 table).
+                let boost = min(0.30, Double(boostPoints) * 0.04)
+                let boosted = RetrievedChunk(
+                    chunk: result.chunk,
+                    similarityScore: result.similarityScore + Float(boost),
+                    rank: result.rank,
+                    sourceDocument: result.sourceDocument,
+                    pageNumber: result.pageNumber
+                )
+                boostedResults.append(boosted)
+                boostedCount += 1
+            } else {
+                boostedResults.append(result)
+            }
+        }
+
+        // Ties keep one order from run to run (5.7): see `byScoreThenId`.
+        boostedResults.sort(by: Self.byScoreThenId)
+
+        if boostedCount > 0 {
+            Log.debug("[Hybrid] Structure boost: \(boostedCount) table/list chunks boosted for spec query", category: .retrieval)
+        }
+
+        return boostedResults
+    }
+
+    /// Detect if query is seeking specific data/specifications (domain-agnostic)
+    /// Uses linguistic patterns that work across ANY domain
+    /// Splits a query into lowercased alphanumeric tokens.
+    nonisolated static func specificationQueryTokens(_ query: String) -> [String] {
+        query.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+    }
+
+    /// Whether `query` contains `term` as a whole word or whole phrase.
+    ///
+    /// This replaces `query.contains(term)`, which was doing raw substring matching
+    /// against two lists that include very short entries. Both misfired constantly on
+    /// ordinary prose:
+    ///
+    /// - `specPatterns` contains bare `"min"`, so **every** query about **dopa*min*e**
+    ///   was classified as a specification lookup. Observed on device 2026-08-24 for
+    ///   *"What role does dopamine deficiency play in depression?"*, which then boosted
+    ///   12 table/list chunks "for spec query" and tried to resolve 9 competing spec
+    ///   values. In a journal article the table/list chunks are the reference list, so
+    ///   the answer was cited to a bibliography.
+    /// - `measurementUnits` contains `"ft"`, `"oz"` and `"amp"`, which match inside
+    ///   "o**ft**en", "a**ft**er", "d**oz**en", "ex**amp**le" and "s**amp**le".
+    ///
+    /// Multi-word entries like `"type of"` are matched as phrases against the token
+    /// stream, so "what type of oil" still resolves while "prototype offset" does not.
+    nonisolated static func containsTerm(_ query: String, _ term: String) -> Bool {
+        let tokens = specificationQueryTokens(query)
+        guard !tokens.isEmpty else { return false }
+
+        if term.contains(" ") {
+            let phrase = specificationQueryTokens(term).joined(separator: " ")
+            guard !phrase.isEmpty else { return false }
+            return " \(tokens.joined(separator: " ")) ".contains(" \(phrase) ")
+        }
+
+        return tokens.contains(term.lowercased())
+    }
+
+    private func detectSpecificationQuery(_ query: String) -> Bool {
+        // Pattern 1: "What is the X" / "What are the X" - seeking specific values
+        if query.hasPrefix("what is") || query.hasPrefix("what are") ||
+           query.hasPrefix("what's") {
+            return true
+        }
+
+        // Pattern 2: "How much" / "How many" - quantity queries
+        if query.hasPrefix("how much") || query.hasPrefix("how many") {
+            return true
+        }
+
+        // Pattern 3: Contains numbers or measurement units (seeking numeric specs)
+        let hasNumbers = query.rangeOfCharacter(from: .decimalDigits) != nil
+        let measurementUnits = ["mg", "kg", "ml", "liter", "gallon", "quart", "psi", "kpa",
+                                "volt", "amp", "watt", "hz", "mm", "cm", "inch", "ft", "lb", "oz"]
+        let hasMeasurement = measurementUnits.contains { Self.containsTerm(query, $0) }
+        if hasNumbers || hasMeasurement {
+            return true
+        }
+
+        // Pattern 4: Spec-seeking keywords (domain-agnostic)
+        let specPatterns = [
+            "specification", "specs", "spec",
+            "requirement", "requirements",
+            "capacity", "rating", "rated",
+            "recommended", "required",
+            "maximum", "minimum", "max", "min",
+            "type of", "kind of", "grade of",
+            "dosage", "dose",  // Medical
+            "limit", "threshold",  // Legal/technical
+            "tolerance", "range"  // Engineering
+        ]
+        if specPatterns.contains(where: { Self.containsTerm(query, $0) }) {
+            return true
+        }
+
+        // Pattern 5: Alphanumeric codes (e.g., "ISO 9001", "API-1234")
+        let alphanumericPattern = #"[A-Z]{2,}\s*[-]?\d+"#
+        if let regex = try? NSRegularExpression(pattern: alphanumericPattern, options: .caseInsensitive),
+           regex.firstMatch(in: query, options: [], range: NSRange(query.startIndex..., in: query)) != nil {
+            return true
+        }
+
+        return false
+    }
+
+    /// Extract important keywords from query (nouns, verbs - skip stopwords).
+    /// OPTIMIZED: Returns deduplicated set to prevent inflated boost scores.
+    /// Previously returned duplicates from expanded queries (e.g., "oil" appearing 9x
+    /// in 9 query variations), causing 282/300 chunks to be "boosted" = meaningless.
+    private func extractImportantKeywords(from query: String) -> [String] {
+        let stopwords: Set<String> = [
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could", "should",
+            "may", "might", "must", "shall", "can", "need", "dare", "ought", "used",
+            "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into",
+            "through", "during", "before", "after", "above", "below", "between",
+            "this", "that", "these", "those", "what", "which", "who", "whom", "whose",
+            "where", "when", "why", "how", "all", "each", "every", "both", "few",
+            "more", "most", "other", "some", "such", "no", "nor", "not", "only",
+            "own", "same", "so", "than", "too", "very", "just", "also", "now",
+            "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your",
+            "he", "him", "his", "she", "her", "it", "its", "they", "them", "their",
+                // OPTIMIZED: Query-framing words that add no discriminative value.
+                // "type"/"take"/"kind"/"sort" are question words, not content words.
+                // Only filter true question-framing verbs and vague nouns here —
+                // domain-specific filtering is handled dynamically by hit-rate analysis
+                // in applyKeywordMatchBoost() (any keyword matching >30% of chunks = 0 boost).
+                "type", "kind", "sort", "take", "use", "get", "find",
+            "tell", "know", "look", "want", "like", "make", "put", "give", "help",
+            "work", "come", "thing", "about", "much", "many", "way", "long"
+        ]
+
+        let tokens = tokenize(query)
+        var seen = Set<String>()
+        let important = tokens.filter { token in
+            token.count >= 3 && !stopwords.contains(token) && seen.insert(token).inserted
+        }
+
+        return important
+    }
+
+    /// Determines whether lexical recall should run and how many candidates to fetch.
+    /// UNIVERSAL FIX: Always runs lexical recall — keyword-only needles must never be invisible.
+    /// When vector search is healthy, uses a smaller candidate pool (topK*2) to keep latency low.
+    /// When vector search is weak (< topK results) or query has exact-match cues, uses the full pool.
+    private func shouldRunLexicalRecall(query: String, vectorCount: Int, topK: Int) -> Bool {
+        // Always run — the only question is how many candidates (handled by caller's maxRecall)
+        return true
+    }
+
+    /// Returns the lexical recall candidate limit, scaled by retrieval confidence.
+    /// Healthy vector search → smaller pool (fast). Weak vector → full pool (thorough).
+    private func lexicalRecallLimit(query: String, vectorCount: Int, topK: Int) -> Int {
+        let normalized = query.lowercased()
+        let hasDigits = normalized.rangeOfCharacter(from: .decimalDigits) != nil
+        let hasExactCue =
+            normalized.contains("section")
+            || normalized.contains("article")
+            || normalized.contains("clause")
+            || normalized.contains("exhibit")
+            || normalized.contains("statute")
+
+        if vectorCount < topK || hasDigits || hasExactCue {
+            // Weak vector or exact-match query: full lexical recall
+            return min(500, max(topK * 5, 100))
+        } else {
+            // Healthy vector: smaller lexical recall to catch keyword-only needles without latency hit
+            return min(200, max(topK * 2, 50))
+        }
+    }
+
+    private func lexicalRecallCandidates(
+        query: String,
+        embedding: [Float],
+        maxCandidates: Int,
+        cachedChunks: [DocumentChunk]? = nil,
+        isOverviewQuery: Bool = false
+    ) async throws -> [RetrievedChunk] {
+        let queryTerms = tokenize(query).filter { $0.count > 2 }
+        guard !queryTerms.isEmpty, maxCandidates > 0 else { return [] }
+
+        let queryLower = query.lowercased()
+        let digitTerms = queryLower.split(whereSeparator: { !$0.isNumber }).map(String.init)
+        let requiresDigits = !digitTerms.isEmpty
+        let queryNorm = computeNorm(embedding)
+
+        // Use cached chunks if provided, otherwise fetch (avoids repeated allChunks calls)
+        let allChunks: [DocumentChunk]
+        if let cached = cachedChunks {
+            allChunks = isOverviewQuery ? RAPTORSummaryRouter.filterSummaryChunks(cached) : cached
+            Log.debug("Lexical recall using cached chunks (\(cached.count))", category: .pipeline)
+        } else {
+            let fetched = try await vectorDatabase.readableChunks()
+            allChunks = isOverviewQuery ? RAPTORSummaryRouter.filterSummaryChunks(fetched) : fetched
+        }
+        guard !allChunks.isEmpty else { return [] }
+
+        var matched: [DocumentChunk] = []
+        matched.reserveCapacity(min(maxCandidates, allChunks.count))
+
+        for chunk in allChunks {
+            if matched.count >= maxCandidates { break }
+
+            let contentLower = chunk.content.lowercased()
+            if requiresDigits {
+                let hasDigitMatch = digitTerms.contains(where: { contentLower.contains($0) })
+                if !hasDigitMatch { continue }
+            }
+            guard queryTerms.contains(where: { contentLower.contains($0) }) else { continue }
+            matched.append(chunk)
+        }
+        guard !matched.isEmpty else { return [] }
+
+        // The store hands passages back without their vectors, so through 5.6 the length check that
+        // stood here skipped every passage and this path kept none (5.7). A passage's similarity now
+        // comes from the store by id; one the store has no comparable vector for still counts as a
+        // keyword match, with a similarity of 0.
+        let stored = await vectorDatabase.similarities(to: embedding, forChunkIDs: matched.map(\.id))
+        let results = zip(matched, stored).map { chunk, storedSimilarity in
+            RetrievedChunk(
+                chunk: chunk,
+                similarityScore: chunk.embedding.count == embedding.count
+                    ? cosineSimilarity(embedding, chunk.embedding, queryNorm: queryNorm)
+                    : (storedSimilarity ?? 0),
+                rank: 0
+            )
+        }
+
+        let ranked = results.sorted(by: Self.byScoreThenId)
+        return reindex(ranked)
+    }
+
+    private func tokenize(_ text: String) -> [String] {
+        let normalized = text.lowercased()
+        cachedTokenizer.string = normalized
+
+        return cachedTokenizer.tokens(for: normalized.startIndex ..< normalized.endIndex).compactMap {
+            var token = String(normalized[$0]).trimmingCharacters(in: .punctuationCharacters)
+            if token.isEmpty { return nil }
+            // Handle contractions: "what's" → "what", "don't" → "don", "it's" → "it"
+            // Both straight (') and curly (\u{2019}) apostrophes.
+            // Without this, "what's" bypasses the "what" stopword and gets used as a keyword.
+            for apostrophe in ["'", "\u{2019}"] {
+                if let range = token.range(of: apostrophe) {
+                    token = String(token[token.startIndex..<range.lowerBound])
+                    break
+                }
+            }
+            return token.isEmpty ? nil : token
+        }
+    }
+
+    private func computeNorm(_ vector: [Float]) -> Float {
+        // Modern Accelerate API: vDSP.sumOfSquares + sqrt (replaces deprecated cblas_snrm2)
+        sqrt(vDSP.sumOfSquares(vector))
+    }
+
+    /// The most passages of the named documents the scoped search reads the text of when no
+    /// passages are handed in. Up to this many, every passage is read and scored. Past it, every
+    /// vector is still scored (where the store keeps it, with no text read), and text is read
+    /// for the closest passages and for the keyword index's hits inside the scope only.
+    static let scopedExactLimit = 6_000
+
+    /// For a scope past `scopedExactLimit`: how many of the closest passages by vector are read.
+    static let scopedVectorCandidates = 2_000
+
+    /// And how many keyword hits are asked of the index before they are narrowed to the scope.
+    static let scopedKeywordCandidates = 400
+
+    /// Scores the passages of the named documents against the question and returns the best:
+    /// cosine similarity with the question's embedding, weighted with the share of the question's
+    /// words the passage holds, by the same two weights the library-wide search uses.
+    ///
+    /// The vector store hands passages back without their vectors, which stay in its own file,
+    /// so it is asked how close each passage is. (Until 5.7's review the question was compared
+    /// with the empty vector on the passage, every similarity was 0, and a scoped question was
+    /// ranked by its words alone.)
+    ///
+    /// A document is usually a few hundred to a few thousand passages and every one is scored
+    /// both ways. A scope past `scopedExactLimit` (one document of 144,247 passages exists) is
+    /// scored by vector in full and by words only for its candidates, which are the closest
+    /// `scopedVectorCandidates` passages and the keyword index's hits inside the scope. That
+    /// holds whether the passages were handed in or are read here, so the same question gets
+    /// the same candidates either way. A passage that is far from the question and that the
+    /// keyword index does not rank among its best hits is the kind that path can miss.
+    private func searchInsideScope(
+        _ scope: Set<UUID>,
+        query: String,
+        boostQuery: String,
+        embedding: [Float],
+        topK: Int,
+        cachedChunks: [DocumentChunk]?,
+        containerId: UUID?
+    ) async throws -> [RetrievedChunk] {
+        guard topK > 0 else { return [] }
+        let queryNorm = computeNorm(embedding)
+        // A question with no vector (its embedding failed) has nothing to compare a passage's
+        // vector with. Passages come back from the vector store with an empty vector too, and
+        // two empty vectors are not a match.
+        let questionHasVector = !embedding.isEmpty && queryNorm > 0
+
+        // The scope, in store order: the passages themselves when they were handed in, and
+        // otherwise their records, from which the ones to read are picked and then asked for
+        // by id, so a passage added or removed in between cannot shift which ones come back.
+        let handedIn = cachedChunks.map { $0.filter { scope.contains($0.documentId) } }
+        var records: [PassageRecord] = []
+        if handedIn == nil {
+            records = try await vectorDatabase.passageRecords().filter { scope.contains($0.documentId) }
+        }
+        let ids = handedIn?.map(\.id) ?? records.map(\.id)
+        guard !ids.isEmpty else {
+            Log.info("[Hybrid] Document scope: no passages stored for the \(scope.count) named document(s)", category: .pipeline)
+            return []
+        }
+
+        // What the store says about each passage's vector, where it has been asked.
+        var storeSimilarity: [UUID: Float] = [:]
+        var candidates: [DocumentChunk]
+        if ids.count <= Self.scopedExactLimit {
+            if let handedIn {
+                candidates = handedIn
+            } else {
+                candidates = try await vectorDatabase.chunks(withIDs: ids)
+            }
+        } else {
+            // Every vector is scored. A passage handed in with its own vector is scored from
+            // that, and the rest where the store keeps them.
+            var similarities = await vectorDatabase.similarities(to: embedding, forChunkIDs: ids)
+            if similarities.count != ids.count { similarities = ids.map { _ in nil } }
+            if let handedIn, questionHasVector {
+                for (position, chunk) in handedIn.enumerated()
+                where similarities[position] == nil && chunk.embedding.count == embedding.count {
+                    similarities[position] = cosineSimilarity(embedding, chunk.embedding, queryNorm: queryNorm)
+                }
+            }
+            let closest = await Self.closestPositionsOffMainActor(similarities, limit: Self.scopedVectorCandidates)
+            if closest.isEmpty {
+                // No vector could be scored for any passage of the scope (a store that neither
+                // keeps vectors on its passages nor answers for them by id). There is nothing to
+                // pick candidates by, so every passage is read and scored by its words, as a
+                // smaller scope's are.
+                Log.warning(
+                    "[Hybrid] Document scope: no vector could be scored for any of \(ids.count) passages; reading all of them",
+                    category: .pipeline)
+            }
+            var wanted = Set(closest.isEmpty ? ids : closest.map { ids[$0] })
+            for position in closest { storeSimilarity[ids[position]] = similarities[position] ?? 0 }
+
+            // The keyword index's best hits, narrowed to the scope.
+            var keywordHits = 0
+            if let containerId, await isFTS5Available(containerId: containerId) {
+                let hits = await SQLiteFullTextService.shared.searchChunks(
+                    query: boostQuery, containerId: containerId, limit: Self.scopedKeywordCandidates)
+                let keys = Set(hits.filter { scope.contains($0.documentId) }.map(\.chunkId))
+                if let handedIn {
+                    for chunk in Self.buildNeededChunkLookup(from: handedIn, neededChunkIds: keys).values {
+                        keywordHits += 1
+                        wanted.insert(chunk.id)
+                    }
+                } else {
+                    for position in Self.neededChunkPositions(records: records, neededChunkIds: keys, summariesOnly: false) {
+                        keywordHits += 1
+                        wanted.insert(records[position].id)
+                    }
+                }
+            }
+            // Read in store order, which is the order every passage of the scope would be in.
+            if let handedIn {
+                candidates = handedIn.filter { wanted.contains($0.id) }
+            } else {
+                candidates = try await vectorDatabase.chunks(withIDs: ids.filter { wanted.contains($0) })
+            }
+            Log.info(
+                "[Hybrid] Document scope: \(ids.count) passages is past \(Self.scopedExactLimit), so every vector was scored and "
+                    + "words were compared for the \(closest.count) closest and \(keywordHits) keyword hit(s) (\(candidates.count) passages)",
+                category: .pipeline)
+        }
+        guard !candidates.isEmpty else {
+            Log.info("[Hybrid] Document scope: none of the \(ids.count) passages of the named document(s) could be read", category: .pipeline)
+            return []
+        }
+
+        // Candidates that arrive without a vector of their own and were not scored above.
+        let unscored =
+            questionHasVector
+            ? candidates.filter { $0.embedding.count != embedding.count && storeSimilarity[$0.id] == nil }.map(\.id) : []
+        if !unscored.isEmpty {
+            let similarities = await vectorDatabase.similarities(to: embedding, forChunkIDs: unscored)
+            for (position, id) in unscored.enumerated() where position < similarities.count {
+                if let similarity = similarities[position] { storeSimilarity[id] = similarity }
+            }
+        }
+
+        let terms = Set((tokenize(query) + tokenize(boostQuery)).filter { $0.count > 2 })
+        var comparedByVector = 0
+        var scored: [RetrievedChunk] = []
+        scored.reserveCapacity(candidates.count)
+        for chunk in candidates {
+            var similarity: Float = 0
+            if questionHasVector, chunk.embedding.count == embedding.count {
+                similarity = cosineSimilarity(embedding, chunk.embedding, queryNorm: queryNorm)
+                comparedByVector += 1
+            } else if let stored = storeSimilarity[chunk.id] {
+                similarity = stored
+                comparedByVector += 1
+            }
+            var keyword: Float = 0
+            if !terms.isEmpty {
+                let content = chunk.content.lowercased()
+                keyword = Float(terms.reduce(0) { $0 + (content.contains($1) ? 1 : 0) }) / Float(terms.count)
+            }
+            scored.append(
+                RetrievedChunk(
+                    chunk: chunk,
+                    similarityScore: vectorWeight * max(0, similarity) + keywordWeight * keyword,
+                    rank: 0))
+        }
+        scored.sort(by: Self.byScoreThenId)
+        Log.info(
+            "[Hybrid] Document scope: scored \(candidates.count) of \(ids.count) passages of \(scope.count) named document(s), "
+                + "\(comparedByVector) of them by vector as well as by words, returning \(min(topK, scored.count))",
+            category: .pipeline)
+        return reindex(Array(scored.prefix(topK)))
+    }
+
+    /// The positions of the `limit` highest similarities, highest first, among the positions
+    /// that have one. Equal similarities keep store order, so the same question picks the same
+    /// passages every time. On the concurrent pool: a scope past `scopedExactLimit` can be over
+    /// a hundred thousand passages, and this function's caller runs on the main actor.
+    @concurrent
+    nonisolated static func closestPositionsOffMainActor(_ similarities: [Float?], limit: Int) async -> [Int] {
+        guard limit > 0 else { return [] }
+        var scored: [(position: Int, similarity: Float)] = []
+        scored.reserveCapacity(similarities.count)
+        for (position, similarity) in similarities.enumerated() {
+            if let similarity { scored.append((position, similarity)) }
+        }
+        scored.sort { $0.similarity != $1.similarity ? $0.similarity > $1.similarity : $0.position < $1.position }
+        return scored.prefix(limit).map(\.position)
+    }
+
+    private func cosineSimilarity(_ a: [Float], _ b: [Float], queryNorm: Float) -> Float {
+        guard a.count == b.count, queryNorm > 0 else { return 0 }
+
+        // Accelerate-powered dot product using vDSP (Neural Engine optimized)
+        var dot: Float = 0
+        vDSP_dotpr(a, 1, b, 1, &dot, vDSP_Length(a.count))
+
+        // Modern Accelerate API for L2 norm (replaces deprecated cblas_snrm2)
+        let magB = sqrt(vDSP.sumOfSquares(b))
+        let denom = queryNorm * magB
+
+        return denom > 0 ? dot / denom : 0
+    }
+
+    private func reindex(_ chunks: [RetrievedChunk]) -> [RetrievedChunk] {
+        chunks.enumerated().map { idx, r in
+            RetrievedChunk(
+                chunk: r.chunk,
+                similarityScore: r.similarityScore,
+                rank: idx + 1,
+                sourceDocument: r.sourceDocument,
+                pageNumber: r.pageNumber
+            )
+        }
+    }
+
+    private func sanitizeRetrievedChunks(_ chunks: [RetrievedChunk]) -> [RetrievedChunk] {
+        chunks.map(sanitizeRetrievedChunk)
+    }
+
+    private func sanitizeRetrievedChunk(_ retrieved: RetrievedChunk) -> RetrievedChunk {
+        let cleanedSectionTitle = trustedLegacySectionLabel(retrieved.chunk.metadata.sectionTitle)
+        let cleanedSectionPath = trustedLegacySectionPath(retrieved.chunk.metadata.sectionPath)
+        let cleanedContent = stripLegacySectionPathPrefix(
+            from: retrieved.chunk.content,
+            cleanedSectionPath: cleanedSectionPath
+        )
+        let cleanedParentContent = retrieved.chunk.parentContent.map {
+            stripLegacySectionPathPrefix(from: $0, cleanedSectionPath: cleanedSectionPath)
+        }
+
+        guard cleanedSectionTitle != retrieved.chunk.metadata.sectionTitle
+            || cleanedSectionPath != retrieved.chunk.metadata.sectionPath
+            || cleanedContent != retrieved.chunk.content
+            || cleanedParentContent != retrieved.chunk.parentContent
+        else {
+            return retrieved
+        }
+
+        let base = retrieved.chunk.metadata
+        let cleanedMetadata = ChunkMetadata(
+            chunkIndex: base.chunkIndex,
+            startPosition: base.startPosition,
+            endPosition: base.endPosition,
+            pageNumber: base.pageNumber,
+            sectionTitle: cleanedSectionTitle,
+            keywords: base.keywords,
+            semanticDensity: base.semanticDensity,
+            hasNumericData: base.hasNumericData,
+            hasListStructure: base.hasListStructure,
+            wordCount: base.wordCount,
+            characterCount: base.characterCount,
+            createdAt: base.createdAt,
+            structureType: base.structureType,
+            siblingGroupId: base.siblingGroupId,
+            siblingCount: base.siblingCount,
+            entities: base.entities,
+            abbreviations: base.abbreviations,
+            abstractionLevel: base.abstractionLevel,
+            sectionPath: cleanedSectionPath,
+            bboxArray: base.bboxArray,
+            documentCategory: base.documentCategory,
+            chunkType: base.chunkType,
+            tableTitle: base.tableTitle,
+            imageContentType: base.imageContentType,
+            imageCaption: base.imageCaption,
+            imageDescription: base.imageDescription,
+            imageExtractedText: base.imageExtractedText,
+            imageClassifications: base.imageClassifications,
+            hasCrossReferences: base.hasCrossReferences,
+            resolvedReferences: base.resolvedReferences
+        )
+
+        let cleanedChunk = DocumentChunk(
+            id: retrieved.chunk.id,
+            documentId: retrieved.chunk.documentId,
+            content: cleanedContent,
+            parentContent: cleanedParentContent,
+            contextualPrefix: retrieved.chunk.contextualPrefix,
+            embedding: retrieved.chunk.embedding,
+            metadata: cleanedMetadata
+        )
+
+        return RetrievedChunk(
+            chunk: cleanedChunk,
+            similarityScore: retrieved.similarityScore,
+            rank: retrieved.rank,
+            sourceDocument: retrieved.sourceDocument,
+            pageNumber: retrieved.pageNumber ?? cleanedMetadata.pageNumber
+        )
+    }
+
+    private func trustedLegacySectionPath(_ rawPath: [String]?) -> [String]? {
+        let cleaned = (rawPath ?? []).compactMap(trustedLegacySectionLabel)
+        guard !cleaned.isEmpty else { return nil }
+
+        return cleaned.reduce(into: [String]()) { result, component in
+            if result.last?.caseInsensitiveCompare(component) != .orderedSame {
+                result.append(component)
+            }
+        }
+    }
+
+    private func trustedLegacySectionLabel(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+
+        let normalized = OCRConfiguration.normalizeExtractedText(raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        guard !normalized.contains("_"), !normalized.contains("|") else { return nil }
+
+        let scalars = normalized.unicodeScalars
+        let letterCount = scalars.filter { CharacterSet.letters.contains($0) }.count
+        let alnumCount = scalars.filter { CharacterSet.alphanumerics.contains($0) }.count
+        let latinCount = scalars.filter { scalar in
+            (0x0041...0x005A).contains(scalar.value) || (0x0061...0x007A).contains(scalar.value)
+        }.count
+        let cyrillicCount = scalars.filter { scalar in
+            (0x0400...0x04FF).contains(scalar.value) || (0x0500...0x052F).contains(scalar.value)
+        }.count
+
+        guard letterCount >= 2 else { return nil }
+        if scalars.count >= 8, Double(alnumCount) / Double(max(1, scalars.count)) < 0.55 {
+            return nil
+        }
+        if latinCount > 0, cyrillicCount > 0 {
+            return nil
+        }
+
+        return normalized
+    }
+
+    private func stripLegacySectionPathPrefix(from text: String, cleanedSectionPath: [String]?) -> String {
+        let lines = text.components(separatedBy: .newlines)
+        guard let firstLine = lines.first else { return text }
+        guard firstLine.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("Section Path:") else { return text }
+
+        var updatedLines = lines
+        if let cleanedSectionPath, !cleanedSectionPath.isEmpty {
+            updatedLines[0] = "Section Path: \(cleanedSectionPath.joined(separator: " > "))"
+        } else {
+            updatedLines.removeFirst()
+            while updatedLines.first?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                updatedLines.removeFirst()
+            }
+        }
+
+        return updatedLines.joined(separator: "\n")
+    }
+
+    // MARK: - FTS5 Integration (10-100X faster BM25)
+
+    /// Check if FTS5 acceleration is available for a container
+    /// Call this to determine if FTS5 can be used for BM25 scoring
+    func isFTS5Available(containerId: UUID) async -> Bool {
+        let fts5Service = SQLiteFullTextService.shared
+        let docIds = await fts5Service.getAllDocumentIds()
+        return !docIds.isEmpty
+    }
+
+    /// Get BM25 scores using FTS5's native implementation (10-100X faster)
+    /// - Parameters:
+    ///   - query: Search query
+    ///   - containerId: Container to search within
+    /// - Returns: Map of document UUIDs to BM25 scores
+    func fts5BM25Scores(query: String, containerId: UUID) async -> [UUID: Double] {
+        let fts5Service = SQLiteFullTextService.shared
+        return await fts5Service.bm25Scores(query: query, containerId: containerId)
+    }
+
+    /// True parallel hybrid search: vector + FTS5 as independent ranked lists merged via RRF.
+    ///
+    /// ## Architecture (v2 — True Hybrid)
+    /// Previous approach injected FTS5 hits into the vector pool with a synthetic 0.40 similarity
+    /// score, then re-scored everything with in-memory BM25. This meant BM25-only matches that
+    /// vector search missed entirely were invisible unless they happened to land in FTS5 results.
+    ///
+    /// New approach runs two fully independent searches in parallel:
+    /// 1. **Vector search** — semantic similarity via HNSW index
+    /// 2. **FTS5 search** — native SQLite `bm25()` at chunk granularity
+    ///
+    /// Both produce independently ranked result lists. `reciprocalRankFusion()` merges the
+    /// UNION of both sets — a chunk found only by FTS5 (keyword-only match) gets a fair
+    /// RRF score from its BM25 rank alone, without needing a synthetic vector score.
+    ///
+    /// Benefits:
+    /// - BM25-only matches are no longer invisible (catches vocabulary mismatch gaps)
+    /// - Native SQLite `bm25()` replaces in-memory `BM25Scorer.snapshot(from:)` — no local IDF bias
+    /// - `async let` parallelism: vector and FTS5 run concurrently, ~40% faster than sequential
+    /// The Greek question behind this search: the user's question in Greek legal mode, or the
+    /// query itself when it is Greek.
+    nonisolated static func greekQuestion(originalQuery: String) -> String? {
+        if let original = GreekLegalAnswerContext.originalQuestion { return original }
+        return GreekLegalEntityMasker.greekLetterRatio(originalQuery) >= 0.3 ? originalQuery : nil
+    }
+
+    /// Two ranked lists merged first, second, first, second…, each chunk once.
+    nonisolated static func interleaving(
+        _ first: [SQLiteFullTextService.ChunkSearchResult],
+        _ second: [SQLiteFullTextService.ChunkSearchResult],
+        limit: Int
+    ) -> [SQLiteFullTextService.ChunkSearchResult] {
+        var merged: [SQLiteFullTextService.ChunkSearchResult] = []
+        var seen = Set<String>()
+        for index in 0..<max(first.count, second.count) {
+            for list in [first, second] where index < list.count && seen.insert(list[index].chunkId).inserted {
+                merged.append(list[index])
+            }
+        }
+        return Array(merged.prefix(limit))
+    }
+
+    /// The FTS5 query: `originalQuery`, unless it is Greek and `query` is its English translation;
+    /// then the translation plus the English form of every legal identifier in the Greek original
+    /// ("Law 4808/2021", "Article 66") that the translation doesn't already contain.
+    nonisolated static func greekAwareLexicalQuery(query: String, originalQuery: String) -> String {
+        guard GreekLegalEntityMasker.greekLetterRatio(originalQuery) >= 0.3,
+              GreekLegalEntityMasker.greekLetterRatio(query) < 0.3,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return originalQuery }
+        var parts = [query]
+        for entity in GreekLegalEntityMasker.extractEntities(from: originalQuery) where !query.contains(entity.canonicalEn) {
+            parts.append(entity.canonicalEn)
+        }
+        return parts.joined(separator: " ")
+    }
+
+    func searchWithFTS5(
+        query: String,
+        originalQuery: String,
+        embedding: [Float],
+        topK: Int,
+        containerId: UUID,
+        cachedChunks: [DocumentChunk]? = nil,
+        isOverviewQuery: Bool = false,
+        trace: RetrievalTraceCollector? = nil
+    ) async throws -> [RetrievedChunk] {
+        let __spHybridSearch = PipelineSignposts.query.beginInterval("HybridSearch")
+        defer { PipelineSignposts.query.endInterval("HybridSearch", __spHybridSearch) }
+        Log.debug("[Hybrid] True parallel hybrid search starting (vector + FTS5)", category: .pipeline)
+
+        let startTime = CFAbsoluteTimeGetCurrent()
+        let queryLower = originalQuery.lowercased()
+        let useStructuredRowSearch = EvidenceScoringPolicyService.isStateLookupQuery(queryLower)
+            || detectSpecificationQuery(queryLower)
+
+        // ── PARALLEL SEARCH ──────────────────────────────────────────────
+        // Run vector search and FTS5 search concurrently as two independent ranked lists.
+        // Neither result set influences the other — they're merged purely via RRF.
+        let vectorCandidateMultiplier = topK > 50 ? 2 : 3
+        let fts5Limit = min(topK * 3, 60)  // FTS5 is fast; retrieve a generous pool
+
+        // Thesis fork: a Greek question's English translation (with its legal identifiers) is the
+        // keyword query, not the Greek original. The Greek original used to run first, and a
+        // number in it ("38", "4808/2021") could match some passage, so the translation never ran.
+        let lexicalQuery = Self.greekAwareLexicalQuery(query: query, originalQuery: originalQuery)
+
+        async let vectorTask = vectorDatabase.search(embedding: embedding, topK: topK * vectorCandidateMultiplier)
+        async let fts5Task = SQLiteFullTextService.shared.searchChunks(
+            query: lexicalQuery,
+            containerId: containerId,
+            limit: fts5Limit
+        )
+        async let structuredRowTask: [SQLiteFullTextService.ChunkSearchResult] = useStructuredRowSearch
+            ? SQLiteFullTextService.shared.searchStructuredRows(
+                query: lexicalQuery,
+                containerId: containerId,
+                limit: min(topK * 3, 36)
+            )
+            : []
+
+        let vectorResults = try await vectorTask
+        let vectorResultsFiltered = isOverviewQuery ? RAPTORSummaryRouter.filterSummaryRetrievedChunks(vectorResults) : vectorResults
+        var fts5ChunkResults = await fts5Task
+        let structuredRowResults = await structuredRowTask
+
+        if fts5ChunkResults.isEmpty,
+           query.caseInsensitiveCompare(lexicalQuery) != .orderedSame
+        {
+            let expandedFTSResults = await SQLiteFullTextService.shared.searchChunks(
+                query: query,
+                containerId: containerId,
+                limit: fts5Limit
+            )
+            if !expandedFTSResults.isEmpty {
+                Log.debug("[Hybrid] FTS5 fallback used expanded query terms after original query miss", category: .pipeline)
+                fts5ChunkResults = expandedFTSResults
+            }
+        }
+
+        // Thesis fork: the Greek keyword arm. For a Greek question, chunks whose original Greek text
+        // uses its words are interleaved with the English keyword hits, best first, so a paragraph
+        // the translation paraphrased is still found by the question's own words.
+        if let greekQuestion = Self.greekQuestion(originalQuery: originalQuery) {
+            let greekHits = await SQLiteFullTextService.shared.searchGreekChunks(
+                question: greekQuestion, containerId: containerId, limit: fts5Limit)
+            if !greekHits.isEmpty {
+                fts5ChunkResults = Self.interleaving(greekHits, fts5ChunkResults, limit: fts5Limit)
+                Log.info("[Hybrid] Greek keyword arm: \(greekHits.count) chunks fused into the keyword list", category: .pipeline)
+            }
+        }
+
+        // ── CONVERT FTS5 RESULTS TO RANKED LIST ─────────────────────────
+        // FTS5 returns ChunkSearchResult with native bm25Score. We need to convert
+        // these to (chunk: RetrievedChunk, score: Float) tuples for RRF fusion.
+        // For FTS5-only hits (not in vector results), we need the full DocumentChunk
+        // to construct RetrievedChunk. Look up only the needed keys from cached chunks or vector DB.
+        var fts5KeywordResults: [(chunk: RetrievedChunk, score: Float)] = []
+
+        if !fts5ChunkResults.isEmpty || !structuredRowResults.isEmpty {
+            // Build lookup for chunks already found by vector search
+            let vectorChunkLookup = Self.makeVectorChunkLookup(vectorResultsFiltered)
+
+            // Collect only the keys needed from the library chunk store (not in vector results)
+            let neededKeys = Self.neededChunkIds(
+                vectorChunkLookup: vectorChunkLookup,
+                fts5ChunkResults: fts5ChunkResults,
+                structuredRowResults: structuredRowResults,
+                queryLower: queryLower
+            )
+
+            // Build lookup only for the needed chunks, stopping early once all are found
+            let allChunkLookup: [String: DocumentChunk]
+            if !neededKeys.isEmpty {
+                let allChunks: [DocumentChunk]
+                if let cachedChunks {
+                    allChunks = isOverviewQuery ? RAPTORSummaryRouter.filterSummaryChunks(cachedChunks) : cachedChunks
+                } else {
+                    // Only the passages the keyword hits name are read from the store (5.7),
+                    // by id, so a change to the store between the two calls cannot shift them.
+                    let records = try await vectorDatabase.passageRecords()
+                    let positions = Self.neededChunkPositions(
+                        records: records, neededChunkIds: neededKeys, summariesOnly: isOverviewQuery)
+                    allChunks = try await vectorDatabase.chunks(withIDs: positions.map { records[$0].id })
+                }
+                allChunkLookup = Self.buildNeededChunkLookup(from: allChunks, neededChunkIds: neededKeys)
+            } else {
+                allChunkLookup = [:]
+            }
+
+            let joinOutcome = Self.joinKeywordResults(
+                vectorChunkLookup: vectorChunkLookup,
+                fts5ChunkResults: fts5ChunkResults,
+                structuredRowResults: structuredRowResults,
+                docChunkLookup: allChunkLookup,
+                queryLower: queryLower
+            )
+            fts5KeywordResults = joinOutcome.results
+
+            if joinOutcome.fts5OnlyCount > 0 {
+                Log.info("[Hybrid] FTS5 found \(joinOutcome.fts5OnlyCount) chunks missed by vector search (true hybrid gain)", category: .pipeline)
+            }
+            if joinOutcome.structuredRowOnlyCount > 0 {
+                Log.info("[Hybrid] Structured row search found \(joinOutcome.structuredRowOnlyCount) row-backed chunks", category: .pipeline)
+            }
+        }
+
+        // ── RRF FUSION ──────────────────────────────────────────────────
+        // Two independent ranked lists → fused via Reciprocal Rank Fusion.
+        // vectorResults sorted by similarity score, fts5KeywordResults sorted by BM25 score.
+        // RRF handles the UNION — chunks found by only one method still get ranked.
+        let vectorRanked = reindex(vectorResults.sorted(by: Self.byScoreThenId))
+
+        let fusedResults = await engine.reciprocalRankFusion(
+            vectorResults: vectorRanked,
+            keywordResults: fts5KeywordResults,
+            k: 60,
+            vectorWeight: vectorWeight,
+            keywordWeight: keywordWeight
+        )
+
+        // ── BOOSTS ──────────────────────────────────────────────────────
+        let boostedResults = applyKeywordMatchBoost(query: originalQuery, results: fusedResults)
+        let structureBoostedResults = applyStructureTypeBoost(query: originalQuery, results: boostedResults)
+        let anchorAdjustedResults = applyStateLookupAnchorBoost(query: originalQuery, results: structureBoostedResults)
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        let fts5ChunkIds = Set(fts5KeywordResults.map { $0.chunk.chunk.id })
+        let vectorChunkIds = Set(vectorResults.map { $0.chunk.id })
+        let fts5OnlyHits = fts5KeywordResults.filter { !vectorChunkIds.contains($0.chunk.chunk.id) }.count
+        // The counterpart to `fts5OnlyHits`, which existed alone and made the fusion weight
+        // impossible to reason about from a device log. Knowing what lexical uniquely found
+        // without knowing what dense uniquely found answers half of one question.
+        //
+        // The two numbers invert between real libraries, which is why a single global weight is
+        // the wrong shape. Captured 2026-08-14 on device: a manuals corpus produced 120 vector +
+        // 60 FTS5 with 57 lexical-only, while a research corpus asked "the role of serotonin
+        // signalling" produced 140 vector + 6 FTS5, because "serotonin" appears in 51% of chunks
+        // and discriminates nothing. Zeroing the dense arm would have been right for the first and
+        // ruinous for the second.
+        let vectorOnlyHits = vectorResults.filter { !fts5ChunkIds.contains($0.chunk.id) }.count
+
+        // Info, not debug. The effective weight is per query (container preset, plus the intent
+        // delta, then the clamp), and it appeared zero times in a 333KB device capture because it
+        // was logged at debug on the way in. A weight you cannot see is a weight you cannot tune.
+        Log.info(
+            "[Hybrid] Search completed in \(String(format: "%.1f", elapsed * 1000))ms: " +
+            "\(vectorResults.count) vector + \(fts5ChunkResults.count) FTS5 + " +
+            "\(structuredRowResults.count) row hits • " +
+            "unique: \(vectorOnlyHits) vector-only, \(fts5OnlyHits) lexical-only • " +
+            "fusion weights: vector \(String(format: "%.2f", vectorWeight)) / " +
+            "lexical \(String(format: "%.2f", keywordWeight))",
+            category: .pipeline
+        )
+
+        // Stage capture for the retrieval benchmark. This is the path that runs in production
+        // whenever a container has FTS5 data, so instrumenting only the fallback `search` above
+        // would report numbers for a path users do not hit. Recorded here because every stage's
+        // output is still in scope.
+        //
+        // `.candidates`, not `.final`: reranking runs afterwards in `RAGService`, so what this
+        // returns is the reranker's input. See the same note in `search` above.
+        // `fts5KeywordResults` is already sorted best-first. See `guaranteeingLexicalSurvivors`
+        // for the measured cases behind re-attaching lexical hits below the cut.
+        let candidateResults = sanitizeRetrievedChunks(reindex(guaranteeingLexicalSurvivors(
+            top: Array(anchorAdjustedResults.prefix(topK)),
+            lexicalBestFirst: fts5KeywordResults.map(\.chunk),
+            topK: topK
+        )))
+        if let trace {
+            trace.record(.vector, results: vectorResultsFiltered)
+            trace.record(.lexical, results: fts5KeywordResults.map(\.chunk))
+            trace.record(.fusion, results: fusedResults)
+            trace.record(.boosted, results: anchorAdjustedResults)
+            trace.record(.candidates, results: candidateResults)
+        }
+        return candidateResults
+    }
+
+    private func applyStateLookupAnchorBoost(query: String, results: [RetrievedChunk]) -> [RetrievedChunk] {
+        guard EvidenceScoringPolicyService.isStateLookupQuery(query), !results.isEmpty else { return results }
+
+        let adjusted = results.map { result -> RetrievedChunk in
+            let content = result.chunk.contextText
+            let adjustment = EvidenceScoringPolicyService.stateLookupAnchorAdjustment(
+                query: query,
+                content: content,
+                structureType: result.chunk.metadata.structureType
+            )
+            return RetrievedChunk(
+                chunk: result.chunk,
+                similarityScore: max(0.01, result.similarityScore + adjustment),
+                rank: result.rank,
+                sourceDocument: result.sourceDocument,
+                pageNumber: result.pageNumber
+            )
+        }
+
+        return adjusted.sorted(by: Self.byScoreThenId)
+    }
+
+    // MARK: - Keyword Join Helpers
+
+    /// Fast key for identifying chunks by document ID and chunk index without string allocations.
+    struct ChunkCoordinate: Hashable, Sendable {
+        let documentId: UUID
+        let chunkIndex: Int
+    }
+
+    /// Builds a dictionary from vector results keyed by `<documentId>_<chunkIndex>`.
+    static func makeVectorChunkLookup(_ vectorResults: [RetrievedChunk]) -> [String: RetrievedChunk] {
+        var dict = [String: RetrievedChunk]()
+        dict.reserveCapacity(vectorResults.count)
+        for r in vectorResults {
+            let key = "\(r.chunk.documentId.uuidString)_\(r.chunk.metadata.chunkIndex)"
+            dict[key] = r
+        }
+        return dict
+    }
+
+    /// Collects chunk IDs required from library storage that are not already present in vector search results.
+    static func neededChunkIds(
+        vectorChunkLookup: [String: RetrievedChunk],
+        fts5ChunkResults: [SQLiteFullTextService.ChunkSearchResult],
+        structuredRowResults: [SQLiteFullTextService.ChunkSearchResult],
+        queryLower: String
+    ) -> Set<String> {
+        var needed = Set<String>()
+        for hit in fts5ChunkResults where vectorChunkLookup[hit.chunkId] == nil {
+            needed.insert(hit.chunkId)
+        }
+        for hit in structuredRowResults where vectorChunkLookup[hit.chunkId] == nil {
+            if EvidenceScoringPolicyService.isStateLookupQuery(queryLower),
+               !EvidenceScoringPolicyService.satisfiesStateLookupAnchors(query: queryLower, content: hit.content) {
+                continue
+            }
+            needed.insert(hit.chunkId)
+        }
+        return needed
+    }
+
+    /// Builds a dictionary containing only chunks matching `neededChunkIds`, scanning library chunks
+    /// and breaking early once all needed chunks have been found.
+    static func buildNeededChunkLookup(
+        from chunks: [DocumentChunk],
+        neededChunkIds: Set<String>
+    ) -> [String: DocumentChunk] {
+        guard !neededChunkIds.isEmpty else { return [:] }
+
+        var coordinateToChunkId: [ChunkCoordinate: String] = [:]
+        coordinateToChunkId.reserveCapacity(neededChunkIds.count)
+        for id in neededChunkIds {
+            if let separatorIndex = id.lastIndex(of: "_"),
+               let docId = UUID(uuidString: String(id[..<separatorIndex])),
+               let index = Int(id[id.index(after: separatorIndex)...]) {
+                coordinateToChunkId[ChunkCoordinate(documentId: docId, chunkIndex: index)] = id
+            }
+        }
+
+        var dict = [String: DocumentChunk]()
+        dict.reserveCapacity(neededChunkIds.count)
+
+        for chunk in chunks {
+            let coord = ChunkCoordinate(documentId: chunk.documentId, chunkIndex: chunk.metadata.chunkIndex)
+            if let chunkId = coordinateToChunkId[coord] {
+                dict[chunkId] = chunk
+                if dict.count == neededChunkIds.count {
+                    break
+                }
+            }
+        }
+        return dict
+    }
+
+    /// The positions of the passages `buildNeededChunkLookup(from:neededChunkIds:)` would pick out
+    /// of every passage, worked out from the store's records so that only those are read. It
+    /// walks the records the way that function walks the passages: in store order, a later
+    /// passage with the same document and number replacing an earlier one, stopping once every
+    /// needed id has been seen. `summariesOnly` is the overview filter applied first.
+    static func neededChunkPositions(
+        records: [PassageRecord],
+        neededChunkIds: Set<String>,
+        summariesOnly: Bool
+    ) -> [Int] {
+        guard !neededChunkIds.isEmpty else { return [] }
+
+        var coordinateToChunkId: [ChunkCoordinate: String] = [:]
+        coordinateToChunkId.reserveCapacity(neededChunkIds.count)
+        for id in neededChunkIds {
+            if let separatorIndex = id.lastIndex(of: "_"),
+               let docId = UUID(uuidString: String(id[..<separatorIndex])),
+               let index = Int(id[id.index(after: separatorIndex)...]) {
+                coordinateToChunkId[ChunkCoordinate(documentId: docId, chunkIndex: index)] = id
+            }
+        }
+
+        var positionByChunkId: [String: Int] = [:]
+        positionByChunkId.reserveCapacity(neededChunkIds.count)
+        for (position, record) in records.enumerated() {
+            if summariesOnly, !record.abstractionLevel.isSummary { continue }
+            let coord = ChunkCoordinate(documentId: record.documentId, chunkIndex: record.chunkIndex)
+            if let chunkId = coordinateToChunkId[coord] {
+                positionByChunkId[chunkId] = position
+                if positionByChunkId.count == neededChunkIds.count {
+                    break
+                }
+            }
+        }
+        return positionByChunkId.values.sorted()
+    }
+
+    /// Joins vector hits and lexical (FTS5 + structured row) hits into ranked keyword results for RRF fusion.
+    static func joinKeywordResults(
+        vectorChunkLookup: [String: RetrievedChunk],
+        fts5ChunkResults: [SQLiteFullTextService.ChunkSearchResult],
+        structuredRowResults: [SQLiteFullTextService.ChunkSearchResult],
+        docChunkLookup: [String: DocumentChunk],
+        queryLower: String
+    ) -> (results: [(chunk: RetrievedChunk, score: Float)], fts5OnlyCount: Int, structuredRowOnlyCount: Int) {
+        var lexicalHitsByChunkId: [String: (chunk: RetrievedChunk, score: Float)] = [:]
+        var fts5OnlyCount = 0
+        var structuredRowOnlyCount = 0
+        for fts5Hit in fts5ChunkResults {
+            // FTS5 bm25() returns negative scores (lower = better match in SQLite).
+            // Negate to get positive scores for RRF ranking.
+            let bm25Score: Float = fts5Hit.bm25Score < 0 ? Float(-fts5Hit.bm25Score) : Float(fts5Hit.bm25Score)
+
+            if let existingChunk = vectorChunkLookup[fts5Hit.chunkId] {
+                // Chunk found by both vector and FTS5 — use the full RetrievedChunk
+                lexicalHitsByChunkId[fts5Hit.chunkId] = (chunk: existingChunk, score: bm25Score)
+            } else if let docChunk = docChunkLookup[fts5Hit.chunkId] {
+                // FTS5-only hit: construct RetrievedChunk from DocumentChunk.
+                // We don't have a reliable filename at this layer, so avoid using section metadata as provenance.
+                let retrieved = RetrievedChunk(
+                    chunk: docChunk,
+                    similarityScore: 0,  // No vector similarity — RRF uses rank, not score
+                    rank: 0,
+                    sourceDocument: "Unknown",
+                    pageNumber: fts5Hit.pageNumber
+                )
+                lexicalHitsByChunkId[fts5Hit.chunkId] = (chunk: retrieved, score: bm25Score)
+                fts5OnlyCount += 1
+            }
+            // else: FTS5 hit doesn't match any known chunk — skip (stale index)
+        }
+
+        for rowHit in structuredRowResults {
+            if EvidenceScoringPolicyService.isStateLookupQuery(queryLower),
+               !EvidenceScoringPolicyService.satisfiesStateLookupAnchors(query: queryLower, content: rowHit.content)
+            {
+                continue
+            }
+
+            let rowScore = rowHit.bm25Score < 0 ? Float(-rowHit.bm25Score) : Float(rowHit.bm25Score)
+            let mergedScore = rowScore + 0.10
+
+            if let existingChunk = vectorChunkLookup[rowHit.chunkId] {
+                let existing = lexicalHitsByChunkId[rowHit.chunkId]
+                if existing == nil || existing!.score < mergedScore {
+                    lexicalHitsByChunkId[rowHit.chunkId] = (chunk: existingChunk, score: mergedScore)
+                }
+            } else if let docChunk = docChunkLookup[rowHit.chunkId] {
+                let retrieved = RetrievedChunk(
+                    chunk: docChunk,
+                    similarityScore: 0,
+                    rank: 0,
+                    sourceDocument: "Unknown",
+                    pageNumber: rowHit.pageNumber
+                )
+                let existing = lexicalHitsByChunkId[rowHit.chunkId]
+                if existing == nil || existing!.score < mergedScore {
+                    lexicalHitsByChunkId[rowHit.chunkId] = (chunk: retrieved, score: mergedScore)
+                }
+                structuredRowOnlyCount += 1
+            }
+        }
+
+        let sortedResults = lexicalHitsByChunkId.values
+            .sorted {
+                $0.score != $1.score
+                    ? $0.score > $1.score
+                    : Self.stableTieBreakKey($0.chunk) < Self.stableTieBreakKey($1.chunk)
+            }
+            .map { ($0.chunk, $0.score) }
+
+        return (sortedResults, fts5OnlyCount, structuredRowOnlyCount)
+    }
+
+    /// Convenience overload for joinKeywordResults taking array of RetrievedChunk.
+    static func joinKeywordResults(
+        vectorResults: [RetrievedChunk],
+        fts5ChunkResults: [SQLiteFullTextService.ChunkSearchResult],
+        structuredRowResults: [SQLiteFullTextService.ChunkSearchResult],
+        docChunkLookup: [String: DocumentChunk],
+        queryLower: String
+    ) -> (results: [(chunk: RetrievedChunk, score: Float)], fts5OnlyCount: Int, structuredRowOnlyCount: Int) {
+        let lookup = makeVectorChunkLookup(vectorResults)
+        return joinKeywordResults(
+            vectorChunkLookup: lookup,
+            fts5ChunkResults: fts5ChunkResults,
+            structuredRowResults: structuredRowResults,
+            docChunkLookup: docChunkLookup,
+            queryLower: queryLower
+        )
+    }
+}

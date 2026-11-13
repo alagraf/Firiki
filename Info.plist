@@ -4,12 +4,12 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.openintelligence.index-maintenance</string>
-		<string>com.openintelligence.spotlight-reindex</string>
-		<string>com.openintelligence.app-refresh</string>
-		<string>com.openintelligence.document-ingestion</string>
+		<string>com.alagraf.firiki.index-maintenance</string>
+		<string>com.alagraf.firiki.spotlight-reindex</string>
+		<string>com.alagraf.firiki.app-refresh</string>
+		<string>com.alagraf.firiki.document-ingestion</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).document-ingestion.*</string>
-		<string>com.openintelligence.rag-query</string>
+		<string>com.alagraf.firiki.rag-query</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).rag-query.*</string>
 	</array>
 	<key>CFBundleDocumentTypes</key>
@@ -46,7 +46,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>openintelligence</string>
+				<string>firiki</string>
 			</array>
 		</dict>
 	</array>
@@ -56,12 +56,12 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Ask OpenIntelligence</string>
+				<string>Ask Firiki</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>askAboutSelection</string>
 			<key>NSPortName</key>
-			<string>OpenIntelligence</string>
+			<string>Firiki</string>
 			<key>NSRequiredContext</key>
 			<dict/>
 			<key>NSSendTypes</key>
@@ -69,18 +69,18 @@
 				<string>public.utf8-plain-text</string>
 			</array>
 			<key>NSServiceDescription</key>
-			<string>Opens OpenIntelligence with the selected text in the chat, ready to ask about.</string>
+			<string>Opens Firiki with the selected text in the chat, ready to ask about.</string>
 		</dict>
 		<dict>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Add Text to OpenIntelligence</string>
+				<string>Add Text to Firiki</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>addSelectionToLibrary</string>
 			<key>NSPortName</key>
-			<string>OpenIntelligence</string>
+			<string>Firiki</string>
 			<key>NSRequiredContext</key>
 			<dict/>
 			<key>NSSendTypes</key>
@@ -88,18 +88,18 @@
 				<string>public.utf8-plain-text</string>
 			</array>
 			<key>NSServiceDescription</key>
-			<string>Adds the selected text to the open library in OpenIntelligence as a note.</string>
+			<string>Adds the selected text to the open library in Firiki as a note.</string>
 		</dict>
 		<dict>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Add to OpenIntelligence</string>
+				<string>Add to Firiki</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>addFilesToLibrary</string>
 			<key>NSPortName</key>
-			<string>OpenIntelligence</string>
+			<string>Firiki</string>
 			<key>NSRequiredContext</key>
 			<dict/>
 			<key>NSSendFileTypes</key>
@@ -121,14 +121,14 @@
 				<string>public.heic</string>
 			</array>
 			<key>NSServiceDescription</key>
-			<string>Adds the selected files to the open library in OpenIntelligence.</string>
+			<string>Adds the selected files to the open library in Firiki.</string>
 		</dict>
 	</array>
 	<key>NSUserActivityTypes</key>
 	<array>
-		<string>com.openintelligence.chat</string>
-		<string>com.openintelligence.documents</string>
-		<string>com.openintelligence.activity.viewing-document</string>
+		<string>com.alagraf.firiki.chat</string>
+		<string>com.alagraf.firiki.documents</string>
+		<string>com.alagraf.firiki.activity.viewing-document</string>
 	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>

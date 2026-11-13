@@ -20,8 +20,8 @@
         `Benchmarks/baselines/README.md` describes under "Before you run anything".
 
         ```bash
-        cp -a ~/Library/"Application Support"/OpenIntelligence /private/tmp/oi-library-backup
-        python3 scripts/run_quality_matrix.py --app <path/to/OpenIntelligence.app> --manifest Benchmarks/ResearchFixtures/tiny_research_suite/manifest.json
+        cp -a ~/Library/"Application Support"/Firiki /private/tmp/oi-library-backup
+        python3 scripts/run_quality_matrix.py --app <path/to/Firiki.app> --manifest Benchmarks/ResearchFixtures/tiny_research_suite/manifest.json
         ```
 
         Case counts:

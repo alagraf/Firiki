@@ -88,7 +88,7 @@ def main():
         # Save the final aimodel asset to the workspace resources folder
         import pathlib
         import shutil
-        output_dir = pathlib.Path("OpenIntelligence/Resources/MLModels")
+        output_dir = pathlib.Path("Firiki/Resources/MLModels")
         output_dir.mkdir(parents=True, exist_ok=True)
         
         aimodel_path = output_dir / "EmbeddingModel.aimodel"

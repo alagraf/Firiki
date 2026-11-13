@@ -1,13 +1,13 @@
 #!/bin/bash
-# Thesis fork: builds and runs a subset of OpenIntelligenceTests on the simulator, prints the
+# Thesis fork: builds and runs a subset of FirikiTests on the simulator, prints the
 # results, and stops xcodebuild once both XCTest and Swift Testing have reported (on this machine
 # xcodebuild keeps waiting on the test host after the last result).
 # Usage: scripts/thesis_run_tests.sh <log-file> [-only-testing:... ...]
 set -u
 LOG="$1"; shift
-DEST="${OPENINTELLIGENCE_SIMULATOR_DESTINATION:-platform=iOS Simulator,name=iPhone 18 Pro}"
-DD="${OPENINTELLIGENCE_DERIVED_DATA:-/private/tmp/oi-build}"
-xcodebuild build-for-testing -scheme OpenIntelligence -destination "$DEST" -derivedDataPath "$DD" > "$LOG.build" 2>&1
+DEST="${FIRIKI_SIMULATOR_DESTINATION:-platform=iOS Simulator,name=iPhone 18 Pro}"
+DD="${FIRIKI_DERIVED_DATA:-/private/tmp/oi-build}"
+xcodebuild build-for-testing -scheme Firiki -destination "$DEST" -derivedDataPath "$DD" > "$LOG.build" 2>&1
 if ! grep -q "TEST BUILD SUCCEEDED" "$LOG.build"; then
   grep -E "error:" "$LOG.build" | sort -u | head -40
   echo "** TEST BUILD FAILED ** (see $LOG.build)"
@@ -34,7 +34,7 @@ run_tests() {
   xcrun simctl bootstatus "$name" -b >/dev/null 2>&1
   # Launching the app right after the boot finished failed with "No such process" (2026-10-29).
   sleep 20
-  xcodebuild test-without-building -scheme OpenIntelligence -destination "$DEST" -derivedDataPath "$DD" "$@" > "$LOG" 2>&1 &
+  xcodebuild test-without-building -scheme Firiki -destination "$DEST" -derivedDataPath "$DD" "$@" > "$LOG" 2>&1 &
   PID=$!
   # OI_TEST_TIMEOUT_SECONDS: the longest a run may take (default 30 min; a full-corpus evaluation needs more).
   for i in $(seq 1 "${OI_TEST_TIMEOUT_SECONDS:-1800}"); do

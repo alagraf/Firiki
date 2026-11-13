@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==============================================================================
-# iCloud damage check for the OpenIntelligence repository.
+# iCloud damage check for the Firiki repository.
 #
 #   RUN THIS FIRST when a build fails in a way that makes no sense:
 #   duplicate symbols, "invalid redeclaration", a type that is somehow declared

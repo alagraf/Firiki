@@ -108,7 +108,7 @@ def http_json(url: str, params: dict[str, str] | None = None, retries: int = 4) 
     last: Exception | None = None
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(full, headers={"User-Agent": "OpenIntelligence-fixtures"})
+            req = urllib.request.Request(full, headers={"User-Agent": "Firiki-fixtures"})
             with urllib.request.urlopen(req, timeout=60) as response:
                 return json.loads(response.read())
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
@@ -419,7 +419,7 @@ def write_readme(pack_dir: Path, cases: list[dict], pool: list[str], revision: s
         "## Running it",
         "",
         "```bash",
-        "python3 scripts/run_quality_matrix.py --app <path/to/OpenIntelligence.app> \\",
+        "python3 scripts/run_quality_matrix.py --app <path/to/Firiki.app> \\",
         f"  --manifest Benchmarks/ResearchFixtures/{pack_dir.name}/manifest.json \\",
         "  --modes standard --pcc deny",
         "```",

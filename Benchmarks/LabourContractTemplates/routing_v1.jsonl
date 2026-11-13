@@ -1,5 +1,5 @@
 // Template routing set v1 (2026-10-29): user prompts labelled with the contract template that fits
-// (OpenIntelligence/Resources/LabourContractTemplates/, by id), or "none". Written by Claude Code;
+// (Firiki/Resources/LabourContractTemplates/, by id), or "none". Written by Claude Code;
 // worded as users ask, not copied from the templates' keywords. split: dev (2/3) or test (1/3).
 {"id": 1, "lang": "el", "prompt": "Θέλω να προσλάβω μόνιμα έναν λογιστή στην εταιρεία μου, οκτώ ώρες τη μέρα. Τι σύμβαση χρειάζομαι;", "template": "indefinite_full_time", "split": "dev"}
 {"id": 2, "lang": "el", "prompt": "Ετοίμασέ μου συμφωνητικό για νέα υπάλληλο γραφείου χωρίς λήξη, με έξι μήνες δοκιμή.", "template": "indefinite_full_time", "split": "dev"}

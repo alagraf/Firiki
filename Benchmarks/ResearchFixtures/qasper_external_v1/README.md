@@ -25,7 +25,7 @@ By category: `exact_value` 55, `missing_evidence` 6, `retrieval_only` 22.
 ## Running it
 
 ```bash
-python3 scripts/run_quality_matrix.py --app <path/to/OpenIntelligence.app> \
+python3 scripts/run_quality_matrix.py --app <path/to/Firiki.app> \
   --manifest Benchmarks/ResearchFixtures/qasper_external_v1/manifest.json \
   --modes standard --pcc deny
 ```

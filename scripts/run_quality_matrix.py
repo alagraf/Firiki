@@ -34,7 +34,7 @@ cloud axis separately.
 
 Usage
 -----
-    python3 scripts/run_quality_matrix.py --app <path/to/OpenIntelligence.app>
+    python3 scripts/run_quality_matrix.py --app <path/to/Firiki.app>
     python3 scripts/run_quality_matrix.py --app ... --modes standard,deep-think
     python3 scripts/run_quality_matrix.py --app ... --limit 3    # smoke test
 
@@ -550,7 +550,7 @@ _PRE_EXISTING_METADATA: str | None = None
 
 
 def real_library_path() -> Path:
-    return Path.home() / "Library/Application Support/OpenIntelligence"
+    return Path.home() / "Library/Application Support/Firiki"
 
 
 def snapshot_real_library() -> None:
@@ -571,7 +571,7 @@ def snapshot_real_library() -> None:
 def reset_shared_library() -> None:
     """Clear benchmark residue from the app's shared library between cases.
 
-    `WorkspaceSyncService` resolves its root with `OpenIntelligenceRuntimePaths.applicationSupportRoot()`
+    `WorkspaceSyncService` resolves its root with `FirikiRuntimePaths.applicationSupportRoot()`
     rather than `baseDirectory()`, and only the latter honours the `--rag-validation-storage`
     override. Ingested documents therefore land in the user's real library no matter what storage
     the harness was given. Left alone they accumulate across cases: a run that started against a
@@ -735,7 +735,7 @@ def run_one(
         )
         elapsed = (dt.datetime.now() - started).total_seconds()
         report = proc.stdout
-        if "OPENINTELLIGENCE RAG VALIDATION" not in report:
+        if "FIRIKI RAG VALIDATION" not in report:
             tail = (proc.stderr or report or "").strip().splitlines()[-4:]
             return {"ok": False, "seconds": elapsed, "error": "no report", "tail": tail}
         parsed = parse_report(report)
@@ -772,7 +772,7 @@ def run_one(
         # `subprocess.run(timeout=)` kills the process it started and nothing else. On 2026-08-19 a
         # paired run completed case 1 in both modes (257s, 197s) and then timed out at 1800s on
         # every case from 2 onward, standard mode included, which had just answered case 1 in under
-        # 200 seconds. Two `OpenIntelligence` processes were still resident at 0% CPU four and a
+        # 200 seconds. Two `Firiki` processes were still resident at 0% CPU four and a
         # half hours later, holding the shared library; each subsequent case blocked on file
         # coordination, waited out its full timeout, and left another corpse behind it.
         #
@@ -787,16 +787,16 @@ def run_one(
 
 
 def reap_orphan_apps() -> int:
-    """Kill any surviving OpenIntelligence app process. Returns how many were killed.
+    """Kill any surviving Firiki app process. Returns how many were killed.
 
-    Matches `Contents/MacOS/OpenIntelligence`, the app binary itself, and deliberately NOT the
-    build directory. A pattern like `oi-mac-40.*OpenIntelligence` also matches THIS script, whose
-    own command line contains `--app /private/tmp/oi-mac-40/.../OpenIntelligence`. That mistake
+    Matches `Contents/MacOS/Firiki`, the app binary itself, and deliberately NOT the
+    build directory. A pattern like `oi-mac-40.*Firiki` also matches THIS script, whose
+    own command line contains `--app /private/tmp/oi-mac-40/.../Firiki`. That mistake
     killed a run at case 11 of 16 on 2026-08-19.
     """
     try:
         found = subprocess.run(
-            ["pgrep", "-f", "Contents/MacOS/OpenIntelligence"],
+            ["pgrep", "-f", "Contents/MacOS/Firiki"],
             capture_output=True, text=True, timeout=10,
         )
     except Exception:
@@ -1024,7 +1024,7 @@ def render_markdown(summaries: list[dict], rows: list[dict], meta: dict,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--app", required=True, help="path to built OpenIntelligence.app (or its binary)")
+    ap.add_argument("--app", required=True, help="path to built Firiki.app (or its binary)")
     ap.add_argument("--modes", default=",".join(ALL_MODES))
     ap.add_argument("--pcc", default="deny", choices=["allow", "deny"])
     ap.add_argument("--limit", type=int, default=0, help="run only the first N cases (smoke test)")
@@ -1082,7 +1082,7 @@ def main() -> int:
     args = ap.parse_args()
 
     app = Path(args.app).expanduser().resolve()
-    app_bin = app / "Contents/MacOS/OpenIntelligence" if app.suffix == ".app" else app
+    app_bin = app / "Contents/MacOS/Firiki" if app.suffix == ".app" else app
     if not app_bin.exists():
         print(f"error: app binary not found at {app_bin}", file=sys.stderr)
         return 2

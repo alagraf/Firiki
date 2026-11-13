@@ -14,7 +14,7 @@
 
 ---
 
-# OpenIntelligence RAG Benchmarks
+# Firiki RAG Benchmarks
 
 This folder contains local benchmark manifests for the existing debug validation
 harness. It does not replace the app's RAG pipeline and does not change
@@ -105,7 +105,7 @@ Debug app the harness needs, and the `scripts/run_quality_matrix.py --app <path>
 > **Historical (2026-09-29). Nothing in this section works today.** `scripts/rag_benchmark_studio.py`
 > still points its `RUNNER` at the removed `scripts/run_rag_benchmarks.py` (line 35), and the Mac
 > Catalyst path it describes is gone: the app target sets `SUPPORTS_MACCATALYST = NO` in both Debug
-> and Release (`OpenIntelligence.xcodeproj/project.pbxproj:795`, `:860`) and builds for native macOS
+> and Release (`Firiki.xcodeproj/project.pbxproj:795`, `:860`) and builds for native macOS
 > instead. Kept for the flags and workflows it records. `[evidence_level: code_verified,
 > confidence: exact, evidence_source: scripts/rag_benchmark_studio.py:35; project.pbxproj:794-796,
 > 859-861; ls scripts/run_rag_benchmarks.py (absent), 2026-09-29]`
@@ -196,7 +196,7 @@ Use `--benchmark-entitlement current` to leave the app's existing debug
 entitlement state alone, or `--benchmark-entitlement free` when intentionally
 testing free-tier quota behavior.
 
-The runner builds `OpenIntelligence` in Debug by default and launches one
+The runner builds `Firiki` in Debug by default and launches one
 isolated app run per case on the selected Mac, simulator, or device runtime.
 
 The old reinstall-after-5-files workaround is still available, but it is no
@@ -213,7 +213,7 @@ The entitlement preset and refresh option are debug-harness only. They do not
 change `QuotaPolicy`, `RAGService`, retrieval, ranking, generation, or
 verification behavior.
 
-Builds use reusable derived data at `/tmp/openintelligence-rag-bench/DerivedData`
+Builds use reusable derived data at `/tmp/firiki-rag-bench/DerivedData`
 so later runs do not pay a full clean-build cost every time. Use
 `--derived-data` to override it. With `--runtime mac`, the runner builds for
 Xcode's Mac Catalyst destination (historical: Catalyst is off), copies each case's fixture files into the

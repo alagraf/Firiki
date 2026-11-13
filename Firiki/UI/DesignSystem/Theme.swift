@@ -1,0 +1,1031 @@
+//
+//  Theme.swift
+//  Firiki
+//
+//  Design System tokens and lightweight utilities for ChatV2
+//  Platform-safe (iOS + macOS)
+//  Created by Cline on 10/28/25.
+//
+
+import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(CoreHaptics)
+import CoreHaptics
+#endif
+
+// MARK: - Colors (Semantic)
+
+public enum DSColors {
+    // Surfaces
+    public static var background: Color {
+        #if canImport(UIKit)
+        return Color(UIColor.systemBackground)
+        #elseif canImport(AppKit)
+        return Color(NSColor.windowBackgroundColor)
+        #else
+        return Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1)
+        #endif
+    }
+    public static var surface: Color {
+        #if canImport(UIKit)
+        return Color(UIColor.secondarySystemBackground)
+        #elseif canImport(AppKit)
+        return Color(NSColor.controlBackgroundColor)
+        #else
+        return Color(.sRGB, red: 0.95, green: 0.95, blue: 0.95, opacity: 1)
+        #endif
+    }
+    public static var surfaceElevated: Color {
+        #if canImport(UIKit)
+        return Color(UIColor.tertiarySystemBackground)
+        #elseif canImport(AppKit)
+        return Color(NSColor.underPageBackgroundColor)
+        #else
+        return Color(.sRGB, red: 0.92, green: 0.92, blue: 0.92, opacity: 1)
+        #endif
+    }
+
+    public static var systemGray6: Color {
+        #if canImport(UIKit)
+        return Color(UIColor.systemGray6)
+        #elseif canImport(AppKit)
+        return Color(NSColor.windowBackgroundColor)
+        #else
+        return Color(.sRGB, red: 0.92, green: 0.92, blue: 0.92, opacity: 1)
+        #endif
+    }
+
+    public static var systemGroupedBackground: Color {
+        #if canImport(UIKit)
+        return Color(UIColor.systemGroupedBackground)
+        #elseif canImport(AppKit)
+        return Color(NSColor.windowBackgroundColor)
+        #else
+        return Color(.sRGB, red: 0.95, green: 0.95, blue: 0.97, opacity: 1)
+        #endif
+    }
+
+    public static var secondarySystemGroupedBackground: Color {
+        #if canImport(UIKit)
+        return Color(UIColor.secondarySystemGroupedBackground)
+        #elseif canImport(AppKit)
+        return Color(NSColor.controlBackgroundColor)
+        #else
+        return Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1)
+        #endif
+    }
+
+    public static var tertiarySystemGroupedBackground: Color {
+        #if canImport(UIKit)
+        return Color(UIColor.tertiarySystemGroupedBackground)
+        #elseif canImport(AppKit)
+        return Color(NSColor.underPageBackgroundColor)
+        #else
+        return Color(.sRGB, red: 0.92, green: 0.92, blue: 0.95, opacity: 1)
+        #endif
+    }
+
+
+
+    // Content
+    public static var primaryText: Color {
+        Color.primary
+    }
+    /// Secondary text that meets the 4.5:1 contrast Apple asks for on text (5.7): `systemGray` as iOS draws it with
+    /// Increase Contrast on, in light and dark (on the Mac, see `readable(platform:)`). `Color.secondary` measures
+    /// about 3.4:1 on white, and Apple's
+    /// accessibility audit called the small gray text on Chat, Documents and Settings "nearly passed" or "failed"
+    /// (2026-10-15, `BenchmarkRuns/2026-10-15-accessibility-audit-xray-off/`). Apple's criterion: "Sufficient
+    /// Contrast evaluation criteria", developer.apple.com, read 2026-10-16.
+    public static var secondaryText: Color {
+        #if canImport(UIKit)
+        return readable(platform: .systemGray)
+        #elseif canImport(AppKit)
+        return readable(platform: .systemGray)
+        #else
+        return Color.secondary
+        #endif
+    }
+
+    /// A color as the system draws it with Increase Contrast on, in the current light or dark appearance (5.7):
+    /// Apple's own accessible variant on iOS, for colored text that has to meet 4.5:1, such as an orange warning.
+    /// On iOS 27 the high-contrast blue draws as (30, 110, 244): 4.57 to 1 on white, about 3.7 on a pale tint of
+    /// itself, which is why text on tinted chips uses the label color instead (2026-10-16).
+    public static func readable(_ color: Color) -> Color {
+        #if canImport(UIKit)
+        return readable(platform: UIColor(color))
+        #elseif canImport(AppKit)
+        return readable(platform: NSColor(color))
+        #else
+        return color
+        #endif
+    }
+
+    #if canImport(UIKit)
+    /// `readable(_:)` for a UIKit color, resolved with the high-contrast trait added to the view's own traits.
+    public static func readable(platform color: UIColor) -> Color {
+        Color(
+            UIColor { traits in
+                color.resolvedColor(with: traits.modifyingTraits { $0.accessibilityContrast = .high })
+            })
+    }
+    #elseif canImport(AppKit)
+    /// `readable(_:)` for an AppKit color. AppKit has no way to draw a color as Increase Contrast would:
+    /// `NSAppearance(named:)` returns nil for the high-contrast names ("Passing any of them to appearanceNamed: will
+    /// return NULL", NSAppearance.h in the macOS 27 SDK). So the color is resolved in the current appearance and
+    /// blended toward black in light or white in dark, in steps of 5%, until it reaches 4.5 to 1 against the window
+    /// background (#ECECEC in light, #323232 in dark). A color that already reaches it is returned as it is.
+    public static func readable(platform color: NSColor) -> Color {
+        Color(
+            NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                var resolved = color
+                appearance.performAsCurrentDrawingAppearance {
+                    resolved = color.usingColorSpace(.sRGB) ?? color
+                }
+                return legible(resolved, isDark: isDark)
+            })
+    }
+
+    /// The first blend of `color` toward black (light) or white (dark) that reaches 4.5 to 1 against the window
+    /// background.
+    static func legible(_ color: NSColor, isDark: Bool) -> NSColor {
+        let target = isDark ? NSColor.white : NSColor.black
+        // Relative luminance of #323232 and #ECECEC.
+        let background = isDark ? 0.0319 : 0.8388
+        var candidate = color
+        for step in 0...20 {
+            candidate = color.blended(withFraction: Double(step) / 20, of: target) ?? color
+            let luminance = relativeLuminance(candidate)
+            if (max(luminance, background) + 0.05) / (min(luminance, background) + 0.05) >= 4.5 {
+                return candidate
+            }
+        }
+        return candidate
+    }
+
+    /// WCAG relative luminance of a color in sRGB.
+    static func relativeLuminance(_ color: NSColor) -> Double {
+        guard let srgb = color.usingColorSpace(.sRGB) else { return 0 }
+        func channel(_ value: CGFloat) -> Double {
+            let v = Double(value)
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(srgb.redComponent) + 0.7152 * channel(srgb.greenComponent)
+            + 0.0722 * channel(srgb.blueComponent)
+    }
+    #endif
+
+    // Accents
+    public static var accent: Color {
+        Color.accentColor
+    }
+    public static var userBubbleGradientStart: Color {
+        Color.accentColor
+    }
+    public static var userBubbleGradientEnd: Color {
+        Color.accentColor.opacity(0.85)
+    }
+
+    // Feedback
+    public static var info: Color { Color.blue }
+    public static var success: Color { Color.green }
+    public static var warning: Color { Color.orange }
+    public static var danger: Color { Color.red }
+
+    // Borders & Separators
+    public static var border: Color {
+        Color.primary.opacity(0.15)
+    }
+    public static var separator: Color {
+        Color.primary.opacity(0.1)
+    }
+
+    // Chips (10-15% bg opacity)
+    public static func chipBackground(for color: Color) -> Color {
+        color.opacity(0.12)
+    }
+}
+
+// MARK: - Typography
+
+/// Every token here is a Dynamic Type text style, not a fixed point size.
+///
+/// These were `.system(size: 14/11/10/10/12)` until v5.0, which froze them against
+/// the user's text-size setting. Because this is the design system, it was the single
+/// largest source of non-scaling type in the app. The replacements land within ~1pt of
+/// the old sizes at the default setting and scale from there.
+public enum DSTypography {
+    public static var title: Font { .headline }
+    public static var body: Font { .subheadline }
+    public static var caption: Font { .caption }
+    public static var meta: Font { .caption2 }
+    public static var chip: Font { .caption2.weight(.semibold) }
+    public static var code: Font { .system(.caption, design: .monospaced) }
+}
+
+/// A system font at a fixed design size that follows the text size on iPhone and iPad (5.7).
+///
+/// For text drawn at a point size of its own (the answer, its Fact Check, chat metadata), which Apple's audit read as
+/// "Dynamic Type font sizes are unsupported": `size` is what it draws at the default text size, and `@ScaledMetric`
+/// scales it with the setting relative to `relativeTo`, up and down. The Mac has no Dynamic Type, so there it stays
+/// `size`; a text style would have made it smaller there (the Mac's footnote is 10 points, its body 13).
+private struct ScaledSystemFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    private let weight: Font.Weight
+    private let design: Font.Design
+
+    init(size: CGFloat, weight: Font.Weight, design: Font.Design, relativeTo textStyle: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: textStyle)
+        self.weight = weight
+        self.design = design
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight, design: design))
+    }
+}
+
+public extension View {
+    /// `size` points at the default text size, scaled with Dynamic Type on iPhone and iPad (see `ScaledSystemFont`).
+    func scaledFont(
+        size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default,
+        relativeTo textStyle: Font.TextStyle = .body
+    ) -> some View {
+        modifier(ScaledSystemFont(size: size, weight: weight, design: design, relativeTo: textStyle))
+    }
+}
+
+// MARK: - Spacing
+
+/// A 4-point grid, matching the values the app actually reaches for.
+///
+/// The previous scale was 2/6/10/14/20/28. Counted against the codebase, the seven
+/// most common spacing literals were 8 (295 uses), 4 (264), 12 (237), 6 (186), 2 (166),
+/// 10 (125) and 16 (103) — so the three most-used values had no token at all, while
+/// `xl = 28` had zero matching literals. That mismatch is why adoption stalled around
+/// 5%: a developer opening the scale did not find their number, so they typed it.
+/// Every rung below moved by at most 4pt and now sits on the grid.
+public enum DSSpacing {
+    public static let xxs: CGFloat = 2
+    public static let xs: CGFloat = 4
+    public static let sm: CGFloat = 8
+    public static let md: CGFloat = 12
+    public static let lg: CGFloat = 16
+    public static let xl: CGFloat = 24
+    public static let xxl: CGFloat = 32
+    /// What a control takes to tap: 44 by 44 points on iPhone and iPad, Apple's default control size there (Human
+    /// Interface Guidelines, Accessibility, read 2026-10-15). The Mac is clicked with a pointer and keeps 28, the size
+    /// the import panel's circles are drawn at (5.7).
+    public static let tapTarget: CGFloat = {
+#if os(macOS)
+        28
+#else
+        44
+#endif
+    }()
+}
+
+// MARK: - Corners
+
+/// Radii in use across the app, in ascending order.
+///
+/// `pill` and `panel` are additive: radius 8 (69 hand-written uses) and 14 (33) were
+/// the two commonest values with no token, so they were always typed as literals.
+/// Nothing that already referenced this enum changes value.
+///
+/// Always pair these with `style: .continuous`. iOS system chrome is entirely
+/// continuous, so a circular corner sitting next to a continuous one of the same
+/// radius is a visible mismatch even though the number matches.
+public enum DSCorners {
+    public static let chip: CGFloat = 6
+    public static let pill: CGFloat = 8
+    public static let control: CGFloat = 10
+    public static let card: CGFloat = 12
+    public static let panel: CGFloat = 14
+    public static let bubble: CGFloat = 16
+    public static let sheet: CGFloat = 20
+}
+
+// MARK: - Shadows / Elevation
+
+public enum DSShadows {
+    public static func bubble(_ color: Color = .black, opacity: Double = 0.06) -> some ViewModifier {
+        ShadowModifier(color: color.opacity(opacity), radius: 2, x: 0, y: 1)
+    }
+    public static func fab(_ color: Color = .black, opacity: Double = 0.12) -> some ViewModifier {
+        ShadowModifier(color: color.opacity(opacity), radius: 6, x: 0, y: 4)
+    }
+
+    struct ShadowModifier: ViewModifier {
+        let color: Color
+        let radius: CGFloat
+        let x: CGFloat
+        let y: CGFloat
+        func body(content: Content) -> some View {
+            content.shadow(color: color, radius: radius, x: x, y: y)
+        }
+    }
+}
+
+public extension View {
+    func bubbleShadow() -> some View { modifier(DSShadows.bubble()) }
+    func fabShadow() -> some View { modifier(DSShadows.fab()) }
+}
+
+// MARK: - Animations
+
+public enum DSAnimations {
+    public static let bubbleAppear: Animation = .spring(response: 0.35, dampingFraction: 0.8)
+    public static let fastEase: Animation = .easeInOut(duration: 0.2)
+    public static let stagePulse: Animation = .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+    public static let snappySpring: Animation = .spring(response: 0.3, dampingFraction: 0.7, blendDuration: 0.1)
+    public static let gentleSpring: Animation = .spring(response: 0.5, dampingFraction: 0.8)
+}
+
+// MARK: - Modifiers
+
+public struct RoundedSectionModifier: ViewModifier {
+    let background: Color
+    public init(background: Color = DSColors.surface) {
+        self.background = background
+    }
+    public func body(content: Content) -> some View {
+        content
+            .padding(DSSpacing.md)
+            .background(background)
+            .cornerRadius(DSCorners.sheet)
+    }
+}
+
+public struct ChipModifier: ViewModifier {
+    let tint: Color
+    public init(tint: Color) { self.tint = tint }
+    public func body(content: Content) -> some View {
+        content
+            .font(DSTypography.chip)
+            .foregroundColor(tint)
+            .padding(.horizontal, DSSpacing.xs)
+            .padding(.vertical, 4)
+            .background(DSColors.chipBackground(for: tint))
+            .cornerRadius(DSCorners.chip)
+    }
+}
+
+public extension View {
+    func roundedSection(background: Color = DSColors.surface) -> some View {
+        modifier(RoundedSectionModifier(background: background))
+    }
+    func chipStyle(tint: Color) -> some View {
+        modifier(ChipModifier(tint: tint))
+    }
+}
+
+// MARK: - Glass
+
+// What used to live here was named "Liquid Glass" and was not Liquid Glass.
+//
+// `DSGlass`, `GlassCardModifier`, `GlassToolbarModifier` and `GlassTabBarModifier` all
+// returned `.ultraThinMaterial` / `.thinMaterial` / `.regularMaterial` — the material
+// system that predates Liquid Glass. Two of them were worse than merely mislabelled:
+// `.toolbarBackground(.ultraThinMaterial, for: .navigationBar / .tabBar)` opts a bar
+// *out* of the system's Liquid Glass treatment and paints a flat material instead, so
+// adopting them would have moved the app backwards. They are removed rather than
+// renamed; the system already does the right thing when nothing overrides it.
+//
+// The real Liquid Glass API is `glassEffect(_:in:)`, used by the helpers below. The
+// deployment target is iOS 26.0, so it is available unconditionally.
+
+/// Applies the real Liquid Glass material to a card surface.
+public struct GlassCardModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    public init(cornerRadius: CGFloat = DSCorners.card) {
+        self.cornerRadius = cornerRadius
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .padding(DSSpacing.md)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
+#if os(macOS)
+public enum NavigationBarItem {
+    public enum TitleDisplayMode {
+        case inline
+        case large
+        case automatic
+    }
+}
+
+public extension View {
+    @inlinable
+    func navigationBarTitleDisplayMode(_ displayMode: NavigationBarItem.TitleDisplayMode) -> some View {
+        self
+    }
+}
+#endif
+
+public extension View {
+    /// Apply Liquid Glass card styling
+    func glassCard(cornerRadius: CGFloat = DSCorners.card) -> some View {
+        modifier(GlassCardModifier(cornerRadius: cornerRadius))
+    }
+
+    /// Apply Liquid Glass pill styling for iOS 26+
+    ///
+    /// Its `if`s return a different view for each state. Never use it on a row of a `reorderable()` `ForEach`: its
+    /// branch then holds all of the row's content, even with other modifiers after it, and dragging the row stops the
+    /// app on iOS 27.0 (`ContainerPill`, 2026-10-19). Apply `glassEffect` once with the glass picked by value there.
+    @ViewBuilder
+    func glassEffectHelper(isSelected: Bool = false, tintColor: Color = .accentColor, interactive: Bool = true) -> some View {
+        if #available(iOS 26.0, *) {
+            if isSelected {
+                if interactive {
+                    self.glassEffect(.regular.tint(tintColor).interactive(), in: Capsule())
+                } else {
+                    self.glassEffect(.regular.tint(tintColor), in: Capsule())
+                }
+            } else {
+                if interactive {
+                    self.glassEffect(.regular.interactive(), in: Capsule())
+                } else {
+                    self.glassEffect(.regular, in: Capsule())
+                }
+            }
+        } else {
+            self
+        }
+    }
+
+    /// Apply Liquid Glass circle shape effect for iOS 26+
+    @ViewBuilder
+    func glassCircleEffectHelper() -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            self
+        }
+    }
+
+    /// Apply Liquid Glass card shape effect for iOS 26+
+    @ViewBuilder
+    func glassCardEffectHelper(cornerRadius: CGFloat = 20, isSelected: Bool = false, tintColor: Color = .accentColor, interactive: Bool = true) -> some View {
+        if #available(iOS 26.0, *) {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            if isSelected {
+                if interactive {
+                    self.glassEffect(.regular.tint(tintColor).interactive(), in: shape)
+                } else {
+                    self.glassEffect(.regular.tint(tintColor), in: shape)
+                }
+            } else {
+                if interactive {
+                    self.glassEffect(.regular.interactive(), in: shape)
+                } else {
+                    self.glassEffect(.regular, in: shape)
+                }
+            }
+        } else {
+            self
+        }
+    }
+}
+
+// MARK: - Haptics (safe, no-op on macOS)
+
+public enum DSHaptics {
+    #if canImport(UIKit)
+    private static let isHapticCapable: Bool = {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        if #available(iOS 14.0, *) {
+            if ProcessInfo.processInfo.isiOSAppOnMac { return false }
+        }
+        #if canImport(CoreHaptics)
+        if #available(iOS 13.0, *) {
+            return CHHapticEngine.capabilitiesForHardware().supportsHaptics
+        }
+        #endif
+        return true
+        #endif
+    }()
+
+    private static func perform(_ style: String, _ action: () -> Void) {
+        guard isHapticCapable else { return }
+        action()
+        reportToTelemetry(style: style)
+    }
+
+    /// Report haptic to telemetry for HUD visualization
+    private static func reportToTelemetry(style: String) {
+        Task { @MainActor in
+            HardwareTelemetryState.shared.reportHaptic(style: style)
+        }
+    }
+    #endif
+
+    // MARK: - Selection Feedback
+
+    public static func selection() {
+        #if canImport(UIKit)
+        perform("selection") {
+            let gen = UISelectionFeedbackGenerator()
+            gen.prepare()
+            gen.selectionChanged()
+        }
+        #endif
+    }
+
+    // MARK: - Impact Feedback (Physical Interactions)
+
+    /// Very soft tap - subtle UI acknowledgment
+    public static func soft() {
+        #if canImport(UIKit)
+        perform("soft") {
+            let gen = UIImpactFeedbackGenerator(style: .soft)
+            gen.prepare()
+            gen.impactOccurred()
+        }
+        #endif
+    }
+
+    /// Light tap - buttons, toggles
+    public static func light() {
+        #if canImport(UIKit)
+        perform("light") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred()
+        }
+        #endif
+    }
+
+    /// Medium tap - confirmations, selections
+    public static func medium() {
+        #if canImport(UIKit)
+        perform("medium") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred()
+        }
+        #endif
+    }
+
+    /// Heavy tap - important actions, completions
+    public static func heavy() {
+        #if canImport(UIKit)
+        perform("heavy") {
+            let gen = UIImpactFeedbackGenerator(style: .heavy)
+            gen.prepare()
+            gen.impactOccurred()
+        }
+        #endif
+    }
+
+    /// Rigid tap - solid mechanical feel
+    public static func rigid() {
+        #if canImport(UIKit)
+        perform("rigid") {
+            let gen = UIImpactFeedbackGenerator(style: .rigid)
+            gen.prepare()
+            gen.impactOccurred()
+        }
+        #endif
+    }
+
+    // MARK: - Impact with Intensity
+
+    /// Light impact with custom intensity (0.0-1.0)
+    public static func lightWithIntensity(_ intensity: CGFloat) {
+        #if canImport(UIKit)
+        perform("light-\(Int(intensity * 100))") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: min(1.0, max(0.0, intensity)))
+        }
+        #endif
+    }
+
+    /// Medium impact with custom intensity (0.0-1.0)
+    public static func mediumWithIntensity(_ intensity: CGFloat) {
+        #if canImport(UIKit)
+        perform("medium-\(Int(intensity * 100))") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred(intensity: min(1.0, max(0.0, intensity)))
+        }
+        #endif
+    }
+
+    // MARK: - Notification Feedback (Status Changes)
+
+    /// Success - task completed, positive outcome
+    public static func success() {
+        #if canImport(UIKit)
+        perform("success") {
+            let gen = UINotificationFeedbackGenerator()
+            gen.prepare()
+            gen.notificationOccurred(.success)
+        }
+        #endif
+    }
+
+    /// Warning - attention needed, caution
+    public static func warning() {
+        #if canImport(UIKit)
+        perform("warning") {
+            let gen = UINotificationFeedbackGenerator()
+            gen.prepare()
+            gen.notificationOccurred(.warning)
+        }
+        #endif
+    }
+
+    /// Error - something went wrong
+    public static func error() {
+        #if canImport(UIKit)
+        perform("error") {
+            let gen = UINotificationFeedbackGenerator()
+            gen.prepare()
+            gen.notificationOccurred(.error)
+        }
+        #endif
+    }
+
+    // MARK: - Semantic Haptics (Contextual)
+
+    /// Send a message
+    public static func messageSent() {
+        #if canImport(UIKit)
+        perform("message-sent") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.7)
+        }
+        #endif
+    }
+
+    /// Receive a message or response
+    public static func messageReceived() {
+        #if canImport(UIKit)
+        perform("message-received") {
+            let gen = UIImpactFeedbackGenerator(style: .soft)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.5)
+        }
+        #endif
+    }
+
+    /// Toggle switch changed
+    public static func toggle() {
+        #if canImport(UIKit)
+        perform("toggle") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.6)
+        }
+        #endif
+    }
+
+    /// Slider/progress tick
+    public static func tick() {
+        #if canImport(UIKit)
+        perform("tick") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.3)
+        }
+        #endif
+    }
+
+    /// Processing pulse - repeated during long operations
+    public static func processingPulse() {
+        #if canImport(UIKit)
+        perform("processing") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.55)
+        }
+        #endif
+    }
+
+    /// First token arrived from LLM — the "brain lit up" moment
+    public static func generationStarted() {
+        #if canImport(UIKit)
+        perform("generation-start") {
+            let gen = UIImpactFeedbackGenerator(style: .heavy)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.8)
+        }
+        #endif
+    }
+
+    /// Per-token tick during LLM streaming — noticeable but not annoying
+    public static func generationTick() {
+        #if canImport(UIKit)
+        perform("generation-tick") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.4)
+        }
+        #endif
+    }
+
+    /// LLM finished generating — satisfying completion tap
+    public static func generationComplete() {
+        #if canImport(UIKit)
+        perform("generation-complete") {
+            let gen = UINotificationFeedbackGenerator()
+            gen.prepare()
+            gen.notificationOccurred(.success)
+        }
+        #endif
+    }
+
+    /// Battery/thermal state change
+    public static func thermalPulse(intensity: CGFloat = 0.5) {
+        #if canImport(UIKit)
+        perform("thermal-\(Int(intensity * 100))") {
+            let gen = UIImpactFeedbackGenerator(style: .rigid)
+            gen.prepare()
+            gen.impactOccurred(intensity: min(1.0, max(0.2, intensity)))
+        }
+        #endif
+    }
+
+    /// Navigation/transition
+    public static func navigate() {
+        #if canImport(UIKit)
+        perform("navigate") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.4)
+        }
+        #endif
+    }
+
+    /// Document ingested
+    public static func documentIngested() {
+        #if canImport(UIKit)
+        perform("ingested") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.6)
+        }
+        #endif
+    }
+
+    /// Chunk processed (very subtle)
+    public static func chunkProcessed() {
+        #if canImport(UIKit)
+        perform("chunk") {
+            let gen = UIImpactFeedbackGenerator(style: .soft)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.2)
+        }
+        #endif
+    }
+
+    // MARK: - UI Navigation Haptics
+
+    /// Tab bar tab changed
+    public static func tabChanged() {
+        #if canImport(UIKit)
+        perform("tab") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.5)
+        }
+        #endif
+    }
+
+    /// Pull-to-refresh triggered
+    public static func refresh() {
+        #if canImport(UIKit)
+        perform("refresh") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.7)
+        }
+        #endif
+    }
+
+    /// Section/disclosure expanded
+    public static func expand() {
+        #if canImport(UIKit)
+        perform("expand") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.4)
+        }
+        #endif
+    }
+
+    /// Section/disclosure collapsed
+    public static func collapse() {
+        #if canImport(UIKit)
+        perform("collapse") {
+            let gen = UIImpactFeedbackGenerator(style: .soft)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.3)
+        }
+        #endif
+    }
+
+    /// Sheet/modal presented
+    public static func sheetPresented() {
+        #if canImport(UIKit)
+        perform("sheet-present") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.5)
+        }
+        #endif
+    }
+
+    /// Sheet/modal dismissed
+    public static func sheetDismissed() {
+        #if canImport(UIKit)
+        perform("sheet-dismiss") {
+            let gen = UIImpactFeedbackGenerator(style: .soft)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.4)
+        }
+        #endif
+    }
+
+    /// Long press recognized
+    public static func longPress() {
+        #if canImport(UIKit)
+        perform("long-press") {
+            let gen = UIImpactFeedbackGenerator(style: .heavy)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.8)
+        }
+        #endif
+    }
+
+    /// Drag operation started
+    public static func dragStart() {
+        #if canImport(UIKit)
+        perform("drag-start") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.5)
+        }
+        #endif
+    }
+
+    /// Drop operation completed
+    public static func drop() {
+        #if canImport(UIKit)
+        perform("drop") {
+            let gen = UIImpactFeedbackGenerator(style: .medium)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.7)
+        }
+        #endif
+    }
+
+    /// Copy to clipboard
+    public static func copy() {
+        #if canImport(UIKit)
+        perform("copy") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.5)
+        }
+        #endif
+    }
+
+    /// Delete/remove action
+    public static func delete() {
+        #if canImport(UIKit)
+        perform("delete") {
+            let gen = UIImpactFeedbackGenerator(style: .rigid)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.6)
+        }
+        #endif
+    }
+
+    /// Search/query initiated
+    public static func search() {
+        #if canImport(UIKit)
+        perform("search") {
+            let gen = UIImpactFeedbackGenerator(style: .soft)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.4)
+        }
+        #endif
+    }
+
+    /// Filter applied
+    public static func filter() {
+        #if canImport(UIKit)
+        perform("filter") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.4)
+        }
+        #endif
+    }
+
+    /// Scroll snap/page change
+    public static func pageSnap() {
+        #if canImport(UIKit)
+        perform("page-snap") {
+            let gen = UIImpactFeedbackGenerator(style: .light)
+            gen.prepare()
+            gen.impactOccurred(intensity: 0.3)
+        }
+        #endif
+    }
+}
+
+// MARK: - Utility styles
+
+public struct BubbleBackground: View {
+    let isUser: Bool
+    public init(isUser: Bool) { self.isUser = isUser }
+    public var body: some View {
+        Group {
+            if isUser {
+                LinearGradient(
+                    colors: [DSColors.userBubbleGradientStart, DSColors.userBubbleGradientEnd],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+            } else {
+                DSColors.surface
+            }
+        }
+        .cornerRadius(DSCorners.bubble)
+    }
+}
+
+// MARK: - Haptic Button Styles
+
+/// A ButtonStyle that fires haptic feedback on press
+public struct HapticButtonStyle: ButtonStyle {
+    public enum HapticType {
+        case light, medium, soft, selection
+    }
+
+    let hapticType: HapticType
+
+    public init(_ type: HapticType = .light) {
+        self.hapticType = type
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .onChange(of: configuration.isPressed) { _, isPressed in
+                if isPressed {
+                    switch hapticType {
+                    case .light: DSHaptics.light()
+                    case .medium: DSHaptics.medium()
+                    case .soft: DSHaptics.soft()
+                    case .selection: DSHaptics.selection()
+                    }
+                }
+            }
+    }
+}
+
+// MARK: - Haptic View Modifiers
+
+extension View {
+    /// Add a light haptic tap to any view
+    public func hapticTap(_ style: HapticButtonStyle.HapticType = .light) -> some View {
+        self.simultaneousGesture(
+            TapGesture().onEnded {
+                switch style {
+                case .light: DSHaptics.light()
+                case .medium: DSHaptics.medium()
+                case .soft: DSHaptics.soft()
+                case .selection: DSHaptics.selection()
+                }
+            }
+        )
+    }
+
+    /// Trigger haptic when value changes
+    public func hapticOnChange<V: Equatable>(of value: V, perform: @escaping (V) -> Void = { _ in }) -> some View {
+        self.onChange(of: value) { oldValue, newValue in
+            if oldValue != newValue {
+                DSHaptics.toggle()
+                perform(newValue)
+            }
+        }
+    }
+}

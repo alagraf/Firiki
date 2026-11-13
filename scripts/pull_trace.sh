@@ -31,7 +31,7 @@
 
 set -euo pipefail
 
-BUNDLE_ID="Gunndamental.OpenIntelligence"
+BUNDLE_ID="com.alagraf.firiki"
 DEVELOPER_DIR_DEFAULT="/Applications/Xcode-beta.app/Contents/Developer"
 OUT_DIR="Xrays"
 MODE="auto"
@@ -121,7 +121,7 @@ Check, in this order:
   3. Is the device unlocked and trusted, or the simulator booted?
 
 With UIFileSharingEnabled set (2026-08-21) you can also get the file without this script:
-Files app -> On My iPhone -> OpenIntelligence -> pipeline_trace.log.
+Files app -> On My iPhone -> Firiki -> pipeline_trace.log.
 EOF
             exit 1
         fi

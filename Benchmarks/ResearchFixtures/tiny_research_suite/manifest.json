@@ -14,7 +14,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/exact/vehicle_specs.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "How many gallons of gasoline can the vehicle hold?",
       "source_dataset": "synthetic_financebench_style"
@@ -33,7 +33,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/exact/finance_cash_flow.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "What was the FY2018 capital expenditure amount?",
       "source_dataset": "synthetic_financebench_style"
@@ -52,7 +52,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/exact/equipment_table.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "What is the maximum payload in the specification table?",
       "source_dataset": "synthetic_financebench_style"
@@ -71,7 +71,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/exact/service_schedule.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "What is the normal service interval?",
       "source_dataset": "synthetic_financebench_style"
@@ -90,7 +90,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/exact/battery_limits.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "What is the maximum charging temperature limit?",
       "source_dataset": "synthetic_financebench_style"
@@ -109,7 +109,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/retrieval/retrieval_alpha.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "Which document mentions the ALPHA-17 review control?",
       "source_dataset": "synthetic_beir_style"
@@ -128,7 +128,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/retrieval/retrieval_beta.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "Which fixture describes the BETA trial cohort?",
       "source_dataset": "synthetic_beir_style"
@@ -147,7 +147,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/retrieval/retrieval_gamma.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "Find the source about the GAMMA neutralization assay.",
       "source_dataset": "synthetic_beir_style"
@@ -166,7 +166,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/retrieval/retrieval_delta.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "Which file discusses the DELTA citation screen?",
       "source_dataset": "synthetic_beir_style"
@@ -185,7 +185,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/retrieval/retrieval_epsilon.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "Find the EPSILON nutrition endpoint note.",
       "source_dataset": "synthetic_beir_style"
@@ -216,7 +216,7 @@
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_1_part_a.md",
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_1_part_b.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "deep-think",
       "query": "Who owns Project M1 and what is its reporting deadline?",
       "source_dataset": "synthetic_multihop_rag_style"
@@ -247,7 +247,7 @@
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_2_part_a.md",
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_2_part_b.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "deep-think",
       "query": "Who owns Project M2 and what is its reporting deadline?",
       "source_dataset": "synthetic_multihop_rag_style"
@@ -278,7 +278,7 @@
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_3_part_a.md",
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_3_part_b.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "deep-think",
       "query": "Who owns Project M3 and what is its reporting deadline?",
       "source_dataset": "synthetic_multihop_rag_style"
@@ -309,7 +309,7 @@
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_4_part_a.md",
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_4_part_b.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "deep-think",
       "query": "Who owns Project M4 and what is its reporting deadline?",
       "source_dataset": "synthetic_multihop_rag_style"
@@ -340,7 +340,7 @@
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_5_part_a.md",
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/multi_hop/case_5_part_b.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "deep-think",
       "query": "Who owns Project M5 and what is its reporting deadline?",
       "source_dataset": "synthetic_multihop_rag_style"
@@ -359,7 +359,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/lost_in_middle/answer_at_beginning.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "maximum",
       "query": "What is the required validation token?",
       "source_dataset": "synthetic_lost_in_the_middle"
@@ -378,7 +378,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/lost_in_middle/answer_at_middle.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "maximum",
       "query": "What is the required validation token?",
       "source_dataset": "synthetic_lost_in_the_middle"
@@ -397,7 +397,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/lost_in_middle/answer_at_end.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "maximum",
       "query": "What is the required validation token?",
       "source_dataset": "synthetic_lost_in_the_middle"
@@ -414,7 +414,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/missing/missing_battery_policy.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "What is the warranty coverage for the unreleased 2032 prototype battery pack?",
       "source_dataset": "synthetic_negative_control"
@@ -431,7 +431,7 @@
       "input_files": [
         "Benchmarks/ResearchFixtures/tiny_research_suite/fixtures/synthetic/missing/missing_price_policy.md"
       ],
-      "license_note": "Generated locally by OpenIntelligence fixture script; no external dataset content.",
+      "license_note": "Generated locally by Firiki fixture script; no external dataset content.",
       "quality_mode": "standard",
       "query": "What is the confidential wholesale price for the unannounced Omega device?",
       "source_dataset": "synthetic_negative_control"

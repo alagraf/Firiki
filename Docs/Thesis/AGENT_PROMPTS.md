@@ -9,8 +9,8 @@ large files.
 
 ```text
 Read Docs/ai/codemap/INDEX.md and the document-ingestion-pipeline slice first.
-Then read parsePageImage in OpenIntelligence/Services/Document/Processing/StructuredDocumentParser.swift,
-performOCR in OpenIntelligence/Services/Document/Processing/DocumentProcessor.swift,
+Then read parsePageImage in Firiki/Services/Document/Processing/StructuredDocumentParser.swift,
+performOCR in Firiki/Services/Document/Processing/DocumentProcessor.swift,
 and validateAndCleanOCR in StructuredDocumentParser.swift. Read them by line range, not whole files.
 Don't change anything yet.
 Write me a plan for adding a second OCR engine (PaddleOCR's Greek model, el_PP-OCRv5_mobile_rec, run

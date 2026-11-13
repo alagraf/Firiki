@@ -1,0 +1,44 @@
+//  InfoButtonView.swift
+//  Firiki
+//
+//  Created by Cline on 10/30/25.
+//
+
+import SwiftUI
+
+struct InfoButtonView: View {
+    let title: String
+    let explanation: String
+
+    @State private var showingPopover = false
+
+    var body: some View {
+        Button(action: {
+            showingPopover = true
+        }) {
+            Image(systemName: "info.circle")
+                .font(.body)
+                .foregroundStyle(DSColors.accent)
+        }
+        .popover(isPresented: $showingPopover) {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                Text(title)
+                    .font(.headline)
+
+                Text(explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(DSSpacing.lg)
+            .frame(maxWidth: 300)
+        }
+    }
+}
+
+#Preview {
+    InfoButtonView(
+        title: "Embedding Model",
+        explanation: "The neural network used to convert text into vector representations for semantic search."
+    )
+    .padding()
+}

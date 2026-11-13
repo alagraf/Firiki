@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/thesis"))
 import make_ocr_testset as testset  # noqa: E402
 
-MODELS = ROOT / "OpenIntelligence/Resources/MLModels/GreekOCR"
+MODELS = ROOT / "Firiki/Resources/MLModels/GreekOCR"
 SOURCES = [
     (ROOT / "Benchmarks/GreekLabourCode/pd_62_2025_excerpt.pdf", "lab", [3, 7, 11, 15, 19, 23, 27, 31, 35]),
     (ROOT / "Benchmarks/GreekConstitution/syntagma1_1.pdf", "con", [6, 14, 22, 30, 38]),

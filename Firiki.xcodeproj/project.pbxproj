@@ -1,0 +1,1602 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0E1A00012F30000100AA1001 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = 0E1A00022F30000100AA1001 /* onnxruntime */; };
+		AA1C05DFB217B24343F90AC9 /* FirikiEngine.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E0A100042F0F5F5F00AABA0C /* FirikiEngine.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		B016E7B72F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */; };
+		E0A100022F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */; };
+		E0A100042F0F5F5F00AABA0D /* FirikiEngine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0A100042F0F5F5F00AABA0C /* FirikiEngine.framework */; };
+		E0A100302F0F5F5F00AABA0C /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = E0A100312F0F5F5F00AABA0C /* Tokenizers */; };
+		E0A100322F0F5F5F00AABA0C /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = E0A100312F0F5F5F00AABA0C /* Tokenizers */; };
+		F0A100012F1A000100AA1001 /* FirikiLiveActivities.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A100022F1A000100AA1001 /* FirikiLiveActivities.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F0A100032F1A000100AA1001 /* Firiki/Services/Infrastructure/Background/IngestionLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0A100042F1A000100AA1001 /* Firiki/Services/Infrastructure/Background/IngestionLiveActivityAttributes.swift */; };
+		F0A100242F1A000100AA1001 /* IngestionLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0A100202F1A000100AA1001 /* IngestionLiveActivityWidget.swift */; };
+		F0A100252F1A000100AA1001 /* FirikiLiveActivitiesBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0A100212F1A000100AA1001 /* FirikiLiveActivitiesBundle.swift */; };
+		F0A100262F1A000100AA1001 /* FirikiActivityIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = F0A100222F1A000100AA1001 /* FirikiActivityIcon.png */; };
+		F0B100012F1A000100AA1001 /* FirikiShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0B100022F1A000100AA1001 /* FirikiShare.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F0B100032F1A000100AA1001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B100042F1A000100AA1001 /* ShareViewController.swift */; };
+		F0B100162F1A000100AA1001 /* Firiki/App/SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B100172F1A000100AA1001 /* Firiki/App/SharedInbox.swift */; };
+		F0C100012F1A000100AA1001 /* FirikiCapture.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = F0C100022F1A000100AA1001 /* FirikiCapture.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F0C100032F1A000100AA1001 /* CaptureExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100042F1A000100AA1001 /* CaptureExtension.swift */; };
+		F0C100162F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100172F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift */; };
+		F0C100182F1A000100AA1001 /* CaptureViewfinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100192F1A000100AA1001 /* CaptureViewfinder.swift */; };
+		F0C1001A2F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C100172F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		8D8D45ADEC3A8FACC0A1546A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B0D565DD2E98AC50001274A2;
+			remoteInfo = Firiki;
+		};
+		C1A100012F2E000100AA1001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B0D565DD2E98AC50001274A2;
+			remoteInfo = Firiki;
+		};
+		E0A100072F0F5F5F00AABA0E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E0A100072F0F5F5F00AABA0C;
+			remoteInfo = FirikiEngine;
+		};
+		F0A100142F1A000100AA1001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0A100102F1A000100AA1001;
+			remoteInfo = FirikiLiveActivities;
+		};
+		F0B100142F1A000100AA1001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0B100102F1A000100AA1001;
+			remoteInfo = FirikiShare;
+		};
+		F0C100142F1A000100AA1001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0D565D62E98AC50001274A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0C100102F1A000100AA1001;
+			remoteInfo = FirikiCapture;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		601D6FF225360C5F89012022 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				AA1C05DFB217B24343F90AC9 /* FirikiEngine.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0A1000C2F1A000100AA1001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F0A100012F1A000100AA1001 /* FirikiLiveActivities.appex in Embed Foundation Extensions */,
+				F0B100012F1A000100AA1001 /* FirikiShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0C1000C2F1A000100AA1001 /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				F0C100012F1A000100AA1001 /* FirikiCapture.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		AF1C66A44688A7B340182360 /* FirikiTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FirikiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0D565DE2E98AC50001274A2 /* Firiki.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Firiki.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1A100032F2E000100AA1001 /* FirikiUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FirikiUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DDFD1600670D479C7075E2C2 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		E0A100042F0F5F5F00AABA0C /* FirikiEngine.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = FirikiEngine.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0A100022F1A000100AA1001 /* FirikiLiveActivities.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FirikiLiveActivities.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0A100042F1A000100AA1001 /* Firiki/Services/Infrastructure/Background/IngestionLiveActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Firiki/Services/Infrastructure/Background/IngestionLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		F0A100202F1A000100AA1001 /* IngestionLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestionLiveActivityWidget.swift; sourceTree = "<group>"; };
+		F0A100212F1A000100AA1001 /* FirikiLiveActivitiesBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirikiLiveActivitiesBundle.swift; sourceTree = "<group>"; };
+		F0A100222F1A000100AA1001 /* FirikiActivityIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = FirikiActivityIcon.png; sourceTree = "<group>"; };
+		F0A100232F1A000100AA1001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0B100022F1A000100AA1001 /* FirikiShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FirikiShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0B100042F1A000100AA1001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		F0B100052F1A000100AA1001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0B100062F1A000100AA1001 /* FirikiShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FirikiShare.entitlements; sourceTree = "<group>"; };
+		F0B100172F1A000100AA1001 /* Firiki/App/SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Firiki/App/SharedInbox.swift; sourceTree = "<group>"; };
+		F0C100022F1A000100AA1001 /* FirikiCapture.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = FirikiCapture.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0C100042F1A000100AA1001 /* CaptureExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureExtension.swift; sourceTree = "<group>"; };
+		F0C100052F1A000100AA1001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0C100172F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Firiki/App/ScanIntoLibraryIntent.swift; sourceTree = "<group>"; };
+		F0C100192F1A000100AA1001 /* CaptureViewfinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureViewfinder.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E0A100052F0F5F5F00AABA0C /* Exceptions for "Firiki/Core" folder in "FirikiEngine" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Extensions/MarkdownRenderer.swift,
+			);
+			target = E0A100072F0F5F5F00AABA0C /* FirikiEngine */;
+		};
+		E0A100132F0F5F5F00AABA0C /* Exceptions for "Firiki/Services/Infrastructure/Integration" folder in "FirikiEngine" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ImagePlaygroundService.swift,
+			);
+			target = E0A100072F0F5F5F00AABA0C /* FirikiEngine */;
+		};
+		E0A100142F0F5F5F00AABA0C /* Exceptions for "Firiki/Services/Agentic" folder in "FirikiEngine" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				RAGAppIntents.swift,
+				VisualIntelligenceIntents.swift,
+				WritingToolsService.swift,
+			);
+			target = E0A100072F0F5F5F00AABA0C /* FirikiEngine */;
+		};
+		F0A100052F1A000100AA1001 /* Exceptions for "Firiki/Services/LLM" folder in "FirikiEngine" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ModelResolutionService.swift,
+			);
+			target = E0A100072F0F5F5F00AABA0C /* FirikiEngine */;
+		};
+		F0A100062F1A000100AA1001 /* Exceptions for "Firiki/Services/Storage" folder in "FirikiEngine" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				DocumentationCacheService.swift,
+			);
+			target = E0A100072F0F5F5F00AABA0C /* FirikiEngine */;
+		};
+		F0A100072F1A000100AA1001 /* Exceptions for "Firiki/Resources" folder in "FirikiEngine" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets/Assets.xcassets,
+				MLModels/GreekOCR/el_dict.txt,
+				"MLModels/GreekOCR/el_PP-OCRv5_mobile_rec.onnx",
+				"MLModels/GreekOCR/PP-OCRv5_mobile_det.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_decoder_cross.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_decoder_step.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_encoder.onnx",
+				"MLModels/Translation/opus-mt-tc-big-el-en_tokenizer.json",
+				"MLModels/Translation/opus-mt-tc-big-en-el_decoder_cross.onnx",
+				"MLModels/Translation/opus-mt-tc-big-en-el_decoder_step.onnx",
+				"MLModels/Translation/opus-mt-tc-big-en-el_encoder.onnx",
+				"MLModels/Translation/opus-mt-tc-big-en-el_tokenizer.json",
+			);
+			target = E0A100072F0F5F5F00AABA0C /* FirikiEngine */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		17994961EE4C7527D88E9B5B /* FirikiTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FirikiTests;
+			sourceTree = "<group>";
+		};
+		B0D565E02E98AC50001274A2 /* Firiki */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki;
+			sourceTree = "<group>";
+		};
+		C1A100042F2E000100AA1001 /* FirikiUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FirikiUITests;
+			sourceTree = "<group>";
+		};
+		E0A100152F0F5F5F00AABA0C /* Firiki/Core */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E0A100052F0F5F5F00AABA0C /* Exceptions for "Firiki/Core" folder in "FirikiEngine" target */,
+			);
+			path = Firiki/Core;
+			sourceTree = "<group>";
+		};
+		E0A100162F0F5F5F00AABA0C /* Firiki/SDK */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/SDK;
+			sourceTree = "<group>";
+		};
+		E0A100172F0F5F5F00AABA0C /* Firiki/Services/Agentic */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E0A100142F0F5F5F00AABA0C /* Exceptions for "Firiki/Services/Agentic" folder in "FirikiEngine" target */,
+			);
+			path = Firiki/Services/Agentic;
+			sourceTree = "<group>";
+		};
+		E0A100182F0F5F5F00AABA0C /* Firiki/Services/Document */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Document;
+			sourceTree = "<group>";
+		};
+		E0A100192F0F5F5F00AABA0C /* Firiki/Services/Embedding */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Embedding;
+			sourceTree = "<group>";
+		};
+		E0A100202F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Compute */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Infrastructure/Compute;
+			sourceTree = "<group>";
+		};
+		E0A100212F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Configuration */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Infrastructure/Configuration;
+			sourceTree = "<group>";
+		};
+		E0A100222F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Integration */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E0A100132F0F5F5F00AABA0C /* Exceptions for "Firiki/Services/Infrastructure/Integration" folder in "FirikiEngine" target */,
+			);
+			path = Firiki/Services/Infrastructure/Integration;
+			sourceTree = "<group>";
+		};
+		E0A100232F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Monitoring */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Infrastructure/Monitoring;
+			sourceTree = "<group>";
+		};
+		E0A100242F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Optimization */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Infrastructure/Optimization;
+			sourceTree = "<group>";
+		};
+		E0A100252F0F5F5F00AABA0C /* Firiki/Services/LLM */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F0A100052F1A000100AA1001 /* Exceptions for "Firiki/Services/LLM" folder in "FirikiEngine" target */,
+			);
+			path = Firiki/Services/LLM;
+			sourceTree = "<group>";
+		};
+		E0A100262F0F5F5F00AABA0C /* Firiki/Services/Query */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Query;
+			sourceTree = "<group>";
+		};
+		E0A100272F0F5F5F00AABA0C /* Firiki/Services/RAG */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/RAG;
+			sourceTree = "<group>";
+		};
+		E0A100282F0F5F5F00AABA0C /* Firiki/Services/Storage */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F0A100062F1A000100AA1001 /* Exceptions for "Firiki/Services/Storage" folder in "FirikiEngine" target */,
+			);
+			path = Firiki/Services/Storage;
+			sourceTree = "<group>";
+		};
+		E0A100292F0F5F5F00AABA0C /* Firiki/Services/VectorStore */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/VectorStore;
+			sourceTree = "<group>";
+		};
+		E0A1002A2F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Storage */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/Infrastructure/Storage;
+			sourceTree = "<group>";
+		};
+		E0A1002B2F0F5F5F00AABA0C /* Firiki/Services/AIPlatform */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Firiki/Services/AIPlatform;
+			sourceTree = "<group>";
+		};
+		F0A100082F1A000100AA1001 /* Firiki/Resources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F0A100072F1A000100AA1001 /* Exceptions for "Firiki/Resources" folder in "FirikiEngine" target */,
+			);
+			path = Firiki/Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0DC56E4EF82F88294775D241 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E0A100042F0F5F5F00AABA0D /* FirikiEngine.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0D565DB2E98AC50001274A2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B016E7B72F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */,
+				E0A100322F0F5F5F00AABA0C /* Tokenizers in Frameworks */,
+				0E1A00012F30000100AA1001 /* onnxruntime in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1A100062F2E000100AA1001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E0A100062F0F5F5F00AABA0C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E0A100022F0F5F5F00AABA0C /* TransformersTokenizers in Frameworks */,
+				E0A100302F0F5F5F00AABA0C /* Tokenizers in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0A1000B2F1A000100AA1001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0B100092F1A000100AA1001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0C100092F1A000100AA1001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		B015094A2FA3A465008E428B /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				E0A100152F0F5F5F00AABA0C /* Firiki/Core */,
+				F0A100082F1A000100AA1001 /* Firiki/Resources */,
+				E0A100162F0F5F5F00AABA0C /* Firiki/SDK */,
+				E0A1002B2F0F5F5F00AABA0C /* Firiki/Services/AIPlatform */,
+				E0A100172F0F5F5F00AABA0C /* Firiki/Services/Agentic */,
+				E0A100182F0F5F5F00AABA0C /* Firiki/Services/Document */,
+				E0A100192F0F5F5F00AABA0C /* Firiki/Services/Embedding */,
+				E0A100202F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Compute */,
+				E0A100212F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Configuration */,
+				E0A100222F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Integration */,
+				E0A100232F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Monitoring */,
+				E0A100242F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Optimization */,
+				E0A1002A2F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Storage */,
+				E0A100252F0F5F5F00AABA0C /* Firiki/Services/LLM */,
+				E0A100262F0F5F5F00AABA0C /* Firiki/Services/Query */,
+				E0A100272F0F5F5F00AABA0C /* Firiki/Services/RAG */,
+				E0A100282F0F5F5F00AABA0C /* Firiki/Services/Storage */,
+				E0A100292F0F5F5F00AABA0C /* Firiki/Services/VectorStore */,
+				F0A100042F1A000100AA1001 /* Firiki/Services/Infrastructure/Background/IngestionLiveActivityAttributes.swift */,
+				F0B100172F1A000100AA1001 /* Firiki/App/SharedInbox.swift */,
+				F0C100172F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		B0B991682F0F4BC700BBE97E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				E36190526DA1ED2ACAD0DA42 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		B0D565D52E98AC50001274A2 = {
+			isa = PBXGroup;
+			children = (
+				17994961EE4C7527D88E9B5B /* FirikiTests */,
+				C1A100042F2E000100AA1001 /* FirikiUITests */,
+				B0D565E02E98AC50001274A2 /* Firiki */,
+				F0A1000A2F1A000100AA1001 /* FirikiLiveActivities */,
+				F0B100072F1A000100AA1001 /* FirikiShare */,
+				F0C100072F1A000100AA1001 /* FirikiCapture */,
+				B0B991682F0F4BC700BBE97E /* Frameworks */,
+				B0D565DF2E98AC50001274A2 /* Products */,
+				B015094A2FA3A465008E428B /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		B0D565DF2E98AC50001274A2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AF1C66A44688A7B340182360 /* FirikiTests.xctest */,
+				C1A100032F2E000100AA1001 /* FirikiUITests.xctest */,
+				B0D565DE2E98AC50001274A2 /* Firiki.app */,
+				E0A100042F0F5F5F00AABA0C /* FirikiEngine.framework */,
+				F0A100022F1A000100AA1001 /* FirikiLiveActivities.appex */,
+				F0B100022F1A000100AA1001 /* FirikiShare.appex */,
+				F0C100022F1A000100AA1001 /* FirikiCapture.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E36190526DA1ED2ACAD0DA42 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				DDFD1600670D479C7075E2C2 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		F0A1000A2F1A000100AA1001 /* FirikiLiveActivities */ = {
+			isa = PBXGroup;
+			children = (
+				F0A100202F1A000100AA1001 /* IngestionLiveActivityWidget.swift */,
+				F0A100212F1A000100AA1001 /* FirikiLiveActivitiesBundle.swift */,
+				F0A100222F1A000100AA1001 /* FirikiActivityIcon.png */,
+				F0A100232F1A000100AA1001 /* Info.plist */,
+			);
+			path = FirikiLiveActivities;
+			sourceTree = "<group>";
+		};
+		F0B100072F1A000100AA1001 /* FirikiShare */ = {
+			isa = PBXGroup;
+			children = (
+				F0B100042F1A000100AA1001 /* ShareViewController.swift */,
+				F0B100052F1A000100AA1001 /* Info.plist */,
+				F0B100062F1A000100AA1001 /* FirikiShare.entitlements */,
+			);
+			path = FirikiShare;
+			sourceTree = "<group>";
+		};
+		F0C100072F1A000100AA1001 /* FirikiCapture */ = {
+			isa = PBXGroup;
+			children = (
+				F0C100042F1A000100AA1001 /* CaptureExtension.swift */,
+				F0C100192F1A000100AA1001 /* CaptureViewfinder.swift */,
+				F0C100052F1A000100AA1001 /* Info.plist */,
+			);
+			path = FirikiCapture;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0F3C6530C6DDDDF669D8396B /* FirikiTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D6CA55BABB4421C80E023711 /* Build configuration list for PBXNativeTarget "FirikiTests" */;
+			buildPhases = (
+				6FB4BEE880D86874B2120AC7 /* Sources */,
+				0DC56E4EF82F88294775D241 /* Frameworks */,
+				601D6FF225360C5F89012022 /* Embed Frameworks */,
+				29833E3824F6652362B1FC83 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				86B5D50247B13A6ED0FE80E0 /* PBXTargetDependency */,
+				E0A100072F0F5F5F00AABA0F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				17994961EE4C7527D88E9B5B /* FirikiTests */,
+			);
+			name = FirikiTests;
+			productName = FirikiTests;
+			productReference = AF1C66A44688A7B340182360 /* FirikiTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B0D565DD2E98AC50001274A2 /* Firiki */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B0D565E92E98AC51001274A2 /* Build configuration list for PBXNativeTarget "Firiki" */;
+			buildPhases = (
+				B0D565DA2E98AC50001274A2 /* Sources */,
+				B0D565DB2E98AC50001274A2 /* Frameworks */,
+				B0D565DC2E98AC50001274A2 /* Resources */,
+				F0A1000C2F1A000100AA1001 /* Embed Foundation Extensions */,
+				F0C1000C2F1A000100AA1001 /* Embed ExtensionKit Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F0A100152F1A000100AA1001 /* PBXTargetDependency */,
+				F0B100152F1A000100AA1001 /* PBXTargetDependency */,
+				F0C100152F1A000100AA1001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B0D565E02E98AC50001274A2 /* Firiki */,
+			);
+			name = Firiki;
+			packageProductDependencies = (
+				B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */,
+				E0A100312F0F5F5F00AABA0C /* Tokenizers */,
+				0E1A00022F30000100AA1001 /* onnxruntime */,
+			);
+			productName = Firiki;
+			productReference = B0D565DE2E98AC50001274A2 /* Firiki.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C1A100082F2E000100AA1001 /* FirikiUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C1A1000B2F2E000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiUITests" */;
+			buildPhases = (
+				C1A100052F2E000100AA1001 /* Sources */,
+				C1A100062F2E000100AA1001 /* Frameworks */,
+				C1A100072F2E000100AA1001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C1A100022F2E000100AA1001 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C1A100042F2E000100AA1001 /* FirikiUITests */,
+			);
+			name = FirikiUITests;
+			productName = FirikiUITests;
+			productReference = C1A100032F2E000100AA1001 /* FirikiUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		E0A100072F0F5F5F00AABA0C /* FirikiEngine */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E0A100102F0F5F5F00AABA0C /* Build configuration list for PBXNativeTarget "FirikiEngine" */;
+			buildPhases = (
+				E0A100112F0F5F5F00AABA0C /* Sources */,
+				E0A100062F0F5F5F00AABA0C /* Frameworks */,
+				E0A100122F0F5F5F00AABA0C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E0A100152F0F5F5F00AABA0C /* Firiki/Core */,
+				E0A100162F0F5F5F00AABA0C /* Firiki/SDK */,
+				E0A100172F0F5F5F00AABA0C /* Firiki/Services/Agentic */,
+				E0A100182F0F5F5F00AABA0C /* Firiki/Services/Document */,
+				E0A100192F0F5F5F00AABA0C /* Firiki/Services/Embedding */,
+				E0A100202F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Compute */,
+				E0A100212F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Configuration */,
+				E0A100222F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Integration */,
+				E0A100232F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Monitoring */,
+				E0A100242F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Optimization */,
+				E0A100252F0F5F5F00AABA0C /* Firiki/Services/LLM */,
+				E0A100262F0F5F5F00AABA0C /* Firiki/Services/Query */,
+				E0A100272F0F5F5F00AABA0C /* Firiki/Services/RAG */,
+				E0A100282F0F5F5F00AABA0C /* Firiki/Services/Storage */,
+				E0A100292F0F5F5F00AABA0C /* Firiki/Services/VectorStore */,
+				E0A1002A2F0F5F5F00AABA0C /* Firiki/Services/Infrastructure/Storage */,
+				E0A1002B2F0F5F5F00AABA0C /* Firiki/Services/AIPlatform */,
+				F0A100082F1A000100AA1001 /* Firiki/Resources */,
+			);
+			name = FirikiEngine;
+			packageProductDependencies = (
+				B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */,
+				E0A100312F0F5F5F00AABA0C /* Tokenizers */,
+			);
+			productName = FirikiEngine;
+			productReference = E0A100042F0F5F5F00AABA0C /* FirikiEngine.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		F0A100102F1A000100AA1001 /* FirikiLiveActivities */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0A100112F1A000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiLiveActivities" */;
+			buildPhases = (
+				F0A100282F1A000100AA1001 /* Sources */,
+				F0A1000B2F1A000100AA1001 /* Frameworks */,
+				F0A100092F1A000100AA1001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FirikiLiveActivities;
+			productName = FirikiLiveActivities;
+			productReference = F0A100022F1A000100AA1001 /* FirikiLiveActivities.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		F0B100102F1A000100AA1001 /* FirikiShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0B100112F1A000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiShare" */;
+			buildPhases = (
+				F0B100082F1A000100AA1001 /* Sources */,
+				F0B100092F1A000100AA1001 /* Frameworks */,
+				F0B1000A2F1A000100AA1001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FirikiShare;
+			productName = FirikiShare;
+			productReference = F0B100022F1A000100AA1001 /* FirikiShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		F0C100102F1A000100AA1001 /* FirikiCapture */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0C100112F1A000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiCapture" */;
+			buildPhases = (
+				F0C100082F1A000100AA1001 /* Sources */,
+				F0C100092F1A000100AA1001 /* Frameworks */,
+				F0C1000A2F1A000100AA1001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FirikiCapture;
+			productName = FirikiCapture;
+			productReference = F0C100022F1A000100AA1001 /* FirikiCapture.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B0D565D62E98AC50001274A2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					B0D565DD2E98AC50001274A2 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					C1A100082F2E000100AA1001 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = B0D565DD2E98AC50001274A2;
+					};
+					E0A100072F0F5F5F00AABA0C = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					F0A100102F1A000100AA1001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					F0B100102F1A000100AA1001 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					F0C100102F1A000100AA1001 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = B0D565D92E98AC50001274A2 /* Build configuration list for PBXProject "Firiki" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = B0D565D52E98AC50001274A2;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B016E7B32F0F5F5F00AABA0C /* XCLocalSwiftPackageReference "Firiki/swift-transformers" */,
+				0E1A00032F30000100AA1001 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = B0D565DF2E98AC50001274A2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0F3C6530C6DDDDF669D8396B /* FirikiTests */,
+				C1A100082F2E000100AA1001 /* FirikiUITests */,
+				B0D565DD2E98AC50001274A2 /* Firiki */,
+				E0A100072F0F5F5F00AABA0C /* FirikiEngine */,
+				F0A100102F1A000100AA1001 /* FirikiLiveActivities */,
+				F0B100102F1A000100AA1001 /* FirikiShare */,
+				F0C100102F1A000100AA1001 /* FirikiCapture */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		29833E3824F6652362B1FC83 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0D565DC2E98AC50001274A2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1A100072F2E000100AA1001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E0A100122F0F5F5F00AABA0C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0A100092F1A000100AA1001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0A100262F1A000100AA1001 /* FirikiActivityIcon.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0B1000A2F1A000100AA1001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0C1000A2F1A000100AA1001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6FB4BEE880D86874B2120AC7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0D565DA2E98AC50001274A2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1A100052F2E000100AA1001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E0A100112F0F5F5F00AABA0C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0A100282F1A000100AA1001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0A100032F1A000100AA1001 /* Firiki/Services/Infrastructure/Background/IngestionLiveActivityAttributes.swift in Sources */,
+				F0A100242F1A000100AA1001 /* IngestionLiveActivityWidget.swift in Sources */,
+				F0A100252F1A000100AA1001 /* FirikiLiveActivitiesBundle.swift in Sources */,
+				F0C1001A2F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0B100082F1A000100AA1001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0B100032F1A000100AA1001 /* ShareViewController.swift in Sources */,
+				F0B100162F1A000100AA1001 /* Firiki/App/SharedInbox.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0C100082F1A000100AA1001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0C100032F1A000100AA1001 /* CaptureExtension.swift in Sources */,
+				F0C100182F1A000100AA1001 /* CaptureViewfinder.swift in Sources */,
+				F0C100162F1A000100AA1001 /* Firiki/App/ScanIntoLibraryIntent.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		86B5D50247B13A6ED0FE80E0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Firiki;
+			target = B0D565DD2E98AC50001274A2 /* Firiki */;
+			targetProxy = 8D8D45ADEC3A8FACC0A1546A /* PBXContainerItemProxy */;
+		};
+		C1A100022F2E000100AA1001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B0D565DD2E98AC50001274A2 /* Firiki */;
+			targetProxy = C1A100012F2E000100AA1001 /* PBXContainerItemProxy */;
+		};
+		E0A100072F0F5F5F00AABA0F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = FirikiEngine;
+			target = E0A100072F0F5F5F00AABA0C /* FirikiEngine */;
+			targetProxy = E0A100072F0F5F5F00AABA0E /* PBXContainerItemProxy */;
+		};
+		F0A100152F1A000100AA1001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = F0A100102F1A000100AA1001 /* FirikiLiveActivities */;
+			targetProxy = F0A100142F1A000100AA1001 /* PBXContainerItemProxy */;
+		};
+		F0B100152F1A000100AA1001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = F0B100102F1A000100AA1001 /* FirikiShare */;
+			targetProxy = F0B100142F1A000100AA1001 /* PBXContainerItemProxy */;
+		};
+		F0C100152F1A000100AA1001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = F0C100102F1A000100AA1001 /* FirikiCapture */;
+			targetProxy = F0C100142F1A000100AA1001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		6AB4EB15D0C807FC1FF50FD8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Firiki.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Firiki";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		B0D565E72E98AC51001274A2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		B0D565E82E98AC51001274A2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		B0D565EA2E98AC51001274A2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = Firiki/Firiki.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_ENHANCED_SECURITY = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_POINTER_AUTHENTICATION = NO;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Firiki;
+				INFOPLIST_KEY_CFBundleName = Firiki;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace[sdk=iphoneos*]" = NO;
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace[sdk=iphonesimulator*]" = NO;
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace[sdk=macosx*]" = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of documents or whiteboards for OCR and semantic search.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice queries or dictate text for hands-free document search.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Select images from your library to extract text and add to your knowledge base.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe audio and video files you import to add their content to your knowledge base.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6,7";
+				XROS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		B0D565EB2E98AC51001274A2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_ENTITLEMENTS = Firiki/Firiki.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_ENHANCED_SECURITY = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_POINTER_AUTHENTICATION = NO;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Firiki;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace[sdk=iphoneos*]" = NO;
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace[sdk=iphonesimulator*]" = NO;
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace[sdk=macosx*]" = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of documents or whiteboards for OCR and semantic search.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice queries or dictate text for hands-free document search.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Select images from your library to extract text and add to your knowledge base.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe audio and video files you import to add their content to your knowledge base.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "fetch processing";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6,7";
+				XROS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+		C1A100092F2E000100AA1001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Firiki;
+			};
+			name = Debug;
+		};
+		C1A1000A2F2E000100AA1001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Firiki;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		E0A100082F0F5F5F00AABA0C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = NO;
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = FirikiEngine;
+				INFOPLIST_KEY_CFBundleName = FirikiEngine;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.engine;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "FIRIKI_ENGINE_SDK DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E0A100092F0F5F5F00AABA0C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = NO;
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = FirikiEngine;
+				INFOPLIST_KEY_CFBundleName = FirikiEngine;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.engine;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "FIRIKI_ENGINE_SDK $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F0A100122F1A000100AA1001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FirikiLiveActivities/FirikiLiveActivities.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FirikiLiveActivities/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.liveactivities;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F0A100132F1A000100AA1001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FirikiLiveActivities/FirikiLiveActivities.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FirikiLiveActivities/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.liveactivities;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F0B100122F1A000100AA1001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FirikiShare/FirikiShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FirikiShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F0B100132F1A000100AA1001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FirikiShare/FirikiShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FirikiShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F0C100122F1A000100AA1001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FirikiCapture/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.capture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F0C100132F1A000100AA1001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FirikiCapture/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.capture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F56921109921F3B8D6037496 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 150;
+				DEVELOPMENT_TEAM = J7R6G54TG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 5.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alagraf.firiki.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Firiki.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Firiki";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B0D565D92E98AC50001274A2 /* Build configuration list for PBXProject "Firiki" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B0D565E72E98AC51001274A2 /* Debug */,
+				B0D565E82E98AC51001274A2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B0D565E92E98AC51001274A2 /* Build configuration list for PBXNativeTarget "Firiki" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B0D565EA2E98AC51001274A2 /* Debug */,
+				B0D565EB2E98AC51001274A2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C1A1000B2F2E000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C1A1000A2F2E000100AA1001 /* Release */,
+				C1A100092F2E000100AA1001 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D6CA55BABB4421C80E023711 /* Build configuration list for PBXNativeTarget "FirikiTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6AB4EB15D0C807FC1FF50FD8 /* Release */,
+				F56921109921F3B8D6037496 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E0A100102F0F5F5F00AABA0C /* Build configuration list for PBXNativeTarget "FirikiEngine" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E0A100082F0F5F5F00AABA0C /* Debug */,
+				E0A100092F0F5F5F00AABA0C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0A100112F1A000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiLiveActivities" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0A100122F1A000100AA1001 /* Debug */,
+				F0A100132F1A000100AA1001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0B100112F1A000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0B100122F1A000100AA1001 /* Debug */,
+				F0B100132F1A000100AA1001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0C100112F1A000100AA1001 /* Build configuration list for PBXNativeTarget "FirikiCapture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0C100122F1A000100AA1001 /* Debug */,
+				F0C100132F1A000100AA1001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B016E7B32F0F5F5F00AABA0C /* XCLocalSwiftPackageReference "Firiki/swift-transformers" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Firiki/swift-transformers";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0E1A00032F30000100AA1001 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 1.24.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0E1A00022F30000100AA1001 /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0E1A00032F30000100AA1001 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
+		};
+		B016E7B62F0F5F5F00AABA0C /* TransformersTokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B016E7B32F0F5F5F00AABA0C /* XCLocalSwiftPackageReference "Firiki/swift-transformers" */;
+			productName = TransformersTokenizers;
+		};
+		E0A100312F0F5F5F00AABA0C /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Tokenizers;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = B0D565D62E98AC50001274A2 /* Project object */;
+}

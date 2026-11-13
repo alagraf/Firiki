@@ -1,12 +1,12 @@
 #!/bin/bash
 # Thesis fork: downloads Helsinki-NLP/opus-mt-tc-big-el-en and opus-mt-tc-big-en-el from Hugging Face, converts
 # them to INT8 ONNX with a decoder key/value cache (scripts/thesis/convert_opus_mt.py) and puts them in
-# OpenIntelligence/Resources/MLModels/Translation/, which git ignores (about 730 MB).
+# Firiki/Resources/MLModels/Translation/, which git ignores (about 730 MB).
 # Needs python3 and about 2 GB for the temporary virtual environment and PyTorch.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${THESIS_MODEL_WORK:-$(mktemp -d)}"
-OUT="$ROOT/OpenIntelligence/Resources/MLModels/Translation"
+OUT="$ROOT/Firiki/Resources/MLModels/Translation"
 mkdir -p "$OUT" "$WORK/dl"
 python3 -m venv "$WORK/venv"
 "$WORK/venv/bin/pip" install -q torch transformers sentencepiece onnx onnxruntime sacremoses

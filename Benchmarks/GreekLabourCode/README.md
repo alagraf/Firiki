@@ -61,7 +61,7 @@ p.114, 334 p.115, 336–338 and 341 p.116, 348 p.118, 580 p.214.
 ## Running it
 
 ```bash
-TEST_RUNNER_OI_GREEK_EVAL=1 TEST_RUNNER_OI_GREEK_EVAL_SET=GreekLabourCode TEST_RUNNER_OI_GREEK_EVAL_SPLIT=dev TEST_RUNNER_OI_GREEK_EVAL_CORPUS=excerpt scripts/thesis_run_tests.sh /private/tmp/oi-logs/labour.log -only-testing:OpenIntelligenceTests/GreekConstitutionEvaluationTests
+TEST_RUNNER_OI_GREEK_EVAL=1 TEST_RUNNER_OI_GREEK_EVAL_SET=GreekLabourCode TEST_RUNNER_OI_GREEK_EVAL_SPLIT=dev TEST_RUNNER_OI_GREEK_EVAL_CORPUS=excerpt scripts/thesis_run_tests.sh /private/tmp/oi-logs/labour.log -only-testing:FirikiTests/GreekConstitutionEvaluationTests
 ```
 
 `TEST_RUNNER_OI_GREEK_EVAL_CORPUS=full` uses the whole code (set `OI_TEST_TIMEOUT_SECONDS` above

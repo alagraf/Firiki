@@ -12,7 +12,17 @@ updated with every further change.
   shared history) is kept as the backup branch `main-pre-sync`.
 - **Original repository:** https://github.com/Gunnarguy/OpenIntelligence (git remote `upstream`);
   the owner's GitHub fork is https://github.com/alagraf/OpenIntelligence
-- **Last updated:** 2026-11-01
+- **Last updated:** 2026-11-13
+
+> **The app is now called Firiki (2026-11-13).** Paths and names in this file are kept as they were
+> when written. Today's equivalents: `OpenIntelligence/` → `Firiki/`, `OpenIntelligenceTests/` →
+> `FirikiTests/`, `OpenIntelligenceUITests/` → `FirikiUITests/`, `OpenIntelligenceCapture/`,
+> `…LiveActivities/`, `…Share/` → `FirikiCapture/`, `FirikiLiveActivities/`, `FirikiShare/`,
+> `OpenIntelligence.xcodeproj` → `Firiki.xcodeproj`, scheme `OpenIntelligence` → `Firiki`, engine
+> `OpenIntelligenceEngine` → `FirikiEngine`, types `OpenIntelligence*` → `Firiki*`, bundle IDs
+> `com.openintelligence.app…` → `com.alagraf.firiki…`, app group → `group.com.alagraf.firiki`, links
+> `openintelligence://` → `firiki://`, environment variables `OPENINTELLIGENCE_*` → `FIRIKI_*`.
+> Billing, plans and limits were removed at the same time. See "13 Nov 2026 (second entry)".
 
 ## 1. Baseline
 
@@ -2061,3 +2071,69 @@ requirements, a test command naming suites that don't exist).
 **Verification:** every README figure checked against `METHODS_SUMMARY.md` §8; suite names checked
 with `grep` in `OpenIntelligenceTests/`; model sizes with `du`; deployment targets in
 `project.pbxproj`. No code changed, nothing built or run.
+
+## 13 Nov 2026 (second entry): renamed to Firiki; the released app's material removed
+
+**Why:** the owner asked to remove every unnecessary mention of OpenIntelligence, rename what is left
+to Firiki, and drop anything that belongs to a released app. Firiki is a thesis proof of concept: it
+has no store listing, no purchases and no release process. Plan: `Docs/Thesis/plans/firiki-rename.md`
+(approved, including `project.pbxproj`, the entitlements and the `Info.plist` files). Branch
+`firiki-rename`, three commits, not merged or pushed until the owner has reviewed it.
+
+**What:**
+- *Release material deleted (commit 1):* `fastlane/`, `ci_scripts/`, `InAppEvents/`, the Gemfiles,
+  `WHATS_NEW.md`, `PRIVACY.md`, the original author's root `HANDOFF.md`, the SDK's `Package.swift`,
+  `.github/`, `Xrays/`, the App Store, sale, ads, screenshot and privacy-policy scripts, and the
+  original app's documentation in `Docs/` except the three pipeline overviews (`HOW_IT_WORKS.md`,
+  `INGESTION_PIPELINE.md`, `RETRIEVAL_PIPELINE.md`), the codemap and `Docs/Thesis/`. `CHANGELOG.md`
+  keeps only the fork's 5.7 sections.
+- *Billing removed, everything unlocked (commit 2):* StoreKit billing, entitlements and the quota
+  policy are deleted (`Features/Billing`, `Services/Billing`, `Resources/StoreKit`, `WorkspaceTier`,
+  `QuotaPolicy`, the StoreKit test scheme and configuration). Gone with them: the document, library
+  and conversation limits, the daily Maximum cap, the Pro gates on iCloud and Shortcuts, the plan
+  and sale screens and banners, the review, feedback and plan prompts, What's New and version
+  history, the storefront lookup, the billing telemetry category, and the Plans section of the
+  sample Product Guide (with its suggested question and three built-in QA cases). Share and the
+  answer card link to the project's repository instead of the App Store; About says what the
+  project is and credits the original app ("Built on OpenIntelligence", MIT licence). Copy Link
+  uses the app's own `firiki://` link; the web form on the original author's site (`gunzino.me`)
+  is removed. Tests that set a paid plan before creating a library no longer need to.
+- *Rename (commit 3):* folders, files, targets, schemes, modules and types `OpenIntelligence*` →
+  `Firiki*` (engine `FirikiEngine`); bundle IDs `com.openintelligence.app…` →
+  `com.alagraf.firiki…`; app group `group.com.alagraf.firiki`; every other reverse-DNS ID
+  (background tasks, activities, widgets, loggers, queues; `Gunndamental.OpenIntelligence` too) →
+  `com.alagraf.firiki.…`; URL scheme `firiki://`; display names Firiki, Firiki Live, Firiki
+  Camera; environment variables `FIRIKI_*`. One collision of the ordered replacement was fixed by
+  hand: `com.openintelligence.app-refresh` → `com.alagraf.firiki.app-refresh`. The Live Activity
+  icon symlink was repointed. `.gitattributes` (SDK packaging) and the original author's
+  `.agent/RISK_REGISTER.md` are deleted. The codemap's three billing slices are removed and the
+  nodes and edges that named deleted code pruned (`codemap.py check`: 0 errors, 43 slices).
+  `AGENTS.md`: identity table updated (signing was already team `J7R6G54TG4` in all 16
+  configurations, not `""` as the table said); the upstream-sync section is replaced by a note
+  that merging `upstream/main` is no longer practical. Signing settings unchanged; no entitlement
+  added or removed.
+- *Kept on purpose:* `LICENSE` and `THIRD_PARTY_NOTICES.md`, the "Created by Gunnar Hostetler"
+  file headers, the README's credits, the thesis records in `Docs/Thesis/`, `BenchmarkRuns/`,
+  `Benchmarks/baselines/`, `scripts/thesis/holdout/EUHoldoutStockAppTests.swift` (it runs inside the
+  original app), the DEBUG-only screenshot scenes, and the vendored `swift-transformers`.
+- *Data:* the new bundle ID and data folder start empty. Libraries imported before the rename are
+  not carried over and have to be imported again (the Labour Code takes about 15 minutes).
+
+**Verification (iPhone 18 Pro simulator, iOS 27; macOS 26 build):**
+
+| | Before (`89b73532`) | After |
+|---|---|---|
+| iOS test build | `** TEST BUILD SUCCEEDED **` | `** TEST BUILD SUCCEEDED **` |
+| macOS build | `** BUILD SUCCEEDED **` | `** BUILD SUCCEEDED **` |
+| 20 Greek legal suites | 119 tests in 20 suites passed | 119 tests in 20 suites passed |
+| Full unit suite (XCTest) | 1,366 tests, 11 skipped, 4 failures | 1,288 tests, 9 skipped, 2 failures (one then fixed; its suites rerun, the full suite not) |
+| Full unit suite (Swift Testing) | 128 tests in 28 suites passed | 128 tests in 28 suites passed |
+
+The 78 fewer tests are the deleted billing, plan, rating, What's New and version-history tests and
+the web-link test. Of the 4 failures before, two were billing tests (deleted), one was the passage
+reveal test that needs a window scene (passed this time), and one is the Greek-region number format
+(`AnswerUsageTallyTests.testTheDetailsLine`, "1.100" for "1,100"), still failing and unrelated.
+The new failure (`SampleQuestionHeadingsTests`, the plans question without its heading) was fixed;
+the two sample-question suites and `AppLinkTests` then passed (30 tests, 0 failures). The macOS app
+launched as `com.alagraf.firiki` signed by `J7R6G54TG4`. **Not checked:** the app's screens by eye
+and a PDF import under the new identity (left for the owner's review), and an iPhone build.

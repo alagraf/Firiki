@@ -1,0 +1,279 @@
+//
+//  DocumentCard.swift
+//  Firiki
+//
+//  Created by Gunnar Hostetler on 10/9/25.
+//
+
+import SwiftUI
+
+struct ModernDocumentCard: View {
+    let document: Document
+    @ObservedObject var ragService: RAGService
+    @EnvironmentObject private var workspaceSyncService: WorkspaceSyncService
+    @Environment(\.undoManager) private var undoManager
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showingDeleteAlert = false
+    @State private var deleteMode: DeleteMode = .local
+
+    enum DeleteMode {
+        case local
+        case everywhere
+    }
+
+    private var documentSyncMode: LibrarySyncMode {
+        ragService.syncMode(for: document)
+    }
+
+    private var isSharedICloudDocument: Bool {
+        documentSyncMode == .iCloudShared
+    }
+
+    /// Display up to 3 tags to keep the card compact
+    private var displayTags: [String] {
+        guard let tags = document.contentTags, !tags.isEmpty else { return [] }
+        return Array(tags.prefix(3))
+    }
+
+    var body: some View {
+        HStack(spacing: DSSpacing.lg) {
+            // Icon with liquid gradient background
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.4), Color.accentColor.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 52, height: 52)
+                    .glassCircleEffectHelper()
+
+                Image(systemName: DocumentRow.iconName(for: document.contentType))
+                    .scaledFont(size: 22, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+            }
+
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                // The name and its figures grow with the text size, and the figures in the readable gray go onto
+                // further lines when they do not fit across (5.7): gray on this card measured 3.38 to 1.
+                Text(document.filename)
+                    .scaledFont(size: 16, weight: .bold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+
+                WrappingRowLayout(spacing: DSSpacing.md, lineSpacing: DSSpacing.xs) {
+                    HStack(spacing: DSSpacing.xs) {
+                        Image(systemName: "cube.box.fill")
+                        Text("\(document.totalChunks)")
+                    }
+                    .scaledFont(size: 11, weight: .medium)
+                    .foregroundStyle(DSColors.secondaryText)
+
+                    HStack(spacing: DSSpacing.xs) {
+                        Image(systemName: "clock")
+                        Text(document.addedAt, style: .relative)
+                    }
+                    .scaledFont(size: 11, weight: .medium)
+                    .foregroundStyle(DSColors.secondaryText)
+                    
+                    if isSharedICloudDocument {
+                        HStack(spacing: DSSpacing.xs) {
+                            Image(systemName: "icloud.fill")
+                            Text("Synced")
+                        }
+                        .scaledFont(size: 11, weight: .bold)
+                        .foregroundStyle(DSColors.readable(.accentColor))
+                    }
+                }
+
+                // Content tags row (iOS 26+)
+                if !displayTags.isEmpty {
+                    ContentTagsRow(tags: displayTags, hasMoreTags: (document.contentTags?.count ?? 0) > 3)
+                        .padding(.top, DSSpacing.xxs)
+                }
+            }
+
+            Spacer()
+
+            // Chevron
+            Image(systemName: "chevron.right")
+                .scaledFont(size: 12, weight: .bold)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(DSSpacing.md)
+        // The regular material, a little more opaque than the thin one it replaces, so gray text on the card reads at
+        // 4.5 to 1 over the library's background (5.7).
+        .background(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
+        .contextMenu {
+            // A link that opens this document in Firiki on any of the person's devices that has it (5.7).
+            Button {
+                SystemClipboard.copy(AppLink.url(for: .document(document.id)).absoluteString)
+            } label: {
+                Label("Copy Link", systemImage: "link")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                deleteMode = .local
+                showingDeleteAlert = true
+            } label: {
+                Label(isSharedICloudDocument ? "Remove Local Copy" : "Delete", systemImage: "trash")
+            }
+
+            if isSharedICloudDocument {
+                Button(role: .destructive) {
+                    deleteMode = .everywhere
+                    showingDeleteAlert = true
+                } label: {
+                    Label("Delete Everywhere", systemImage: "cloud.moon.fill")
+                }
+            }
+        }
+        .alert(alertTitle, isPresented: $showingDeleteAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button(confirmButtonTitle, role: .destructive) {
+                confirmDelete()
+            }
+        } message: {
+            Text(alertMessage)
+        }
+    }
+
+    /// Takes the document out of the library at once and removes it when its undo seconds end (5.7,
+    /// `RAGService.scheduleRemoval`). Delete Everywhere also deletes the shared file from iCloud then.
+    private func confirmDelete() {
+        let sync = workspaceSyncService
+        let deleteFromICloud: (@MainActor (Document) async -> Void)?
+        if deleteMode == .everywhere {
+            deleteFromICloud = { document in try? await sync.deleteDocumentFromICloud(document) }
+        } else {
+            deleteFromICloud = nil
+        }
+        ragService.scheduleRemoval(of: [document], undoManager: undoManager, beforeRemoving: deleteFromICloud)
+    }
+
+    // Both modes delete the document everywhere, so neither is labelled as if it were local.
+    //
+    // `.local` runs `removeDocument` alone; `.everywhere` runs
+    // `deleteDocumentFromICloud` first and then `removeDocument`. The difference is that
+    // `.everywhere` removes the shared file immediately while `.local` leaves the tombstone to
+    // do it on the next sync pass. That is a timing difference, not a scope one, and calling
+    // the first "Remove Local Copy" told users the opposite.
+    //
+    // From 5.7 both run when the deletion's undo seconds end (`RAGService.scheduleRemoval`), so
+    // until then nothing has left iCloud or this device and Undo puts the document back.
+    private var alertTitle: String {
+        switch deleteMode {
+        case .local:
+            return "Delete Document?"
+        case .everywhere:
+            return "Delete from iCloud?"
+        }
+    }
+
+    private var confirmButtonTitle: String {
+        switch deleteMode {
+        case .local:
+            return "Delete"
+        case .everywhere:
+            return "Delete Everywhere"
+        }
+    }
+
+    private var alertMessage: String {
+        switch deleteMode {
+        case .local:
+            if isSharedICloudDocument {
+                // Was "If the document still exists in iCloud, Sync Now can bring it back."
+                // It cannot. `removeDocument` calls `registerDeletedDocuments` before it does
+                // anything else, and that tombstone is unioned into both workspace roots and
+                // then used to filter the shared inventory, so the next sync pass removes the
+                // document from iCloud and from every other device. Promising recovery on a
+                // path that writes a permanent tombstone is the worst kind of wrong copy,
+                // because it is read at the moment someone decides whether to tap Delete.
+                return Self.sharedDeleteMessage(for: document.filename)
+            } else {
+                return "This will remove \"\(document.filename)\" and all its chunks from your knowledge base on this device. You can undo it for a few seconds."
+            }
+        case .everywhere:
+            return "This will delete \"\(document.filename)\" from iCloud Sync and remove it from every device using this shared library. You can undo it for a few seconds."
+        }
+    }
+
+    /// What deleting a document in an iCloud library asks first, from its menu or from a swipe (5.7).
+    static func sharedDeleteMessage(for filename: String) -> String {
+        "This deletes \"\(filename)\" here and in iCloud, on every device signed in to this library. You can undo it for a few seconds."
+    }
+}
+
+// MARK: - Content Tags Row
+
+/// Displays document content tags as compact pills
+struct ContentTagsRow: View {
+    let tags: [String]
+    var hasMoreTags: Bool = false
+
+    /// Gradient colors for tag backgrounds based on index
+    private func tagColor(for index: Int) -> Color {
+        Color.accentColor.opacity(0.15)
+    }
+
+    private func tagTextColor(for index: Int) -> Color {
+        Color.accentColor
+    }
+
+    var body: some View {
+        // The words in the label color, the tag's color in its tint and edge, and the tags on further lines when they
+        // do not fit across (5.7).
+        WrappingRowLayout(spacing: DSSpacing.xs, lineSpacing: DSSpacing.xs) {
+            ForEach(Array(tags.enumerated()), id: \.offset) { index, tag in
+                Text(tag)
+                    .scaledFont(size: 9, weight: .bold)
+                    .foregroundStyle(DSColors.primaryText)
+                    .padding(.horizontal, DSSpacing.sm)
+                    .padding(.vertical, DSSpacing.xs)
+                    .background(
+                        Capsule()
+                            .fill(tagColor(for: index).opacity(0.5))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(tagTextColor(for: index).opacity(0.15), lineWidth: 0.5)
+                    )
+            }
+
+            if hasMoreTags {
+                Image(systemName: "ellipsis")
+                    .scaledFont(size: 8, weight: .bold)
+                    .foregroundStyle(DSColors.secondaryText)
+                    .padding(.leading, DSSpacing.xxs)
+                    .accessibilityLabel("More tags")
+            }
+        }
+    }
+}
+
+#Preview {
+    ModernDocumentCard(
+        document: Document(
+            filename: "Annual Report.pdf",
+            fileURL: URL(fileURLWithPath: "/tmp/report.pdf"),
+            contentType: .pdf,
+            totalChunks: 42
+        ),
+        ragService: RAGService()
+    )
+    .padding()
+}

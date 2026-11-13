@@ -1,4 +1,4 @@
-# How OpenIntelligence Works
+# How Firiki Works
 
 > **Documentation status:** Source-verified against `f0ac9b9` on 2026-08-21. Every architectural
 > constant below was re-read from the code on that date: the 4,096-token context window (corrected
@@ -39,7 +39,7 @@
 >   default route (Hybrid, with Private Cloud Compute set to "Ask when needed"), when Standard goes to Private Cloud
 >   Compute, what the consent sheet shows, when the checks refuse an answer, which checks compare the answer with the
 >   passages, and how the device backs off under pressure.
-> - **Versions.** 5.6 is the App Store build (live 2026-10-08) and 5.7 is unreleased. Each 5.7-only behaviour says so,
+> - **Versions.** 5.6 was the original app's App Store build (live 2026-10-08); Firiki is built on 5.7. Each 5.7-only behaviour says so,
 >   for example the nine checks labelling Deep Think and Maximum answers, which read Not Checked in 5.6.
 > - **Line numbers.** `RAGService.swift` is still being changed by the 5.7 work. Its line numbers on this page are
 >   those of 22:11 on 2026-10-20, when it had 22,746 lines, and the larger ranges also name their step or function.
@@ -57,7 +57,7 @@ underneath it.
 ```bash
 # Recount the subsystem sizes in section 01
 for s in RAG Document Infrastructure Agentic Query Storage LLM Embedding Evaluation VectorStore AIPlatform Billing; do
-  printf "%-16s %8s\n" "$s" "$(find OpenIntelligence/Services/$s -name '*.swift' -exec cat {} + | wc -l)"
+  printf "%-16s %8s\n" "$s" "$(find Firiki/Services/$s -name '*.swift' -exec cat {} + | wc -l)"
 done
 ```
 
@@ -72,7 +72,7 @@ done
 > Then the librarian writes an answer using only what's on the desk, and you watch it being written. When it's finished, a fact-checker compares it against those pages and puts a label on it: Verified, or Unverified with the checks it failed. In Standard it also leaves out of the Fact Check list under the answer any claim it couldn't find support for, and if the checks fail badly enough, it takes the answer back and says so instead. If nothing on the desk answers the question, the librarian is required to say *"that isn't in your documents"* rather than guess.
 > Everything below is a detail of that story.
 
-OpenIntelligence is a local-first retrieval-augmented generation system. Documents are parsed, chunked, embedded and indexed entirely on device. A question is answered by retrieving evidence from that index, packing it into a strictly bounded context window, generating from it, and then checking the finished output against the evidence and labelling it.
+Firiki is a local-first retrieval-augmented generation system. Documents are parsed, chunked, embedded and indexed entirely on device. A question is answered by retrieving evidence from that index, packing it into a strictly bounded context window, generating from it, and then checking the finished output against the evidence and labelling it.
 
 > **Corrected 2026-10-20.** This section said a fact-checker compares the answer "before you see it" and "stops it" when
 > it says something the pages don't, and that the output is verified "before it is shown". The answer streams into the

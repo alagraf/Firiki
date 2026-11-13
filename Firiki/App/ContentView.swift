@@ -1,0 +1,737 @@
+//
+//  ContentView.swift
+//  Firiki
+//
+//  Created by Gunnar Hostetler on 10/9/25.
+//
+
+import AppIntents
+import Combine
+import CoreSpotlight
+import SwiftUI
+
+struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var workspaceSyncService: WorkspaceSyncService
+    @StateObject private var containerService: ContainerService
+    @StateObject private var ragService: RAGService
+    @StateObject private var settingsStore: SettingsStore
+    @StateObject private var modelResolutionService: ModelResolutionService
+    @StateObject private var onboardingStore: OnboardingStateStore
+    /// Answers that finished while another tab was showing; badges the Chat tab.
+    @ObservedObject private var chatAnswerNotice = ChatAnswerNotice.shared
+    /// A Private Cloud Compute consent request from an engine the chat does not show, such as the one
+    /// an action builds for its question (5.7). The first window to claim it shows it.
+    @ObservedObject private var consentRelay = CloudConsentRelay.shared
+    @State private var relayedConsent: CloudConsentRelay.Request?
+    @State private var windowID = UUID()
+    @Environment(\.openURL) private var openURL
+    /// What could not be added of what was shared from another app's share sheet, and what was (5.7).
+    @State private var sharedItemsMessage: SharedItemsMessage?
+    @State private var selectedTab: Tab = .chat
+    @State private var previousScenePhase: ScenePhase = .inactive
+    @State private var showVisualValidationDashboard = false
+    private let screenshotMode: ScreenshotMode
+
+    init() {
+        #if DEBUG
+            DebugRAGValidationHarness.configureStorageIfNeeded()
+        #endif
+        self.screenshotMode = ScreenshotMode.current
+        let workspaceSyncSvc = WorkspaceSyncService()
+        let containerSvc = ContainerService()
+        let ragSvc = RAGService(containerService: containerSvc)
+        // The app's engine is the one actions reach for imports, lists and conversations. It sets
+        // itself here; an engine an action builds for one question registers only when none is set.
+        RAGService.activePresentedInstance = ragSvc
+        ragSvc.isTheAppsEngine = true
+        _workspaceSyncService = StateObject(wrappedValue: workspaceSyncSvc)
+        _containerService = StateObject(wrappedValue: containerSvc)
+        _ragService = StateObject(wrappedValue: ragSvc)
+        let settingsStoreObj = SettingsStore(ragService: ragSvc)
+        _settingsStore = StateObject(wrappedValue: settingsStoreObj)
+        _modelResolutionService = StateObject(
+            wrappedValue: ModelResolutionService(ragService: ragSvc, settingsStore: settingsStoreObj))
+        if screenshotMode.isEnabled {
+            let suite = "Firiki.Screenshots"
+            let defaults = UserDefaults(suiteName: suite) ?? .standard
+            defaults.removePersistentDomain(forName: suite)
+            _onboardingStore = StateObject(wrappedValue: OnboardingStateStore(defaults: defaults))
+        } else {
+            _onboardingStore = StateObject(wrappedValue: OnboardingStateStore())
+        }
+
+        if let initialTab = screenshotMode.initialTab {
+            _selectedTab = State(initialValue: initialTab)
+        }
+    }
+
+    enum Tab {
+        case chat, documents, database, settings
+    }
+
+    private var shouldShowChecklistLauncher: Bool {
+        guard !screenshotMode.isEnabled else { return false }
+        return onboardingStore.hasOutstandingSteps && !onboardingStore.isChecklistVisible
+    }
+
+    /// Computed accent color from settings, with system default fallback
+    private var appAccentColor: Color {
+        if let hex = settingsStore.appAccentColorHex, let color = Color(hex: hex) {
+            return color
+        }
+        return .accentColor
+    }
+
+    var body: some View {
+        ZStack {
+            tabViewContent
+
+            if onboardingStore.isChecklistVisible, !screenshotMode.isEnabled {
+                OnboardingChecklistView(
+                    ragService: ragService,
+                    onOpenSettings: { selectedTab = .settings },
+                    onOpenChat: { selectedTab = .chat }
+                )
+                // Modal for VoiceOver (5.7): the welcome screen covers Chat, and VoiceOver should stay on it.
+                // `accessibilityHidden` on the tabs did not take Chat out of Apple's audit, and this does not either
+                // (it still lists Chat's pills behind the welcome screen); what VoiceOver does here is not checked on a
+                // device.
+                .accessibilityAddTraits(.isModal)
+                .transition(.opacity.combined(with: .scale))
+                .zIndex(1)
+            }
+        }
+        .tint(appAccentColor)
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            // A Spotlight result: open the library or the document that was tapped. Through 5.6 this
+            // read a "containerId" the index never wrote, so it always fell back to the Documents tab
+            // of whatever library was active.
+            guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+            AppNavigationRequest.post(AppLink.destination(forSpotlightIdentifier: identifier) ?? .documents)
+        }
+        // Handoff: what another of the person's devices had open (5.7).
+        .onContinueUserActivity(AppActivity.chat, perform: continueActivity)
+        .onContinueUserActivity(AppActivity.documents, perform: continueActivity)
+        .onContinueUserActivity(AppActivity.viewingDocument, perform: continueActivity)
+        .onReceive(AppNavigationRequest.shared.changes) { waiting in
+            // One at a time, oldest first. A request this view finishes is removed, which sends the
+            // next one; a request a screen has to finish stays first until that screen takes it.
+            if let destination = waiting.first { route(destination) }
+        }
+        .onAppear {
+            // Shows each request's tab and library as it is posted, whichever screen takes it.
+            AppNavigationRequest.shared.onPost = { destination in show(destination) }
+        }
+        .onChange(of: ragService.documents.count, initial: true) { _, _ in
+            // Siri's phrases that name a document or a library ("Summarize Lease.pdf in ...") are
+            // built from the items that exist. Nothing told the system when they changed.
+            RAGAppShortcutsProvider.updateAppShortcutParameters()
+        }
+        .onOpenURL { url in
+            handleOpenURL(url)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if shouldShowChecklistLauncher {
+                OnboardingChecklistLauncher(
+                    completedSteps: onboardingStore.completedStepCount,
+                    totalSteps: onboardingStore.totalStepCount,
+                    action: onboardingStore.refreshChecklistVisibilityIfNeeded,
+                    onDismissPermanently: onboardingStore.skipPermanently
+                )
+                .padding(.trailing, 24)
+                .padding(.bottom, 28)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: onboardingStore.isChecklistVisible)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: onboardingStore.hasDismissedPermanently)
+        #if canImport(UIKit)
+            // The hardware legend floats in its own window above everything. It waits for the
+            // welcome screen to close before it first shows up.
+            .onChange(of: onboardingStore.isChecklistVisible && !screenshotMode.isEnabled, initial: true) { _, visible in
+                FloatingLegendWindowManager.shared.setWelcomeScreenVisible(visible)
+            }
+        #endif
+        .environmentObject(onboardingStore)
+        .environmentObject(workspaceSyncService)
+        .environmentObject(containerService)
+        .sheet(isPresented: $showVisualValidationDashboard) {
+            #if DEBUG
+                ValidationDashboardView(ragService: ragService, settingsStore: settingsStore)
+            #else
+                EmptyView()
+            #endif
+        }
+        // `DocumentLibraryView` (and other tabs) relies on SettingsStore via @EnvironmentObject.
+        // Previously we only injected it on the Settings tab, which caused a runtime crash when
+        // Documents tried to create a new library (it reads settings.useHighAccuracyEmbeddings).
+        .environmentObject(settingsStore)
+        .environmentObject(modelResolutionService)
+        .modifier(SharedItemsAlert(message: $sharedItemsMessage))
+        .onReceive(consentRelay.$request) { request in
+            guard let request else {
+                relayedConsent = nil
+                return
+            }
+            if consentRelay.claim(request.id, for: windowID) { relayedConsent = request }
+        }
+        .sheet(item: $relayedConsent) { request in
+            CloudConsentPromptView(record: request.record) { decision in
+                Task { await consentRelay.decide(request.id, decision) }
+            }
+            .interactiveDismissDisabled(true)
+            .onAppear { consentRelay.markShown(request.id) }
+            #if os(iOS)
+                .presentationDetents([.height(580), .large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(24)
+                .presentationBackground(.ultraThinMaterial)
+            #endif
+        }
+        .task {
+            // A Focus that changed while the app was closed (5.7). Not awaited here, so nothing
+            // below waits on the system's answer.
+            if !screenshotMode.isEnabled {
+                let libraries = containerService
+                Task { await LibraryFocusFilterIntent.applyCurrent(to: libraries) }
+                // Spotlight entries made by 5.6 expire after 30 days; refreshed once to last.
+                Task { await SpotlightIndexService.shared.refreshEntriesMadeBefore57() }
+            }
+            #if DEBUG
+                let environment = ProcessInfo.processInfo.environment
+                let arguments = ProcessInfo.processInfo.arguments
+                let shouldRunGenerationAudit =
+                    environment["FIRIKI_RUN_GENERATION_AUDIT"] == "1"
+                    || arguments.contains("-FIRIKI_RUN_GENERATION_AUDIT")
+                if shouldRunGenerationAudit {
+                    Log.warning(
+                        "[GenerationAudit] Startup audit flag ignored in this build configuration", category: .llm)
+                    exit(0)
+                }
+
+                if DebugRAGValidationHarness.isEnabled {
+                    if DebugRAGValidationHarness.isVisualModeEnabled {
+                        ragService.clearIngestionQueue()
+                        selectedTab = .documents
+
+                        Task.detached(priority: .userInitiated) {
+                            do {
+                                let _ = try await DebugRAGValidationHarness.runIfNeeded(
+                                    ragService: ragService,
+                                    settingsStore: settingsStore
+                                )
+                                await MainActor.run {
+                                    showVisualValidationDashboard = true
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    showVisualValidationDashboard = true
+                                }
+                            }
+                        }
+                    } else {
+                        // Whichever path wins the run gate is the one that must print and exit.
+                        // `runHeadlessIfNeeded` in `App.init` does the same, and on macOS it is
+                        // usually the winner. On the simulator this task claims the gate first, so
+                        // without the exit here the process would finish the validation and then sit
+                        // there forever, which is indistinguishable from a hung run to the caller
+                        // driving it through `simctl launch`.
+                        if let report = try? await DebugRAGValidationHarness.runIfNeeded(
+                            ragService: ragService,
+                            settingsStore: settingsStore
+                        ) {
+                            print(report)
+                            fflush(stdout)
+                            exit(0)
+                        }
+                        return
+                    }
+                }
+            #endif
+
+            await refreshSharedWorkspaceIfNeeded(forceReload: true)
+
+            if screenshotMode.shouldImportSamples {
+                await importSamplesIfNeeded()
+            }
+        }
+        .onChange(of: ragService.isProcessing) { _, isWorking in
+            #if canImport(UIKit) && !os(visionOS)
+                // An import or a rebuild can run for many minutes with nobody touching the screen.
+                // Once the phone locks, iOS gives the app about half a minute before it stops it.
+                UIApplication.shared.isIdleTimerDisabled = isWorking
+            #endif
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            handleScenePhaseChange(from: oldPhase, to: newPhase)
+        }
+        // The "Your Library" widget shows the open library and its document count (5.7, `WidgetSnapshot`), written
+        // once an import ends rather than for every document it adds.
+        .onChange(of: widgetLibrary, initial: true) { _, library in
+            guard !library.importing else { return }
+            WidgetSnapshot.recordLibrary(id: library.id, name: library.name, documentCount: library.documentCount)
+        }
+        .onChange(
+            of: containerService.containers.map { "\($0.id.uuidString):\($0.syncMode.rawValue)" }.joined(separator: "|")
+        ) { _, _ in
+            Task { @MainActor in
+                await refreshSharedWorkspaceIfNeeded(forceReload: true)
+            }
+        }
+        .onChange(of: workspaceSyncService.observedWorkspaceChangeCount) { _, _ in
+            Task { @MainActor in
+                await refreshSharedWorkspaceIfNeeded(forceReload: true)
+            }
+        }
+        .onChange(of: selectedTab) { oldTab, newTab in
+            // Stamp the tap so the destination can report how long it took to become
+            // usable. Every previous measurement of the Documents tab timed work that
+            // happens *after* the view appears, which is why they all came back fast
+            // while the tab still felt slow.
+            NavigationTiming.begin(String(describing: newTab))
+            Log.warning("[TabBar] Selected tab changed from \(oldTab) to \(newTab)", category: .ui)
+            DSHaptics.tabChanged()
+        }
+        .onReceive(settingsStore.$hasUserPrimaryOverride) { hasOverride in
+            guard hasOverride else { return }
+            onboardingStore.markModelSelectionAcknowledged()
+        }
+        // Off removes what the app gave Spotlight and Siri; on lists the libraries again (5.7).
+        .onChange(of: settingsStore.enableSpotlightIndexing) { _, isOn in
+            SpotlightIndexService.shared.indexingSwitched(on: isOn)
+        }
+    }
+
+    /// The tabs, declared with SwiftUI's `Tab` (iOS 18, macOS 15) in place of `.tabItem` (5.7, roadmap row
+    /// "Liquid Glass UI Refresh"). The older form kept the tab bar from the iOS 26 behaviours, among them
+    /// shrinking while a list scrolls on iPhone (`tabBarMinimizeBehavior`), which this turns on. It is
+    /// `SwiftUI.Tab` because this view has a `Tab` of its own, the selection's type.
+    @ViewBuilder
+    private var tabViewContent: some View {
+        TabView(selection: $selectedTab) {
+            SwiftUI.Tab("Chat", systemImage: "bubble.left.and.bubble.right", value: Tab.chat) {
+                NavigationStack {
+                    ChatScreen(ragService: ragService)
+                }
+            }
+            .badge(chatAnswerNotice.unseenAnswers)
+
+            SwiftUI.Tab("Documents", systemImage: "doc.text.magnifyingglass", value: Tab.documents) {
+                NavigationStack {
+                    DocumentLibraryView(
+                        ragService: ragService,
+                        containerService: containerService
+                    )
+                }
+            }
+
+            SwiftUI.Tab("Database", systemImage: "cylinder.split.1x2", value: Tab.database) {
+                NavigationStack {
+                    DatabaseDashboardView()
+                        .environmentObject(ragService)
+                        .environmentObject(containerService)
+                }
+            }
+
+            SwiftUI.Tab("Settings", systemImage: "gearshape", value: Tab.settings) {
+                NavigationStack {
+                    SettingsView(ragService: ragService)
+                }
+                .environmentObject(settingsStore)
+            }
+        }
+        #if os(iOS)
+            .tabBarMinimizeBehavior(.onScrollDown)
+        #endif
+    }
+
+    @MainActor
+    private func importSamplesIfNeeded() async {
+        guard ragService.documents.isEmpty else { return }
+        do {
+            try await SampleDocumentManager.shared.importSamples(into: ragService)
+        } catch {
+            // Screenshot mode should never block the UI if samples fail.
+        }
+    }
+
+    // MARK: - Scene Phase Handling for Transcript Persistence
+
+    /// The open library's name and document count, for the "Your Library" widget (5.7).
+    private struct WidgetLibrary: Equatable {
+        let id: UUID
+        let name: String
+        let documentCount: Int
+        let importing: Bool
+    }
+
+    /// Counted as the library screen counts (`DocumentLibraryView.filteredDocuments`): a document with no library is
+    /// in the first one. Not counted while an import runs, when the count changes with every document.
+    private var widgetLibrary: WidgetLibrary {
+        let activeId = containerService.activeContainerId
+        let name = containerService.activeContainer?.name ?? "Library"
+        guard !ragService.isProcessing else {
+            return WidgetLibrary(id: activeId, name: name, documentCount: 0, importing: true)
+        }
+        let firstId = containerService.containers.first?.id
+        let count = ragService.documents.reduce(0) { $0 + (($1.containerId ?? firstId) == activeId ? 1 : 0) }
+        return WidgetLibrary(id: activeId, name: name, documentCount: count, importing: false)
+    }
+
+    /// Handle app lifecycle transitions for transcript persistence.
+    ///
+    /// - Saves transcript when app backgrounds (preserves conversation state)
+    /// - Restores transcript when app returns to foreground (resumes conversation)
+    private func handleScenePhaseChange(from oldPhase: ScenePhase, to newPhase: ScenePhase) {
+        switch newPhase {
+        case .background:
+            // Save the current session transcript before backgrounding
+            // This ensures conversation state is preserved if the app is terminated
+            Task { @MainActor in
+                // Flush buffered vector-store writes FIRST. Everything else in this block was
+                // already persisted on backgrounding — the transcript, the ingestion queue, an
+                // FTS5 checkpoint — while the vector stores, whose writes are deliberately
+                // deferred for batching, were not. A fresh import queried before ever being
+                // flushed therefore lived only in memory, and if the process died back here the
+                // library came back as documents-with-no-vector-store. Observed end to end on
+                // 2026-08-20 (container FE9E86BF: 197 searchable chunks at night, `no vector
+                // store yet` at next launch).
+                await ragService.persistAllVectorStores()
+                ragService.persistIngestionQueueState()
+                ragService.saveSessionTranscript()
+                // A deletion still in its undo seconds runs now (5.7, `RAGService.scheduleRemoval`): after the
+                // flush above, so a slow removal cannot hold it up, and flushed again after, for the stores it
+                // changed. If iOS ends the app before it finishes, the next launch runs it.
+                if ragService.hasUnfinishedRemovals {
+                    await ragService.commitPendingRemovals()
+                    await ragService.persistAllVectorStores()
+                }
+                #if os(iOS)
+                    // Last, so that nothing above waits on it. Not on the Mac: a hidden or
+                    // minimised window would pay a full decode at its next question, and
+                    // macOS does not end a background app for the memory it holds.
+                    await ragService.releaseDecodedPassagesInVectorStores()
+                #endif
+                Log.debug(
+                    "[App] Scene entered background - persisted vector stores, saved transcript",
+                    category: .initialization)
+            }
+
+            // Begin ingestion handoff if processing
+            if ragService.isProcessing {
+                IngestionRuntimeBridge.shared.beginForegroundFallbackIngestion(reason: "Active Ingestion Handoff")
+            }
+
+            // An import the system is carrying in the background runs on the reduced profile
+            // from here, and on the full one again when the app is back in front.
+            BackgroundTaskService.shared.applyIngestionExecutionProfileForCurrentState()
+
+            // Checkpoint and close database connection before app suspension
+            Task {
+                await SQLiteFullTextService.shared.shutdown()
+            }
+
+            // Schedule background tasks if enabled
+            if settingsStore.enableBackgroundMaintenance {
+                BackgroundTaskService.shared.scheduleIndexMaintenance()
+                BackgroundTaskService.shared.scheduleAppRefresh()
+                if settingsStore.enableSpotlightIndexing {
+                    BackgroundTaskService.shared.scheduleSpotlightReindex()
+                }
+            }
+
+        case .active:
+            BackgroundTaskService.shared.applyIngestionExecutionProfileForCurrentState()
+            // What finished while the app was away is on screen now (5.7): its notifications and the Lock Screen's
+            // card for a finished import or answer go, where they stayed for up to ten minutes after the person was back.
+            CompletionNotificationService.shared.clearDelivered()
+            IngestionLiveActivityService.shared.dismissFinished()
+            #if os(iOS) && canImport(ActivityKit) && !targetEnvironment(macCatalyst)
+                QueryLiveActivityService.shared.endLeftovers()
+            #endif
+            // An import that a background limit stopped continues without being asked.
+            ragService.resumeIngestionStoppedInBackgroundIfNeeded()
+            // The overview, tags and suggested questions of documents imported in the background (5.7).
+            ragService.runDeferredEnrichmentsIfNeeded()
+            // Web pages and text shared from another app's share sheet while the app was away (5.7).
+            takeSharedItems()
+            // Pages scanned from the Lock Screen while the app was away (5.7).
+            takeLockedCaptures()
+            Task { @MainActor in
+                await refreshSharedWorkspaceIfNeeded(forceReload: workspaceSyncService.isUsingSharedWorkspace)
+            }
+            // Restore transcript when returning to foreground
+            // Only restore if coming from background (not on initial launch)
+            if oldPhase == .background {
+                Task { @MainActor in
+                    if ragService.restoreSessionTranscript() {
+                        Log.debug("[App] Scene became active - restored transcript", category: .initialization)
+                    }
+                }
+            }
+
+        case .inactive:
+            Task { @MainActor in
+                ragService.persistIngestionQueueState()
+                ragService.saveSessionTranscript()
+                Log.debug(
+                    "[App] Scene became inactive - checkpointed transcript and ingestion state",
+                    category: .initialization)
+            }
+
+        @unknown default:
+            break
+        }
+    }
+
+    /// What was shared to Firiki from another app's share sheet (`SharedInbox`, 5.7), stored the way the
+    /// Documents screen's Paste button stores a copied address or text and handed to that screen at once for its plan
+    /// check and import review. What could not be stored is said in an alert afterwards.
+    private func takeSharedItems() {
+        guard let folder = SharedInbox.defaultFolder, SharedInbox.hasItems(in: folder) else { return }
+        Task { @MainActor in
+            // Only what the plan has room for: the rest waits in the inbox, and the app says so once for each new
+            // number waiting (review of 2026-10-17).
+            let taken = await SharedInboxImport.takeAndStage(from: folder, room: documentRoom())
+            let outcome = taken.outcome
+            if !outcome.staged.isEmpty { AppNavigationRequest.post(.importFiles(outcome.staged)) }
+            var lines = outcome.failures
+            if taken.waiting > Self.sharedItemsSaidWaiting {
+                let things =
+                    taken.waiting == 1 ? "One thing you shared waits" : "\(taken.waiting) things you shared wait"
+                lines.append(
+                    "\(things) in Firiki, because your plan has room for no more documents. Remove a document "
+                        + "or upgrade, and \(taken.waiting == 1 ? "it's" : "they're") added the next time you open "
+                        + "Firiki.")
+            }
+            Self.sharedItemsSaidWaiting = taken.waiting
+            if !lines.isEmpty {
+                sharedItemsMessage = SharedItemsMessage(
+                    addedSome: !outcome.staged.isEmpty, failures: lines,
+                    customTitle: outcome.failures.isEmpty ? "Waiting for Room in Your Plan" : nil)
+            }
+        }
+    }
+
+    /// The number of shared items the app last said were waiting, so it says so once and not at every return.
+    @MainActor private static var sharedItemsSaidWaiting = 0
+
+    /// Pages scanned with the Lock Screen's "Scan into Library" (`LockedCaptureImport`, 5.7), handed to the Documents
+    /// screen for its plan check and import review, into the library that is open. Only as many as the plan has room
+    /// for: the rest wait in the camera's folder, and the app says so once for each new number waiting.
+    private func takeLockedCaptures() {
+        Task { @MainActor in
+            let taken = await LockedCaptureImport.takeFromTheLockScreen(atMost: documentRoom())
+            if !taken.staged.isEmpty { AppNavigationRequest.post(.importFiles(taken.staged)) }
+            if taken.waiting > Self.lockScreenPagesSaidWaiting {
+                let pages =
+                    taken.waiting == 1
+                    ? "A page you scanned from the Lock Screen waits"
+                    : "\(taken.waiting) pages you scanned from the Lock Screen wait"
+                sharedItemsMessage = SharedItemsMessage(
+                    addedSome: !taken.staged.isEmpty,
+                    failures: [
+                        "\(pages) in Firiki's camera, because your plan has room for no more documents. "
+                            + "Remove a document or upgrade, and \(taken.waiting == 1 ? "it's" : "they're") added the "
+                            + "next time you open Firiki."
+                    ],
+                    customTitle: "Waiting for Room in Your Plan")
+            }
+            Self.lockScreenPagesSaidWaiting = taken.waiting
+        }
+    }
+
+    /// The number of Lock Screen pages the app last said were waiting, so it says so once and not at every return.
+    @MainActor private static var lockScreenPagesSaidWaiting = 0
+
+    /// How many handed-over documents to take at once, at most `cap`. There is no document limit.
+    private func documentRoom(cap: Int = 1_000) -> Int { cap }
+
+    @MainActor
+    private func refreshSharedWorkspaceIfNeeded(forceReload: Bool = false) async {
+        let didChangeWorkspaceRoots = await workspaceSyncService.reconfigureIfNeeded()
+        guard
+            didChangeWorkspaceRoots || forceReload
+                || workspaceSyncService.isUsingSharedWorkspace
+        else {
+            return
+        }
+
+        let hasActiveIngestion = ragService.ingestionItems.contains { !$0.stage.isTerminal }
+        guard !hasActiveIngestion else { return }
+
+        let oldContainers = containerService.containers
+        containerService.reloadFromDisk()
+        let newContainers = containerService.containers
+        let removedContainerIDs = Set(oldContainers.map(\.id)).subtracting(newContainers.map(\.id))
+        for containerId in removedContainerIDs {
+            // The analysis and vocabulary kept on disk for a library removed on another device.
+            LibraryIntelligenceCache.remove(containerId: containerId)
+            LibraryVisualizationEngine.shared.invalidateCache(for: containerId)
+            await ClusterLabelService.shared.invalidateCache(for: containerId)
+            await SuggestedQuestionsService.shared.invalidateCache(for: containerId)
+            SpotlightIndexService.shared.deindexAllDocuments(in: containerId)
+            SpotlightIndexService.shared.deindexContainer(id: containerId)
+        }
+
+        ragService.reloadWorkspaceData()
+        // A conversation deleted on another device is gone from here now; so is its answer on the widget (5.7).
+        WidgetSnapshot.forgetAnswer(unlessConversationExists: { threadId, libraryId in
+            (try? ragService.threadStore.getThread(id: threadId, containerId: libraryId)) != nil
+        })
+    }
+
+    @MainActor
+    private func handleOpenURL(_ url: URL) {
+        if url.isFileURL {
+            importOpenedFile(url)
+            return
+        }
+        Log.info("[DeepLink] Received \(url.scheme ?? "nil")://\(url.host ?? "nil")\(url.path)", category: .ui)
+        guard let destination = AppLink.destination(for: url) else {
+            Log.warning("[DeepLink] Not one of this app's links; ignored", category: .ui)
+            return
+        }
+        AppNavigationRequest.post(destination)
+    }
+
+    /// An activity continued from another device: the library it names, then its screen.
+    private func continueActivity(_ activity: NSUserActivity) {
+        let destinations = AppActivity.destinations(type: activity.activityType, userInfo: activity.userInfo)
+        Log.info("[Handoff] Continuing \(activity.activityType): \(destinations.count) step(s)", category: .ui)
+        destinations.forEach(AppNavigationRequest.post)
+    }
+
+    /// A file another app handed over: "Open in Firiki" from Files, Mail or a share
+    /// sheet, a file dropped on the Mac's Dock icon, or an AirDrop. It is copied into the app at
+    /// once, while access to it is certain, and the Documents screen shows the copy before
+    /// anything is added (`OpenedFilesSheet`, 5.7), then runs its usual plan check and import
+    /// review on it. Through 5.6 the app declared no document types, so it
+    /// was never offered a file, and a file address reaching this handler was discarded.
+    private func importOpenedFile(_ url: URL) {
+        Log.info("[OpenIn] Received a file: \(url.pathExtension.lowercased())", category: .ingestion)
+        // Copied off the main actor (5.7): on the Mac the address can be a file in iCloud Drive that
+        // is downloaded while it is copied. It waits in the viewing folder, which iCloud sync never
+        // sweeps, until the person adds it (`ImportedFileStaging.viewingFolder`).
+        Task {
+            let staged = await ImportedFileStaging.copyForViewingOffMainActor([url])
+            // On iPhone and iPad the system leaves its own copy in this app's Documents/Inbox. Ours is
+            // made, so that one would only sit in the Files app. On the Mac the address is the
+            // person's own file, opened in place, and is never removed.
+            #if os(iOS)
+                if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+                    url.deletingLastPathComponent().standardizedFileURL
+                        == documents.appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL
+                {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            #endif
+            guard !staged.isEmpty else {
+                Log.error("[OpenIn] The file could not be copied into the app", category: .ingestion)
+                return
+            }
+            AppNavigationRequest.post(.openedFiles(staged))
+        }
+    }
+
+    /// The tab and the library a request is for, as it is posted (`AppNavigationRequest.onPost`).
+    /// Nothing is taken here; `route` and the screens do that.
+    private func show(_ destination: AppDestination) {
+        switch destination {
+        case .chat, .scanDocument:
+            selectedTab = .chat
+        case .newConversation(let libraryId), .ask(_, _, _, let libraryId), .continueAnswer(_, _, let libraryId):
+            if let libraryId { containerService.setActive(libraryId) }
+            selectedTab = .chat
+        case .documents, .addDocument, .importFiles, .openedFiles, .search, .searchFor, .importQueue:
+            selectedTab = .documents
+        case .settings:
+            selectedTab = .settings
+        case .library(let id):
+            containerService.setActive(id)
+            selectedTab = .documents
+        case .document(let id):
+            if let libraryId = ragService.documents.first(where: { $0.id == id })?.containerId {
+                containerService.setActive(libraryId)
+            }
+            selectedTab = .documents
+        }
+    }
+
+    /// Acts on the oldest waiting request: the tab and the library here. A request that ends here is
+    /// removed. One whose last step belongs to a screen (the file picker, the camera, a new
+    /// conversation, an import) is left for that screen, which this brings forward.
+    private func route(_ destination: AppDestination) {
+        switch destination {
+        case .chat:
+            selectedTab = .chat
+        case .documents:
+            selectedTab = .documents
+        case .settings:
+            selectedTab = .settings
+        case .importQueue:
+            selectedTab = .documents
+            NotificationCenter.default.post(
+                name: NSNotification.Name("com.alagraf.firiki.showIngestionQueue"), object: nil)
+        case .library(let id):
+            containerService.setActive(id)
+            selectedTab = .documents
+        case .document(let id):
+            if let libraryId = ragService.documents.first(where: { $0.id == id })?.containerId {
+                containerService.setActive(libraryId)
+            }
+            selectedTab = .documents
+            // The Documents screen opens the document's page (5.7).
+            return
+        case .addDocument, .importFiles, .openedFiles, .search, .searchFor:
+            selectedTab = .documents
+            return
+        case .scanDocument, .ask, .continueAnswer:
+            selectedTab = .chat
+            return
+        case .newConversation(let libraryId):
+            if let libraryId { containerService.setActive(libraryId) }
+            selectedTab = .chat
+            return
+        }
+        _ = AppNavigationRequest.shared.take { $0 == destination }
+    }
+}
+
+private struct ScreenshotMode {
+    let isEnabled: Bool
+    let initialTab: ContentView.Tab?
+    let shouldImportSamples: Bool
+
+    static var current: ScreenshotMode {
+        #if DEBUG
+            let enabled = LaunchArguments.has("--screenshot") || LaunchArguments.has("screenshot")
+            let tabRaw =
+                LaunchArguments.valueEither(for: "screenshot-tab")
+                ?? LaunchArguments.valueEither(for: "tab")
+            let initialTab: ContentView.Tab? = {
+                guard let t = tabRaw?.lowercased() else { return nil }
+                switch t {
+                case "chat": return .chat
+                case "documents", "docs": return .documents
+                case "visualizations", "telemetry", "atlas": return .database
+                case "database", "db", "sqlite", "fts5": return .database
+                case "settings": return .settings
+                default: return nil
+                }
+            }()
+            let importSamples =
+                LaunchArguments.has("--screenshot-import-samples")
+                || LaunchArguments.has("screenshot-import-samples")
+            return ScreenshotMode(
+                isEnabled: enabled, initialTab: initialTab, shouldImportSamples: enabled && importSamples)
+        #else
+            return ScreenshotMode(isEnabled: false, initialTab: nil, shouldImportSamples: false)
+        #endif
+    }
+}
+
+#Preview {
+    ContentView()
+}

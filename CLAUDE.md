@@ -23,8 +23,8 @@ The rules above (`AGENTS.md`) apply in full. This file only adds Claude Code's r
 
 - Read `Docs/ai/codemap/INDEX.md` and the feature slice before opening source files, and read
   functions by range, never whole large files.
-- Don't load the original author's documentation set. `Docs/` describes the original app; open a
-  document only when the task needs it.
+- Besides `Docs/Thesis/` and the codemap, `Docs/` holds three pipeline overviews (`HOW_IT_WORKS.md`,
+  `INGESTION_PIPELINE.md`, `RETRIEVAL_PIPELINE.md`); open one only when the task needs it.
 
 ## Apple APIs
 

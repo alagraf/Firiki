@@ -1,15 +1,17 @@
 # Agent rules for the thesis fork
 
-This repository is a thesis proof of concept: a Greek-language legal assistant for iPhone (scope:
-Greek labour law), built by modifying the OpenIntelligence app. It is not the original author's App
-Store product. These rules apply to every agent (Claude Code, Antigravity, and any other) and are the
+This repository is **Firiki**, a thesis proof of concept: a Greek-language legal assistant for iPhone
+and Mac (scope: Greek labour law), built by extending the open-source OpenIntelligence app by Gunnar
+Hostetler (MIT licence). It is not a released product: it has no billing, store listing or release
+tooling. These rules apply to every agent (Claude Code, Antigravity, and any other) and are the
 single authoritative rule set. `CLAUDE.md` and `GEMINI.md` only add each tool's role.
 
 The original author's agent rules, Notion roadmap, release process and routing scripts were removed
-on 2026-10-22. Older documents in `Docs/` (for example `Docs/ai/STATE.md`, `Docs/RepoOS/`, the
-Atlas, the canonical source-of-truth file) describe the original app and may still tell an agent to
-update Notion, run a preflight router or follow a release gate. **Ignore those instructions.** Read
-those documents only as background when a task needs it.
+on 2026-10-22, and the rest of the original app's documentation, billing and release material on
+2026-11-13, when the app was renamed Firiki. Records in `Docs/Thesis/` keep the old paths
+(`OpenIntelligence/…`) as written; `FORK_CHANGES.md` maps them to the new ones. If an old document
+still tells an agent to update Notion, run a preflight router or follow a release gate, **ignore
+those instructions.**
 
 ## Roles
 
@@ -28,8 +30,8 @@ those documents only as background when a task needs it.
    functions it names. Search with `python3 .claude/codemap/codemap.py find <words>`,
    `owner <path>` or `refs <Symbol>`. Some large files must never be read whole: find the symbol
    with `grep -n`, then read that range.
-   - `OpenIntelligence/Services/Document/Processing/DocumentProcessor.swift`: about 10,700 lines.
-   - `OpenIntelligence/Services/RAG/Orchestration/RAGService.swift`: about 22,800 lines.
+   - `Firiki/Services/Document/Processing/DocumentProcessor.swift`: about 10,700 lines.
+   - `Firiki/Services/RAG/Orchestration/RAGService.swift`: about 22,800 lines.
 2. **Plan before editing.** Before the first edit of a task, write a plan that lists every file
    you'll touch and what changes in each, then wait for the owner's approval (`PROCEED: IMPLEMENT`
    or an equally explicit OK). A request that only asks for a plan ends with the plan.
@@ -53,23 +55,24 @@ those documents only as background when a task needs it.
 ## Files that need the owner's explicit approval
 
 These files hold the fork's identity, so the owner must name them when approving a plan:
-`OpenIntelligence.xcodeproj/project.pbxproj`, every `*.entitlements` file, `Info.plist` and the
+`Firiki.xcodeproj/project.pbxproj`, every `*.entitlements` file, `Info.plist` and the
 extensions' `Info.plist` files.
 
-The fork's identity, which must survive every change and every sync with the original repository:
+The app's identity, which must survive every change:
 
 | What | Value |
 |---|---|
-| Bundle IDs | `com.openintelligence.app`, plus `.engine`, `.tests`, `.uitests`, `.liveactivities`, `.share`, `.capture` |
-| App group | `group.com.openintelligence.app`, also typed into `SharedInbox.swift`, `WidgetSnapshot.swift` and `IngestionLiveActivityWidget.swift` |
-| Signing | `DEVELOPMENT_TEAM = ""` (automatic), except the two macOS entries set to `J7R6G54TG4` |
+| Bundle IDs | `com.alagraf.firiki`, plus `.engine`, `.tests`, `.uitests`, `.liveactivities`, `.share`, `.capture` |
+| App group | `group.com.alagraf.firiki`, also typed into `SharedInbox.swift`, `WidgetSnapshot.swift` and `IngestionLiveActivityWidget.swift` |
+| Signing | Automatic, `DEVELOPMENT_TEAM = J7R6G54TG4` in all 16 build configurations |
+| Name, scheme, URL scheme | `Firiki`, scheme `Firiki` (engine `FirikiEngine`), links `firiki://` |
 | Entitlements left out | iCloud, Private Cloud Compute, background GPU, associated domains (`applinks:`), until the thesis account has them |
 
 ## Build and test
 
 - Run `scripts/check_icloud_conflicts.sh` first if a build fails for no clear reason. The repository
   is in iCloud-synced `~/Documents`, which can create duplicate `Foo 2.swift` files.
-- Smoke build (defaults to the iPhone 18 Pro simulator; set `OPENINTELLIGENCE_SIMULATOR_DESTINATION`
+- Smoke build (defaults to the iPhone 18 Pro simulator; set `FIRIKI_SIMULATOR_DESTINATION`
   to use another):
 
   ```bash
@@ -79,23 +82,21 @@ The fork's identity, which must survive every change and every sync with the ori
 - Tests, using a `-derivedDataPath` outside `~/Documents`, with `-only-testing:` to run a subset:
 
   ```bash
-  xcodebuild test -scheme OpenIntelligence -destination "platform=iOS Simulator,name=iPhone 18 Pro" -derivedDataPath /private/tmp/oi-build
+  xcodebuild test -scheme Firiki -destination "platform=iOS Simulator,name=iPhone 18 Pro" -derivedDataPath /private/tmp/oi-build
   ```
 
 - The iOS Simulator has no Apple Intelligence, so it can't write answers. Anything about the model's
   answers, speed or memory has to be checked on a real device (the owner's M3 MacBook Pro or an
   iPhone).
 
-## Syncing with the original repository
+## The original repository
 
-The original repository is the git remote `upstream` (https://github.com/Gunnarguy/OpenIntelligence).
-When merging `upstream/main`:
-- the fork's identity (table above) wins in the project file, entitlements and the three Swift
-  files;
-- the fork's guardrail changes win: `DomainIsolationService` and the medical checks in
-  `SourceOnlyAnswerService` stay removed, and so does the old gate I (`FORK_CHANGES.md`
-  sections 2.5 and 2.10); the new gate I is the legal statutory-isolation gate (2.11.5);
-- the 5.7 section of `CHANGELOG.md` keeps only fork changes.
+The original app is the git remote `upstream` (https://github.com/Gunnarguy/OpenIntelligence). Since
+the rename to Firiki (2026-11-13) every file has a new path, so merging `upstream/main` is no longer
+practical. Take a change from upstream by hand, and keep the fork's guardrail changes:
+`DomainIsolationService` and the medical checks in `SourceOnlyAnswerService` stay removed, and so
+does the old gate I (`FORK_CHANGES.md` sections 2.5 and 2.10); the new gate I is the legal
+statutory-isolation gate (2.11.5).
 
 ## Where things are (verified 2026-10-22; confirm line numbers before use)
 

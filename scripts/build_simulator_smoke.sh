@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCHEME="OpenIntelligence"
-DESTINATION="${OPENINTELLIGENCE_SIMULATOR_DESTINATION:-platform=iOS Simulator,name=iPhone 18 Pro}"
-ARTIFACT_DIR="${OPENINTELLIGENCE_SIMULATOR_ARTIFACT_DIR:-$ROOT_DIR/.simulator-smoke.nosync}"
-DERIVED_DATA_PATH="${OPENINTELLIGENCE_SIMULATOR_DERIVED_DATA:-$ARTIFACT_DIR/DerivedData}"
+SCHEME="Firiki"
+DESTINATION="${FIRIKI_SIMULATOR_DESTINATION:-platform=iOS Simulator,name=iPhone 18 Pro}"
+ARTIFACT_DIR="${FIRIKI_SIMULATOR_ARTIFACT_DIR:-$ROOT_DIR/.simulator-smoke.nosync}"
+DERIVED_DATA_PATH="${FIRIKI_SIMULATOR_DERIVED_DATA:-$ARTIFACT_DIR/DerivedData}"
 BUILD_LOG="$ARTIFACT_DIR/xcodebuild.log"
 
 mkdir -p "$ARTIFACT_DIR"
@@ -33,16 +33,16 @@ xcodebuild \
   build | tee "$BUILD_LOG"
 
 echo "Stripping extended attributes and codesigning in /tmp to bypass iCloud/FileProvider file locking detritus..."
-TMP_APP_PATH="/tmp/OpenIntelligence_build_smoke.app"
+TMP_APP_PATH="/tmp/Firiki_build_smoke.app"
 rm -rf "$TMP_APP_PATH"
-cp -R "$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/OpenIntelligence.app" "$TMP_APP_PATH"
+cp -R "$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/Firiki.app" "$TMP_APP_PATH"
 /usr/bin/xattr -cr "$TMP_APP_PATH"
-if [ -d "$TMP_APP_PATH/PlugIns/OpenIntelligenceLiveActivities.appex" ]; then
-    /usr/bin/codesign --force --sign - --timestamp=none "$TMP_APP_PATH/PlugIns/OpenIntelligenceLiveActivities.appex"
+if [ -d "$TMP_APP_PATH/PlugIns/FirikiLiveActivities.appex" ]; then
+    /usr/bin/codesign --force --sign - --timestamp=none "$TMP_APP_PATH/PlugIns/FirikiLiveActivities.appex"
 fi
 /usr/bin/codesign --force --sign - --timestamp=none "$TMP_APP_PATH"
-rm -rf "$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/OpenIntelligence.app"
-cp -R "$TMP_APP_PATH" "$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/OpenIntelligence.app"
+rm -rf "$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/Firiki.app"
+cp -R "$TMP_APP_PATH" "$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/Firiki.app"
 rm -rf "$TMP_APP_PATH"
 
 echo "Simulator smoke build succeeded"

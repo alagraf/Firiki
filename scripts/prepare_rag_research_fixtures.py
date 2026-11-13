@@ -156,7 +156,7 @@ def write_manifest(pack_dir: Path, cases: list[PreparedCase], sources: list[dict
 
 class SyntheticTinyAdapter:
     source_name = "synthetic_research_starter"
-    license_note = "Generated locally by OpenIntelligence fixture script; no external dataset content."
+    license_note = "Generated locally by Firiki fixture script; no external dataset content."
 
     def prepare(self, pack_dir: Path) -> list[PreparedCase]:
         fixtures = pack_dir / "fixtures" / "synthetic"
@@ -802,8 +802,8 @@ def write_pack_readme(pack_dir: Path, manifest_path: Path, cases: list[PreparedC
         afterwards, as `Benchmarks/baselines/README.md` describes under "Before you run anything"):
 
         ```bash
-        cp -a ~/Library/"Application Support"/OpenIntelligence /private/tmp/oi-library-backup
-        python3 scripts/run_quality_matrix.py --app <path/to/OpenIntelligence.app> --manifest {rel(manifest_path)}
+        cp -a ~/Library/"Application Support"/Firiki /private/tmp/oi-library-backup
+        python3 scripts/run_quality_matrix.py --app <path/to/Firiki.app> --manifest {rel(manifest_path)}
         ```
 
         Case counts:
@@ -873,7 +873,7 @@ def main() -> int:
     print(f"Cases: {len(cases)}")
     print("Run: back up the app library first; the runner writes into it (Benchmarks/baselines/README.md,"
           " \"Before you run anything\"). Then:")
-    print(f"  python3 scripts/run_quality_matrix.py --app <path/to/OpenIntelligence.app> --manifest {rel(manifest_path)}")
+    print(f"  python3 scripts/run_quality_matrix.py --app <path/to/Firiki.app> --manifest {rel(manifest_path)}")
     return 0
 
 
