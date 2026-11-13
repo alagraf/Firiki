@@ -32,6 +32,13 @@ fix that stage in a general way; run again and compare.
   page takes in parts of the lines above and below. The boxes now follow each line's angle, and
   scans read like clean pages (96%). The angle rule was set on these pages, so it was checked on 13
   other tilted pages as well: 46% → 88% of the words, the same as untilted.
+- **Checking a Greek text layer.** A PDF's own text is used when it matches the page, but some
+  Greek PDFs (here, lecture notes exported from Word) map their font to the wrong letters, so the
+  text reads «Ζ ζρέζε» for «Η σχέση». The original app checks a text layer by reading one page with
+  Vision OCR, which reads no Greek, so Greek text was never checked. PaddleOCR now reads that page:
+  if it shares under 15% of its words with the text layer, every page goes through OCR. The broken
+  notes went from 0 to 38 passages about overtime (713 readable passages); a correct Labour Code
+  excerpt kept its text layer (99% of words shared).
 - **Text clean-up.** Unicode normalisation; repair of Latin letters that look Greek (a Latin "A"
   in "ΦΕΚ A'"); quality filters that recognise Greek instead of discarding it as noise; rejoining
   words broken across lines; removal of the Government Gazette's running headers.
@@ -264,6 +271,8 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-13: a Greek PDF's text layer is checked with PaddleOCR; one with wrong-letter fonts is
+  read by OCR instead (lecture notes 0 → 38 overtime passages; Labour Code text kept).
 - 2026-11-09: Greek wording of summaries, opinions and template answers repaired; a ministerial
   decision's figures kept in opinions; foreign law named by adjective refused (checked in the Mac
   app; Chapter 6 figures not re-measured).

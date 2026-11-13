@@ -2137,3 +2137,57 @@ The new failure (`SampleQuestionHeadingsTests`, the plans question without its h
 the two sample-question suites and `AppLinkTests` then passed (30 tests, 0 failures). The macOS app
 launched as `com.alagraf.firiki` signed by `J7R6G54TG4`. **Not checked:** the app's screens by eye
 and a PDF import under the new identity (left for the owner's review), and an iPhone build.
+
+## 13 Nov 2026 (third entry): a Greek text layer is checked with PaddleOCR; new app icon
+
+**Why (text layer):** the owner imported a 51-page set of Greek labour-law lecture notes, exported
+from Word, and both questions asked about them were refused. Diagnosis (simulator import of the
+same file): the PDF's Greek font maps to the wrong letters, so its text layer reads «Ζ ζρέζε
+εμαξηεκέλεο εξγαζίαο» where the page shows «Η σχέση εξαρτημένης εργασίας». The import keeps a text
+layer unless OCR of a sample page disagrees with it, but since the original author's 5.7 change
+(`8bce78fb`, 2026-10-19) a page mostly in a script Vision does not read, such as Greek, is not a
+sample, because Vision would misread it and flag every correct Greek PDF. So no Greek text layer
+was ever checked, and the notes were stored as 632 unreadable passages whose English translations
+were nonsense; PaddleOCR never ran. Not caused by the rename: the rule and the import code are the
+same before and after it.
+
+**What:**
+- `DocumentProcessor.extractWithStructuredParsing`: when no sampled page is in a script Vision
+  reads, the longest mostly-Greek sample page is read by PaddleOCR's Greek model
+  (`OCRRouterService.greekLines`, forced) and compared with its text layer. Below the same bar as
+  Vision's check (word Jaccard 0.15) the document's text layer is garbled, and every page goes
+  through OCR, where the router reads Greek pages with PaddleOCR. When PaddleOCR is missing, the
+  OCR mode is Vision only, or nothing is read, the text layer is kept as before.
+- `DocumentProcessor.greekWordJaccard` (new, static): words of three letters or more, accents,
+  case and final sigma ignored, Latin look-alike letters read as Greek.
+- Test: `FirikiTests/Services/Document/Processing/GreekTextLayerCheckTests.swift` (3 tests: a
+  correct layer against OCR with its usual slips, a wrong-letter layer, no words).
+- Cost: one PaddleOCR page per page batch of a Greek PDF (6 s on the Labour Code excerpt).
+
+**Why (icon) and what:** the owner supplied a new app icon (a drawn apple on an orange tile).
+`AppIcon.appiconset`: every iPhone, iPad and 1024-pixel image rebuilt from it (the tile cropped
+inside its bevel, its rounded corners filled with the tile's orange, scaled to 1024 from about 640
+pixels); the Mac images use the same artwork inside the rounded square of the previous Mac icons
+(824 on 1024, the old icon's alpha as the mask). The dark and tinted variants of the old
+light-bulb icon are removed (30 files), so the system shows the orange icon in dark mode and
+derives the tinted one. The Live Activity icon is a link to `AppIcon-1024.png` and follows.
+
+**Verification:**
+- Unit tests: `GreekTextLayerCheckTests` and `DocumentProcessorTests`, 20 tests, 0 failures; the
+  20 Greek legal suites, 119 tests passed.
+- Imports in the simulator (runs `greektextlayer0` before, `greektextlayer1` after, in
+  `experiments/runs/`; EXPERIMENTS E11):
+
+| | Lecture notes, before | Lecture notes, after | Labour Code excerpt (correct layer), after |
+|---|---|---|---|
+| Text-layer verdict | kept without a check | Jaccard 0.014, garbled | Jaccard 0.994, kept |
+| Pages read by PaddleOCR | 0 | 54 images | 1 (the check) |
+| Passages stored | 632 unreadable | 713 Greek | 692 |
+| Passages with «υπερωρ» | 0 | 38 | 19 |
+| Import time | 1,000 s (938 s translating junk) | 558 s | 143 s |
+
+- Icons: `actool` compiles the set for iOS and macOS with no warnings; iOS test build
+  `** TEST BUILD SUCCEEDED **` with the new icons.
+- **Not checked:** answers to the owner's two questions (the simulator has no Apple Intelligence;
+  to be asked in the Mac app after re-importing the notes). The notes have no article 58, so that
+  question is still refused unless the Labour Code is in the library.

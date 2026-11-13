@@ -1,0 +1,10 @@
+# greektextlayer0: import of the Greek lecture notes before the PaddleOCR text-layer check (log last written 2026-11-13 20:41); text samples of the notes left out (a third party's work)
+ℹ️  [DocumentProcessor] [iOS26] Text layer kept without an OCR check: the sampled pages' letters are mostly in a script Vision's text recognition does not read
+[Atomiko] imported 1 in 1000 s
+[Atomiko] log: Translation | Opus-MT (opus-mt-tc-big-el-en, on device) is translating 632 Greek passages to English
+[Atomiko] log: Translation | Opus-MT translated 631 of 632 Greek passages in 938.1 s; the rest kept in Greek
+[Atomiko] totalChunks=632 legalMetadata=632 greekSource=632
+[Atomiko] chunks with 'υπερωρ': 0
+[Atomiko] chunks with 'άρθρο 58'/'άρθρου 58'/'αρθ. 58': 0
+[Atomiko] chunks with Greek letters: 632 of 632
+✔ Test run with 1 test in 1 suite passed after 1000.753 seconds.

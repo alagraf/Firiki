@@ -201,6 +201,29 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   answer is graded wrong in each run, in a different condition. Following the holdout rule, the
   wrong answer was not examined and nothing was changed because of it.
 
+## E11. Checking a Greek text layer with PaddleOCR (2026-11-13)
+
+- **Observation:** in the Mac app, two Greek questions about the owner's 51-page labour-law
+  lecture notes (a Word export, not in the repository) were both refused.
+- **Cause (measured):** the PDF's Greek font maps to the wrong letters. The import checks a text
+  layer against Vision OCR of a sample page, but skips pages in scripts Vision cannot read, so a
+  Greek text layer is never checked. The notes were stored as 632 unreadable passages, 0 of them
+  containing «υπερωρ», and PaddleOCR did not run (run `greektextlayer0`).
+- **Change:** PaddleOCR reads the Greek sample page instead; under 15% shared words (the bar
+  Vision's check uses) → every page through OCR.
+- **Runs (simulator imports, `greektextlayer1`):**
+
+| Document | Verdict | PaddleOCR | Passages | With «υπερωρ» |
+|---|---|---|---|---|
+| Lecture notes, before | not checked | 0 pages | 632 unreadable | 0 |
+| Lecture notes, after | Jaccard 0.014, garbled | 54 images, 311 s | 713 Greek | 38 |
+| Labour Code excerpt (control) | Jaccard 0.994, kept | 1 page (the check) | 692 | 19 |
+
+- **Outcome: supported** for import. Not yet measured: the answers to the two questions (needs
+  Apple Intelligence; the owner re-imports the notes in the Mac app). The notes contain no article
+  58, so that question is rightly refused unless the Labour Code is in the library. The threshold
+  was not tuned: 0.15 is the existing bar, and the two documents sit far from it.
+
 ## Open failures known from dev (not fixed)
 
 - Library dev 13 (pay information): the model answered "within five (5) paragraphs" where the law

@@ -1,0 +1,21 @@
+# greektextlayer1: imports with the PaddleOCR text-layer check (log last written 2026-11-13 21:47); text samples of the notes left out (a third party's work)
+ℹ️  [DocumentProcessor] Greek text layer checked with PaddleOCR: Jaccard 0.014 → GARBLED, every page goes through OCR
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): imported 1 in 558 s
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): log: Greek OCR | PaddleOCR (paddle-el-v5) read 54 images, its text kept for 54, 201830 characters, in 310.9 s
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): log: Translation | Opus-MT (opus-mt-tc-big-el-en, on device) is translating 713 Greek passages to English
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): log: Translation | Opus-MT translated 713 of 713 Greek passages in 106.0 s
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): totalChunks=713 legalMetadata=713 greekSource=713
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): chunks with 'υπερωρ': 38
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): chunks with 'άρθρο 58'/'άρθρου 58'/'αρθ. 58': 0
+[Atomiko] Greek lecture notes (51 pages, broken font mapping): chunks with Greek letters: 713 of 713
+ℹ️  [DocumentProcessor] Greek text layer checked with PaddleOCR: Jaccard 0.994 → kept
+[Atomiko] Labour Code excerpt (37 pages): imported 1 in 143 s
+[Atomiko] Labour Code excerpt (37 pages): log: Greek OCR | PaddleOCR PP-OCRv5 (Greek model, on device) is reading this file's images; Vision recognizes no Greek
+[Atomiko] Labour Code excerpt (37 pages): log: Greek OCR | PaddleOCR (paddle-el-v5) read 1 image, its text kept for 1, 5014 characters, in 6.2 s
+[Atomiko] Labour Code excerpt (37 pages): log: Translation | Opus-MT (opus-mt-tc-big-el-en, on device) is translating 692 Greek passages to English
+[Atomiko] Labour Code excerpt (37 pages): log: Translation | Opus-MT translated 686 of 692 Greek passages in 94.3 s; the rest kept in Greek
+[Atomiko] Labour Code excerpt (37 pages): totalChunks=692 legalMetadata=692 greekSource=692
+[Atomiko] Labour Code excerpt (37 pages): chunks with 'υπερωρ': 19
+[Atomiko] Labour Code excerpt (37 pages): chunks with 'άρθρο 58'/'άρθρου 58'/'αρθ. 58': 30
+[Atomiko] Labour Code excerpt (37 pages): chunks with Greek letters: 692 of 692
+✔ Test run with 2 tests in 1 suite passed after 703.797 seconds.

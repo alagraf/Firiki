@@ -4248,6 +4248,9 @@ class DocumentProcessor {
             var bestSampleText = ""
             var bestSamplePage: PDFPage?
             var unreadableSampleSeen = false
+            // Thesis fork: the longest sampled page that is mostly Greek, which PaddleOCR checks instead (below).
+            var bestGreekSampleText = ""
+            var bestGreekSamplePage: PDFPage?
 
             for idx in sampleIndices {
                 guard let page = pdfDocument.page(at: idx) else { continue }
@@ -4259,6 +4262,12 @@ class DocumentProcessor {
                 // sample; a page of the same document in a script Vision reads still is (review, 2026-10-19).
                 guard OCRConfiguration.visionCanReadMostOf(text) else {
                     if text.count >= 50 { unreadableSampleSeen = true }
+                    if text.count >= 50, GreekLegalEntityMasker.greekLetterRatio(text) >= 0.5,
+                        text.count > bestGreekSampleText.count
+                    {
+                        bestGreekSampleText = text
+                        bestGreekSamplePage = page
+                    }
                     continue
                 }
                 if text.count > bestSampleText.count {
@@ -4269,6 +4278,18 @@ class DocumentProcessor {
 
             // No text layer at all → not garbled, just needs OCR
             guard bestSampleText.count >= 50, let samplePage = bestSamplePage else {
+                // Thesis fork (2026-11-13): a Greek text layer was kept unchecked, so a PDF whose Greek font maps
+                // to the wrong letters (a Word export of lecture notes: «Η σχέση» stored as «Ζ ζρέζε») was imported
+                // as unreadable text and every question about it was refused. PaddleOCR's Greek model reads the
+                // sample page instead of Vision; a text layer that shares too few words with it is garbled, and
+                // every page then goes through OCR, which reads Greek pages with PaddleOCR too.
+                if let greekPage = bestGreekSamplePage,
+                    let garbled = await greekTextLayerIsGarbled(page: greekPage, textLayer: bestGreekSampleText,
+                                                                pageCount: pageCount)
+                {
+                    documentTextLayerGarbled = garbled
+                    break textLayerValidation
+                }
                 documentTextLayerGarbled = false
                 if unreadableSampleSeen {
                     Log.info("[DocumentProcessor] [iOS26] Text layer kept without an OCR check: the sampled pages' letters are mostly in a script Vision's text recognition does not read", category: .ingestion)
@@ -7428,6 +7449,48 @@ class DocumentProcessor {
     /// ROTATION HANDLING: PDF pages can have /Rotate flags (90°, 180°, 270°).
     /// We use .cropBox which returns dimensions in the page's display orientation,
     /// and PDFPage.draw() automatically applies the rotation transform.
+    // MARK: - Greek text-layer check (thesis fork)
+
+    /// Below this share of words in common with PaddleOCR's reading of the same page, a Greek text layer is
+    /// garbled. The same bar as Vision's check for the scripts it reads.
+    nonisolated static let greekTextLayerMinimumJaccard = 0.15
+
+    /// The share of words (three letters or more) that a page's text layer and an OCR reading of it have in
+    /// common, |shared| / |either|, or nil when either side has no such word. Accents, case and final sigma are
+    /// ignored, and Latin letters that look Greek are read as Greek, so OCR's small slips don't count.
+    nonisolated static func greekWordJaccard(ocr: String, textLayer: String) -> Double? {
+        func words(_ text: String) -> Set<String> {
+            let folded = GreekLegalEntityMasker.repairGreekHomoglyphs(text)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+                .replacingOccurrences(of: "ς", with: "σ")
+            return Set(folded.split(whereSeparator: { !$0.isLetter }).map(String.init).filter { $0.count >= 3 })
+        }
+        let ocrWords = words(ocr)
+        let layerWords = words(textLayer)
+        guard !ocrWords.isEmpty, !layerWords.isEmpty else { return nil }
+        return Double(ocrWords.intersection(layerWords).count) / Double(ocrWords.union(layerWords).count)
+    }
+
+    /// Whether a mostly-Greek page's text layer is garbled, judged against PaddleOCR's Greek model, or nil when
+    /// the check could not run (the model is missing, the OCR mode is Vision only, or nothing was read).
+    private func greekTextLayerIsGarbled(page: PDFPage, textLayer: String, pageCount: Int) async -> Bool? {
+        guard OCRRouterService.shared.isGreekEngineAvailable,
+            let rendered = renderPDFPageAsImage(page: page, scale: 2.0),
+            let image = Self.gpuContext.createCGImage(rendered, from: rendered.extent)
+        else { return nil }
+        emitProgress(stage: "validating", detail: "🔍 Validating Greek text layer...", page: nil, totalPages: pageCount)
+        guard let lines = await OCRRouterService.shared.greekLines(in: image, site: "textLayer.check", force: true),
+            !lines.isEmpty
+        else { return nil }
+        let ocr = OCRRouterService.joinLines(lines)
+        guard let jaccard = Self.greekWordJaccard(ocr: ocr, textLayer: textLayer) else { return nil }
+        let garbled = jaccard < Self.greekTextLayerMinimumJaccard
+        Log.info(
+            "[DocumentProcessor] Greek text layer checked with PaddleOCR: Jaccard \(String(format: "%.3f", jaccard)) → \(garbled ? "GARBLED, every page goes through OCR" : "kept")",
+            category: .ingestion)
+        return garbled
+    }
+
     private func renderPDFPageAsImage(page: PDFPage, scale: CGFloat = 5.0) -> CIImage? {
         // Use .cropBox instead of .mediaBox — cropBox respects the page's /Rotate flag
         // and returns dimensions in the correct display orientation.
