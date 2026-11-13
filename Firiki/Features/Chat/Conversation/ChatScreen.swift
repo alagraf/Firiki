@@ -3254,12 +3254,28 @@ struct ChatScreen: View {
                 try Task.checkCancellation()
 
                 // Thesis fork: direct execution of Greek LegalTech capabilities from chat
-                // (statute summarization, cross-statute legal opinion, contract template routing)
-                if let directCapability = await GreekLegalChatRouter.handleChatQuery(
+                // (statute summarization, cross-statute legal opinion, contract template routing).
+                // A capability is model work from the start, so the bar shows "generating" rather
+                // than the "embedding" stage set above, for the minutes a summary or opinion takes.
+                let capabilityIntent = GreekLegalChatRouter.detectIntent(capturedQuery)
+                if capabilityIntent.isCapability {
+                    await MainActor.run {
+                        guard self.currentQuerySessionId == querySessionId else { return }
+                        self.stage = .generating
+                        self.generationStart = Date()
+                        self.generatingStartTS = self.generationStart
+                        self.continuedQueryCoordinator.markGenerating()
+                    }
+                }
+                let directCapabilityResult = await GreekLegalChatRouter.handleChatQuery(
                     capturedQuery,
+                    intent: capabilityIntent,
                     containerId: capturedUsedContainerId,
                     ragService: capturedService
-                ) {
+                )
+                // A request stopped while a capability ran is not answered, nor passed on to Q&A.
+                try Task.checkCancellation()
+                if let directCapability = directCapabilityResult {
                     await MainActor.run {
                         guard self.currentQuerySessionId == querySessionId else { return }
                         self.currentRetrievedChunks = directCapability.retrievedChunks ?? []

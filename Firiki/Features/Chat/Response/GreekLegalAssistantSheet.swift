@@ -133,6 +133,8 @@ private struct LegalOpinionTabView: View {
     @State private var isGenerating = false
     @State private var opinion: GreekLegalOpinionWriter.Opinion?
     @State private var errorMessage: String?
+    /// A refusal: the app working as intended (the sources don't support an opinion), not an error.
+    @State private var refusalNotice: String?
     @State private var displayLanguage: LanguageSelection = .greek
 
     private enum LanguageSelection: String, CaseIterable, Identifiable {
@@ -229,6 +231,18 @@ private struct LegalOpinionTabView: View {
                 }
             }
 
+            if let notice = refusalNotice {
+                SurfaceCard {
+                    HStack(spacing: DSSpacing.sm) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundStyle(DSColors.secondaryText)
+                        Text(notice)
+                            .font(DSTypography.body)
+                            .foregroundStyle(DSColors.primaryText)
+                    }
+                }
+            }
+
             if let op = opinion {
                 SurfaceCard {
                     HStack {
@@ -320,8 +334,14 @@ private struct LegalOpinionTabView: View {
 
     private func synthesizeOpinion() {
         guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        isGenerating = true
         errorMessage = nil
+        refusalNotice = nil
+        opinion = nil
+        if let unavailable = GreekLegalChatRouter.modelUnavailableMessage(greek: true) {
+            errorMessage = unavailable
+            return
+        }
+        isGenerating = true
         DSHaptics.light()
 
         Task {
@@ -329,13 +349,17 @@ private struct LegalOpinionTabView: View {
                 let containerId = ragService.containerService.activeContainerId
                 let result = try await ragService.greekLegalOpinion(question: question, containerId: containerId)
                 await MainActor.run {
-                    self.opinion = result
+                    if let reason = result.refusalGreek {
+                        self.refusalNotice = "Δεν κατέστη δυνατή η έκδοση γνωμοδότησης: \(reason)."
+                    } else {
+                        self.opinion = result
+                    }
                     self.isGenerating = false
                     DSHaptics.success()
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = "Σφάλμα κατά τη σύνταξη: \(error.localizedDescription)"
+                    self.errorMessage = GreekLegalChatRouter.failureMessage(for: error, greek: true, task: .opinion)
                     self.isGenerating = false
                 }
             }
@@ -745,8 +769,12 @@ private struct StatuteSummarizerTabView: View {
 
     private func summarizeDocument() {
         guard let docId = selectedDocumentId else { return }
-        isSummarizing = true
         errorMessage = nil
+        if let unavailable = GreekLegalChatRouter.modelUnavailableMessage(greek: true) {
+            errorMessage = unavailable
+            return
+        }
+        isSummarizing = true
         DSHaptics.light()
 
         Task {
@@ -772,7 +800,7 @@ private struct StatuteSummarizerTabView: View {
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = "Σφάλμα σύνοψης: \(error.localizedDescription)"
+                    self.errorMessage = GreekLegalChatRouter.failureMessage(for: error, greek: true, task: .summary)
                     self.isSummarizing = false
                 }
             }

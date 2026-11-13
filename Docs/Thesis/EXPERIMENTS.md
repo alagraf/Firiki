@@ -249,6 +249,33 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   test split) are single runs and within run-to-run variation. This is the second run of the
   opinion and template test splits and the third of the summary test split.
 
+## E13. Chat intent recognition, before and after the demo quick wins (2026-11-14)
+
+- **Why:** the CEO-demo audit (`POC_PROGRESS.md`) found ordinary questions sent to a capability by
+  the chat's rules. The README's template figures (43–44 of 44) measure the template router once
+  called; this measures whether the chat calls it at all. No model is involved: the rules are
+  regular expressions, checked by a Python prototype (same patterns, same folding) and then by
+  `GreekLegalChatRouterTests` in Swift.
+- **Design data:** dev splits only (routing, Labour Code, library, opinion). The routing **test**
+  split and the test splits of the question sets were measured once after the rules were final;
+  one observation there (an opinion test request that names a collective agreement and a request
+  verb was taken for a template) is why the contract-noun-plus-verb rule runs after the opinion
+  rule. No pattern was added or changed for a test prompt.
+
+| Set | Want | Before (first rules) | After |
+|---|---|---|---|
+| Routing dev, 40 template requests | template | 0 | 38 |
+| Routing dev, 4 "none" questions | Q&A | 4 | 4 |
+| Labour Code dev, 46 / library dev, 24 / opinion dev, 6 | not a template or summary | all | all |
+| 7 ordinary questions (audit misroutes + 2 yes/no) | Q&A | 1 | 7 |
+| Routing test, 20 template requests (once) | template | — | 13 |
+| Routing test, 2 "none" / Labour Code test 23 / library test 12 | Q&A | — | all but 1 library question flagged as a possible arrangement (it falls back to Q&A when the router finds no template) |
+| Opinion test, 4 (once) | opinion | — | 4 after the rule order above |
+
+- **Outcome:** the misroutes are gone and natural template requests reach the router from the
+  chat (38 of 40 dev, 13 of 20 test: the rules generalise less well than on the set they were
+  written from). A described arrangement that no template fits now goes to ordinary Q&A.
+
 ## Open failures known from dev (not fixed)
 
 - Library dev 13 (pay information): the model answered "within five (5) paragraphs" where the law

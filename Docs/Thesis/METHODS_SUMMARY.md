@@ -275,6 +275,10 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-14 (later): chat recognition of capability requests ignores accents and case; ordinary
+  questions are no longer sent to a template, opinion or summary; a described hiring arrangement
+  tries the templates and falls back to Q&A. Template requests recognised from the chat: 0 → 38 of
+  40 (dev), 13 of 20 (test, once). Capability failures show fixed messages.
 - 2026-11-14: contract templates, summaries, opinions and OCR re-measured on the renamed app;
   unchanged within run variation.
 - 2026-11-13: a Greek PDF's text layer is checked with PaddleOCR; one with wrong-letter fonts is

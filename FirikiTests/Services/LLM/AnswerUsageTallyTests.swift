@@ -59,6 +59,8 @@ final class AnswerUsageTallyTests: XCTestCase {
 
     func testTheDetailsLine() {
         XCTAssertEqual(ChatResponseDetailsView.appleUsageText(first), "900 in (300 cached), 120 out")
-        XCTAssertEqual(ChatResponseDetailsView.appleUsageText(second), "1,100 in (0 cached), 80 out, 40 reasoning")
+        // The details show numbers in the user's locale ("1.100" in Greece), so build the
+        // expected text the same way instead of assuming a US region.
+        XCTAssertEqual(ChatResponseDetailsView.appleUsageText(second), "\(1_100.formatted()) in (0 cached), 80 out, 40 reasoning")
     }
 }

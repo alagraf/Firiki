@@ -379,12 +379,15 @@ struct ChatResponseDetailsView: View {
                     color: .blue
                 )
 
-                summaryStatItem(
-                    value: "\(metadata.tokensGenerated)",
-                    label: "tokens",
-                    icon: "text.word.spacing",
-                    color: .purple
-                )
+                // A summary, opinion or template answer counts no tokens: no "0 tokens" stat.
+                if metadata.tokensGenerated > 0 {
+                    summaryStatItem(
+                        value: "\(metadata.tokensGenerated)",
+                        label: "tokens",
+                        icon: "text.word.spacing",
+                        color: .purple
+                    )
+                }
 
                 if let tps = metadata.tokensPerSecond, tps > 0 {
                     summaryStatItem(
@@ -681,8 +684,12 @@ struct ChatResponseDetailsView: View {
                 PerfMetricRow(label: "Model", value: metadata.modelUsed.isEmpty ? "Unknown" : metadata.modelUsed)
                 PerfMetricRow(label: "Quality Mode", value: metadata.qualityModeName ?? metadata.retrievalConfigSummary)
                 PerfMetricRow(label: "Total Time", value: String(format: "%.3fs", metadata.totalGenerationTime))
-                PerfMetricRow(label: "Retrieval Time", value: String(format: "%.3fs", metadata.retrievalTime))
-                PerfMetricRow(label: "Tokens Generated", value: "\(metadata.tokensGenerated)")
+                if metadata.retrievalTime > 0 {
+                    PerfMetricRow(label: "Retrieval Time", value: String(format: "%.3fs", metadata.retrievalTime))
+                }
+                if metadata.tokensGenerated > 0 {
+                    PerfMetricRow(label: "Tokens Generated", value: "\(metadata.tokensGenerated)")
+                }
                 if let usage = metadata.appleUsage {
                     // Apple's own count for the whole answer, every model call added up (5.7).
                     PerfMetricRow(label: "Apple's Count", value: Self.appleUsageText(usage))

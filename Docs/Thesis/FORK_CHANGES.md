@@ -2208,3 +2208,72 @@ command with its one known failure, and the `/tmp` cleanup workaround. `main` fa
 `firiki-rename` (no merge commit); nothing pushed.
 
 **Verification:** documentation only; the results are those of E12.
+
+## 14 Nov 2026 (second entry): CEO demo quick wins
+
+**Why:** the owner asked for a demo-readiness audit (`POC_PROGRESS.md`) and approved its quick wins
+(`Docs/Thesis/plans/demo-quick-wins.md`), as one commit, with "as many template requests as
+possible recognised". The audit found the chat's capability rules sent ordinary questions to a
+capability («Τι ισχύει για τη σύμβαση εργασίας για ορισμένο χρόνο;» opened a template, "In your
+opinion…" an opinion, «περίληψη των δικαιωμάτων της εγκύου» a summary), missed requests typed
+without accents, and recognised none of the 40 naturally worded template requests of the routing
+dev split. Failures showed raw error text, a refused opinion in the sheet showed an empty card, a
+summary or opinion showed the "embedding" stage for minutes, and its details showed 0.000 s and 0
+tokens.
+
+**What:**
+- `GreekLegalChatRouter.swift`:
+  - every rule runs on the prompt folded like the Greek keyword index (`greekSearchFold`);
+  - an explicit template request (a template noun near a contract noun, «ποιο υπόδειγμα»,
+    "which … template … use", "Contract for …", «τι σύμβαση χρειάζομαι/κάνουμε/υπογράφουμε»)
+    always opens a template;
+  - a new intent, `possibleContractRouting`, covers a described hiring or work arrangement (a
+    contract noun with a request verb, not a yes/no question; "which contract"; hiring phrases
+    such as «θέλω να πάρω», "I need someone", not opening as a question). The template router
+    runs, and when no template fits the prompt goes on to ordinary Q&A;
+  - removed rules: «σύμβαση (εργασίας) για», «ποια σύμβαση», "labour contract", a bare
+    "opinion";
+  - a summary needs a document word or a named statute;
+  - `extractDocumentTarget` works on folded text; its last pattern was an unbounded look-behind,
+    which ICU rejects, so it never ran; it is now an ordinary capture;
+  - `failureMessage(for:greek:task:)` gives fixed Greek/English text for each FoundationModels
+    `GenerationError` case, missing translation models, cancellation and anything else; the
+    technical detail goes to the log only;
+  - `modelUnavailableMessage(greek:)` is checked before a summary or opinion;
+  - capability answers carry their real duration (`ContinuousClock`);
+  - English requests get English headers and messages ("### Summary:", "Applicable provisions",
+    empty library, which document, no passages);
+  - a Greek opinion refusal is in Greek.
+- `GreekLegalOpinionWriter.swift`: `Opinion.refusalGreek` (the English `refusal` stays for the
+  evaluation logs).
+- `GreekLegalAssistantSheet.swift`: the opinion and summary tabs check the model first and show
+  fixed messages; a refused opinion shows its reason as a notice instead of an empty card.
+- `ChatScreen.swift`: the intent is detected first, a capability sets the "generating" stage, and
+  a request stopped while a capability ran is neither answered nor passed on to Q&A.
+- `ResponseDetailsView.swift`: the tokens stat, "Tokens Generated" and "Retrieval Time" are hidden
+  when 0.
+- Tests:
+  - `GreekLegalChatRouterTests`: 7 former misroutes stay Q&A; unaccented and capitals requests;
+    described arrangements; routing dev split ≥ 38 of 40 recognised and its "none" questions
+    Q&A; every Labour Code, library and opinion dev question not sent to a template or summary;
+    failure messages never contain the technical error and are in the request's language; Greek
+    refusal reasons.
+  - «Ποια σύμβαση εργασίας προβλέπεται για μαθητεία;» moved from the template cases to the
+    questions (the owner agreed).
+  - `AnswerUsageTallyTests.testTheDetailsLine` builds "1,100" with the locale's own formatting, so
+    it passes on a Mac set to the Greece region.
+
+**Verification:**
+- Targeted suites (`thesis_run_tests.sh`, `-only-testing:` GreekLegalChatRouterTests,
+  GreekLegalOpinionTests, GreekLegalSummaryTests, LabourContractTemplateTests,
+  AnswerUsageTallyTests, GreekLegalVerificationTests): `** TEST BUILD SUCCEEDED **`; "Test run
+  with 56 tests in 5 suites passed"; AnswerUsageTallyTests "Executed 5 tests, with 0 failures";
+  the log prints "[ChatRouter] routing dev: 38 of 40 template requests recognised".
+- Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures" (the Greece-region
+  failure is gone); "Test run with 136 tests in 28 suites passed" (128 before).
+- macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
+  `** BUILD SUCCEEDED **`.
+- Measured recognition: EXPERIMENTS E13.
+- **Not checked:** the stage indicator, messages and details view in the Mac app with Apple
+  Intelligence (the simulator has no model); the template router's answer for a described
+  arrangement that it judges "none" (falls back to Q&A by code, not yet seen in the app).

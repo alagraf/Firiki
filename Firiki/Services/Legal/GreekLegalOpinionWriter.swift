@@ -53,6 +53,19 @@ nonisolated enum GreekLegalOpinionWriter {
         let dropped: [String]
         /// Nil when written; the reason when refused (no supported conclusion).
         let refusal: String?
+
+        /// The refusal reason in Greek, for the user; `refusal` stays English for the evaluation logs.
+        var refusalGreek: String? {
+            switch refusal {
+            case nil: return nil
+            case "no document of the library addresses the question":
+                return "κανένα έγγραφο της βιβλιοθήκης δεν αφορά το ερώτημα"
+            case "the conclusion had no supported sentence":
+                return "το συμπέρασμα δεν στηρίζεται σε καμία πρόταση των πηγών"
+            default:
+                return "οι πηγές της βιβλιοθήκης δεν επαρκούν για τεκμηριωμένη απάντηση"
+            }
+        }
     }
 
     /// The Labour Code's statute key: the base text the other documents amend or apply.
