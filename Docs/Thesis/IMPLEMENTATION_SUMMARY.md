@@ -1,5 +1,8 @@
 # Fork implementation summary
 
+> Commit hashes below are from before the 13 Nov 2026 identity rewrite. Look up the current hash in
+> `Docs/Thesis/COMMIT_HASH_MAP.md` (local, git-ignored) before `git show` or `git diff`.
+
 Everything the thesis fork changes in OpenIntelligence, grouped for the implementation chapter:
 from the document coming in to the answer going out, then the capabilities built on top. Each item
 names its section in `Docs/Thesis/FORK_CHANGES.md`, where the reasons, files and verification are

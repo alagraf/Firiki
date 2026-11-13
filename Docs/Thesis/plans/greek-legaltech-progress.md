@@ -1,5 +1,8 @@
 # Progress: Greek labour-law RAG plan (`greek-legaltech.md`)
 
+> Commit hashes below are from before the 13 Nov 2026 identity rewrite. Look up the current hash in
+> `Docs/Thesis/COMMIT_HASH_MAP.md` (local, git-ignored) before `git show` or `git diff`.
+
 Branch: `thesis/greek-legal-rag` (from `main` at `20d56a34`). This file is the resume point: an
 agent continuing the work reads this file first, then `greek-legaltech.md` only for the step it is
 on. Tick a box in the same commit as the change. Each commit message starts with `Greek RAG P<n>:`.

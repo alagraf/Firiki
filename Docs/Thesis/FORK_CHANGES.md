@@ -2051,6 +2051,10 @@ requirements, a test command naming suites that don't exist).
   host-name address to the GitHub account `alagraf` (noreply address), and the global git identity
   set to it. File contents unchanged (tree of the branch tip identical before and after); the
   original author's commits untouched. Backup refs: `refs/backup/pre-identity-rewrite/*`.
+  Every fork commit got a new hash; the hashes cited in this file and the other thesis records
+  are the old ones, kept as written. `Docs/Thesis/COMMIT_HASH_MAP.md` (kept on the owner's Mac and
+  git-ignored, not in the repository) maps each of the 63 old
+  hashes to its new one (pairs checked for the same tree, subject and author date).
 - `.gitignore`: `node_modules/`, `Docs/Thesis/code_backup_*/`, `/thesis_v8_notes.md` (private
   review notes; the repository is public).
 

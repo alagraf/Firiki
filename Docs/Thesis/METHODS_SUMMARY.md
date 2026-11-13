@@ -174,7 +174,7 @@ fix that stage in a general way; run again and compare.
   Changes are tuned on the development set; the test set is used for held-out measurement.
 
 ## 8. Results so far
-Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with Apple's on-device model (`AFM 3 Core Advanced`, 8,192-token window); not yet checked on a physical iPhone. All numbers below were recorded on 28–30 October 2026 (up to commit `e85ae0cc` / `ffff0241`), prior to the 31 October code commits (`2af92e2e`–`f10190e1`), which refined import/chunking, translation, and refusal rules after the evaluation runs.
+Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with Apple's on-device model (`AFM 3 Core Advanced`, 8,192-token window); not yet checked on a physical iPhone. All numbers below were recorded on 28–30 October 2026 (up to commit `e85ae0cc` / `ffff0241`), prior to the 31 October code commits (`2af92e2e`–`f10190e1`), which refined import/chunking, translation, and refusal rules after the evaluation runs. (Commit hashes are from before the 13 Nov 2026 identity rewrite; `COMMIT_HASH_MAP.md` (local, git-ignored) gives the current ones.)
 
 | Date | Question set | Result |
 |---|---|---|

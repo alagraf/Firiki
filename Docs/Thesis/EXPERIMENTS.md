@@ -8,6 +8,7 @@ not support and changes that were dropped. The result lines of each run are kept
 `FORK_CHANGES.md`; the high-level results table is in `METHODS_SUMMARY.md`.
 
 **Conventions.**
+- Commit hashes in this file are from before the 13 Nov 2026 identity rewrite; `COMMIT_HASH_MAP.md` (local, git-ignored) gives each one's current hash.
 - All runs are in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB), with Apple's on-device model (`AFM 3 Core Advanced`, 8,192-token window), greedy decoding.
 - All benchmark numbers and run logs in `experiments/runs/` come from the 29–30 October 2026 runs (up to commit `e85ae0cc` / `ffff0241`), prior to the 31 October post-evaluation refinements (`2af92e2e`–`f10190e1`, which updated `Αρ.` entity masking, worker-origin foreign-jurisdiction checks, whole-word passage overlap, spelled-number fraction filtering, long-segment translation splitting, OCR benchmark line-end dehyphenation, and context-aware chunking / in-chat routing).
 - "Dev" is tuned on; "test" is run once per milestone and never tuned on. The EU holdout is

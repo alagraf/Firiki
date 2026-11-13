@@ -1,5 +1,8 @@
 # Handoff: where the work stands
 
+> Commit hashes below are from before the 13 Nov 2026 identity rewrite. Look up the current hash in
+> `Docs/Thesis/COMMIT_HASH_MAP.md` (local, git-ignored) before `git show` or `git diff`.
+
 For any agent (Claude Code, Antigravity) continuing the thesis work without the earlier
 conversation. Kept current by the agent doing the work; the last update is at the top of the log.
 Read `AGENTS.md` first; its rules apply in full (the owner has given standing permission to make
