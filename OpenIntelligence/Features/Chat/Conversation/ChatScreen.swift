@@ -12,7 +12,6 @@ import Foundation
     import PDFKit
     import VisionKit
 #endif
-import StoreKit
 import SwiftUI
 import Translation
 
@@ -216,11 +215,9 @@ private final class ContinuedQueryCoordinator: ObservableObject {
 @MainActor
 struct ChatScreen: View {
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.requestReview) private var requestReview
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var onboardingStore: OnboardingStateStore
     @EnvironmentObject private var settings: SettingsStore
-    @EnvironmentObject private var entitlementStore: EntitlementStore
     @ObservedObject var ragService: RAGService
 
     init(ragService: RAGService) {
@@ -359,10 +356,6 @@ struct ChatScreen: View {
             return nil
         #endif
     }
-    @State private var showPlanSheet: Bool = false
-    @State private var planEntryPoint: PlanUpgradeEntryPoint = .maximumModeLimit
-    @State private var showMaximumModeLimitDialog: Bool = false
-    @State private var maximumModeLimitDialogMessage: String = ""
 
     // Hardware telemetry for Motherboard HUD visibility
     private var hardwareTelemetry = HardwareTelemetryState.shared
@@ -382,8 +375,6 @@ struct ChatScreen: View {
     // Smart Reply follow-up suggestions (shown after AI response)
     @State private var followUpSuggestions: [SmartReply] = []
     @State private var followUpSuggestionsTask: Task<Void, Never>? = nil
-    @State private var showFriendlyReviewPrompt = false
-    @State private var showFeedbackEmailPrompt = false
 
     // Speed history for sparkline graph
     @State private var speedHistory: [Double] = []
@@ -1019,21 +1010,6 @@ struct ChatScreen: View {
             .onReceive(AppNavigationRequest.shared.changes) { _ in
                 takeNavigationRequest()
             }
-            .onReceive(PlanAskService.shared.$wantsAsk) { wants in
-                // Two seconds after the answer has landed, like the rating request, so the
-                // sheet never covers the answer itself; and never on top of another sheet.
-                guard wants, !showPlanSheet, activeCloudConsent == nil else { return }
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(2))
-                    guard !showPlanSheet else { return }
-                    planEntryPoint = .momentOfValue
-                    showPlanSheet = true
-                    PlanAskService.shared.didAsk()
-                }
-            }
-            .sheet(isPresented: $showPlanSheet) {
-                PlanUpgradeSheet(entryPoint: planEntryPoint)
-            }
             #if DEBUG
                 .sheet(item: $storeScenePage) { scene in
                     SourcePageView(
@@ -1051,58 +1027,6 @@ struct ChatScreen: View {
                     .presentationCornerRadius(DSCorners.sheet)
                     .presentationBackground(.ultraThinMaterial)
                 #endif
-            }
-            .confirmationDialog(
-                "Maximum mode limit reached",
-                isPresented: $showMaximumModeLimitDialog,
-                titleVisibility: .visible
-            ) {
-                Button("Switch to Standard") {
-                    settings.ragQualityMode = .standard
-                    ragService.resetDeepThinkLiveMetrics()
-                }
-                Button("Switch to Deep Think") {
-                    settings.ragQualityMode = .deepThink
-                    ragService.resetDeepThinkLiveMetrics()
-                }
-                Button("See Plans") {
-                    presentMaximumModePaywall()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(maximumModeLimitDialogMessage)
-            }
-            .alert(
-                "Enjoying OpenIntelligence?",
-                isPresented: $showFriendlyReviewPrompt
-            ) {
-                Button("I love it! ❤️") {
-                    requestReview()
-                }
-                Button("Write a Review ✍️") {
-                    openURL(OpenIntelligenceLinks.writeReviewURL)
-                }
-                Button("Needs improvement 💬") {
-                    openURL(OpenIntelligenceLinks.feedbackMailtoURL(source: "In-App Feedback Prompt"))
-                }
-                Button("Maybe later", role: .cancel) {}
-            } message: {
-                Text(
-                    "Reading, searching and citing stay on your device. A quick rating or a written review helps the app grow and keeps me building it."
-                )
-            }
-            .alert(
-                "Help Me Improve",
-                isPresented: $showFeedbackEmailPrompt
-            ) {
-                Button("Send Feedback 💬") {
-                    openURL(OpenIntelligenceLinks.feedbackMailtoURL(source: "In-App Negative Feedback"))
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(
-                    "I'm sorry that answer wasn't helpful. Please send me your feedback so I can improve OpenIntelligence!"
-                )
             }
     }
 
@@ -1135,7 +1059,6 @@ struct ChatScreen: View {
                 }
                 // Seed screenshot demo FIRST before loading persisted history
                 seedScreenshotDemoIfNeeded()
-                entitlementStore.refreshTransientState()
                 isAppeared = true
                 if needsSuggestedQuestionsRefresh || dynamicSuggestedQuestions.isEmpty {
                     needsSuggestedQuestionsRefresh = false
@@ -2319,23 +2242,13 @@ struct ChatScreen: View {
         }
     }
 
-    /// Starts a new conversation, and says whether one was started. One is refused when the plan's
-    /// conversation limit is reached (`EvidenceThreadQuotaError`), and the screen is then left as it
-    /// is: the conversation stays on it and stays the one its next answer is saved to (5.7). Through
-    /// 5.6 the screen was emptied first while the old conversation stayed the one being saved, so the
-    /// next question was saved over it with only the new messages. Every caller runs it only while
-    /// no answer is being written.
+    /// Starts a new conversation, and says whether one was started. When creating it fails, the screen
+    /// is left as it is: the conversation stays on it and stays the one its next answer is saved to.
+    /// Every caller runs it only while no answer is being written.
     @discardableResult
     private func newChat() -> Bool {
         do {
             try ragService.createNewThread(for: ragService.containerService.activeContainerId)
-        } catch let quotaError as EvidenceThreadQuotaError {
-            DSHaptics.error()
-            toastManager.show(
-                ToastItem(title: quotaError.localizedDescription, icon: "lock.fill", tint: .red),
-                duration: 4.0
-            )
-            return false
         } catch {
             Log.error(
                 "[ChatScreen] Failed to create new thread: \(error.localizedDescription)", category: .initialization)
@@ -2629,8 +2542,7 @@ struct ChatScreen: View {
                 docCount: activeDocCount,
                 chunkCount: activeChunkCount,
                 ragService: ragService,
-                messageContainerOverride: $messageContainerOverride,
-                onMaximumModeBlocked: presentMaximumModePaywall
+                messageContainerOverride: $messageContainerOverride
             )
 
             // The stats bar is part of the technical view (5.7); the plain chat says what it is doing in the answer's
@@ -2726,7 +2638,6 @@ struct ChatScreen: View {
                         }
                     #endif
                     DSHaptics.success()
-                    triggerThumbsUpReviewPrompt()
                 },
                 onThumbsDown: {
                     #if canImport(FoundationModels)
@@ -2735,7 +2646,6 @@ struct ChatScreen: View {
                         }
                     #endif
                     DSHaptics.warning()
-                    showFeedbackEmailPrompt = true
                 },
                 onTranslate: { text in
                     translationText = text
@@ -3209,22 +3119,6 @@ struct ChatScreen: View {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
 
-        // A Maximum run is spent here, before anything else happens, because this is the
-        // one place every Maximum answer passes through. `consumeMaximumModeUseIfNeeded`
-        // existed since May 2026 with no caller, so the "3 left today" label never moved
-        // and the paywall's headline promise gated nothing. Paid tiers return unlimited.
-        if effectiveQualityMode.canonical == .maximum {
-            switch entitlementStore.consumeMaximumModeUseIfNeeded() {
-            case .allowedUnlimited, .allowedMetered:
-                break
-            case let .blocked(_, dailyLimit, _):
-                maximumModeLimitDialogMessage =
-                    "Free users get \(dailyLimit) Maximum runs per day. Switch to Standard or Deep Think, or upgrade for unlimited Maximum mode."
-                showMaximumModeLimitDialog = true
-                return
-            }
-        }
-
         // Haptic feedback for sending a message
         DSHaptics.messageSent()
 
@@ -3554,19 +3448,6 @@ struct ChatScreen: View {
                     // flushStreamingBufferToVisibleText already handled cleanup when isFinal arrived
                     // No need to reset again here - would race with final flush
                     self.appendAndPersistMessage(assistant, for: capturedUsedContainerId)
-                    // A finished answer is the only moment the app asks for a rating,
-                    // and only when the verifier let it through.
-                    ReviewPromptService.shared.noteAnswer(
-                        gatingDecision: response.metadata.gatingDecision,
-                        retrievedSourceCount: response.retrievedChunks.count,
-                        claims: response.structuredAnswer?.claims ?? [])
-                    // And the one unprompted look at the plans, after real use, free tier
-                    // only, once per install. See PlanAskService.
-                    PlanAskService.shared.noteAnswer(
-                        gatingDecision: response.metadata.gatingDecision,
-                        retrievedSourceCount: response.retrievedChunks.count,
-                        isFreeTier: !self.entitlementStore.effectiveTier.isAtLeast(.pro),
-                        claims: response.structuredAnswer?.claims ?? [])
 
                     if let genStart = self.generatingStartTS {
                         self.generatingElapsedFinal = Date().timeIntervalSince(genStart)
@@ -3654,18 +3535,6 @@ struct ChatScreen: View {
                         return
                     }
 
-                    if case RAGServiceError.maximumModeQuotaReached(let limit) = error {
-                        self.stage = .idle
-                        self.resetStreamingState()
-                        self.generationStart = nil
-                        self.maximumModeLimitDialogMessage =
-                            "Free users get \(limit) Maximum runs per day. Switch to Standard or Deep Think, or upgrade for unlimited Maximum mode."
-                        self.showMaximumModeLimitDialog = true
-                        self.toastManager.clearAll()
-                        self.pushToast("Maximum capped for today", icon: "flame.fill", tint: .orange)
-                        return
-                    }
-
                     let friendlyMessage = userFacingErrorMessage(error)
                     self.toastManager.clearAll()
                     if !self.isAppeared {
@@ -3717,33 +3586,6 @@ struct ChatScreen: View {
     private func sendSuggestedPrompt(_ prompt: String) {
         DSHaptics.selection()
         sendMessage(prompt)
-    }
-
-    private func triggerThumbsUpReviewPrompt() {
-        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        guard !currentVersion.isEmpty else { return }
-
-        let lastPrompted = UserDefaults.standard.string(forKey: "appReview.lastPromptedVersion")
-        if lastPrompted == currentVersion { return }
-
-        if let lastPromptAttemptedAt = UserDefaults.standard.object(forKey: "appReview.lastPromptAttemptedAt") as? Date,
-            Date().timeIntervalSince(lastPromptAttemptedAt) < AppReviewPromptPolicy.minimumPromptCooldown
-        {
-            return
-        }
-
-        AppReviewPromptTracker.markPromptAttempted()
-        // A thumbs-up is the one moment the person has just said they liked the answer. Apple's
-        // own sheet produces star ratings and never a written review, and a written review is
-        // what a stranger reads on the store page. So this moment offers the store page. The alert
-        // below existed since 4.x and was never shown by anything: `showFriendlyReviewPrompt` had
-        // no writer (2026-09-18). The per-version and cooldown guards above still apply.
-        showFriendlyReviewPrompt = true
-    }
-
-    private func presentMaximumModePaywall() {
-        planEntryPoint = .maximumModeLimit
-        showPlanSheet = true
     }
 
     private func isLowSignalQuery(_ text: String) -> Bool {
@@ -4060,9 +3902,6 @@ struct ChatScreen: View {
                 // Deliberately does not blame the model. The planner declined to
                 // route; the model is usually fine.
                 return "I couldn't work out how to answer that from what your documents returned. Try rephrasing."
-            case .maximumModeQuotaReached(let limit):
-                return
-                    "Maximum is capped at \(limit) uses per day on Free. Switch modes or upgrade for unlimited Maximum."
             case .cloudConsentDenied:
                 return "Cloud processing was declined. Switch to on-device or try again."
             case .cloudConsentUnavailable:
@@ -4211,7 +4050,6 @@ struct CompactChatHeader: View {
     let chunkCount: Int
     let ragService: RAGService
     @Binding var messageContainerOverride: UUID?
-    var onMaximumModeBlocked: (() -> Void)? = nil
 
     @State private var showModelDetails = false
     @State private var deviceCapabilities = DeviceCapabilities()
@@ -4227,9 +4065,7 @@ struct CompactChatHeader: View {
     @ViewBuilder
     private var bottomRowPills: some View {
         // Always show quality mode picker - Deep Think is useful for all users
-        QualityModeQuickPicker(
-            selectedMode: $settings.ragQualityMode, onMaximumModeBlocked: onMaximumModeBlocked
-        ) { _, _ in
+        QualityModeQuickPicker(selectedMode: $settings.ragQualityMode) { _, _ in
             // Reset stale Deep Think/Maximum metrics when mode changes
             ragService.resetDeepThinkLiveMetrics()
         }
@@ -4318,9 +4154,7 @@ struct CompactChatHeader: View {
 /// Quick picker for quality mode - shows in chat header
 /// Dropdown menu to switch between Standard and Deep Think
 struct QualityModeQuickPicker: View {
-    @EnvironmentObject private var entitlementStore: EntitlementStore
     @Binding var selectedMode: RAGQualityMode
-    var onMaximumModeBlocked: (() -> Void)? = nil
     /// Called when mode changes, passing old and new mode
     var onModeChange: ((RAGQualityMode, RAGQualityMode) -> Void)?
 
@@ -4412,12 +4246,6 @@ struct QualityModeQuickPicker: View {
 
     /// Title for a row in the open menu, carrying the one-word distinction the row
     /// cannot show as a subtitle.
-    ///
-    /// Maximum is gated by billing rather than by hardware, and the only signal for that
-    /// used to be the 8pt tagline on the *collapsed* pill — visible after the mode is
-    /// already selected, so a user out of runs learned about the limit by tapping and
-    /// receiving a paywall. The row stays tappable on purpose, because the paywall is the
-    /// useful destination, but it now says why beforehand.
     private func menuTitle(for mode: RAGQualityMode) -> String {
         switch mode.canonical {
         case .standard:
@@ -4425,13 +4253,7 @@ struct QualityModeQuickPicker: View {
         case .deepThink:
             return "Deep Think · Iterative"
         case .maximum:
-            if entitlementStore.hasUnlimitedMaximumMode {
-                return "Maximum · Deepest search"
-            }
-            let remaining = entitlementStore.maximumModeRemainingUses
-            return remaining <= 0
-                ? "Maximum · Limit reached"
-                : "Maximum · \(remaining) left today"
+            return "Maximum · Deepest search"
         default:
             return mode.displayName
         }
@@ -4441,11 +4263,7 @@ struct QualityModeQuickPicker: View {
         switch selectedMode.canonical {
         case .standard: return "Fastest"
         case .deepThink: return "Iterative"
-        case .maximum:
-            if entitlementStore.hasUnlimitedMaximumMode {
-                return "Unlimited"
-            }
-            return "\(entitlementStore.maximumModeRemainingUses) left"
+        case .maximum: return "Deepest"
         default: return "Fastest"
         }
     }
@@ -4459,14 +4277,7 @@ struct QualityModeQuickPicker: View {
         }
     }
 
-    private func canSelect(_ mode: RAGQualityMode) -> Bool {
-        guard mode.canonical == .maximum else { return true }
-        guard entitlementStore.canUseMaximumModeNow else {
-            onMaximumModeBlocked?()
-            return false
-        }
-        return true
-    }
+    private func canSelect(_ mode: RAGQualityMode) -> Bool { true }
 }
 
 /// Reliability-first indicator (shown when advanced tuning is disabled).
@@ -4858,31 +4669,6 @@ struct ComposerStub: View {
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.md)
         .background(DSColors.background)
-    }
-}
-
-private enum AppReviewPromptPolicy {
-    /// Shared by the thumbs-up review alert and the per-version stamp it leaves.
-    static let minimumPromptCooldown: TimeInterval = 14 * 24 * 60 * 60
-}
-
-/// What remains of the pre-5.4 rating scheduler. It asked Apple after three answers on two
-/// separate days, on top of `ReviewPromptService` asking after three, so the same answer could
-/// request the sheet twice and spend two of Apple's three yearly prompts at once. The scheduler
-/// is gone; the version stamp and cooldown stay because the thumbs-up alert reads them.
-private enum AppReviewPromptTracker {
-    private enum Keys {
-        static let lastPromptedVersion = "appReview.lastPromptedVersion"
-        static let lastPromptAttemptedAt = "appReview.lastPromptAttemptedAt"
-    }
-
-    private static let defaults = UserDefaults.standard
-
-    static func markPromptAttempted(now: Date = Date()) {
-        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        guard !currentVersion.isEmpty else { return }
-        defaults.set(currentVersion, forKey: Keys.lastPromptedVersion)
-        defaults.set(now, forKey: Keys.lastPromptAttemptedAt)
     }
 }
 

@@ -76,7 +76,6 @@
             let qualityMode: RAGQualityMode?
             let shouldIngest: Bool
             let pccConsent: String?
-            let benchmarkEntitlement: WorkspaceTier?
             /// Ground-truth source filenames for this query, from the eval case's `expectedCitations`.
             ///
             /// Empty for an ad hoc run, and empty for the negative-control abstention cases, which have
@@ -126,7 +125,6 @@
                 localCache: configuration.storageDirectory.appendingPathComponent("LocalCache", isDirectory: true)
             )
             seedPCCConsentIfNeeded(configuration.pccConsent)
-            seedBenchmarkEntitlementIfNeeded(configuration.benchmarkEntitlement)
             seedHybridWeightIfNeeded()
             seedEmbeddingProviderIfNeeded()
             seedSamplingOverridesIfNeeded()
@@ -224,9 +222,7 @@
 
             Task { @MainActor in
                 let containerService = ContainerService()
-                let billingService = StoreKitBillingService()
-                let entitlementStore = EntitlementStore(billingService: billingService)
-                let ragService = RAGService(containerService: containerService, entitlementStore: entitlementStore)
+                let ragService = RAGService(containerService: containerService)
                 let settingsStore = SettingsStore(ragService: ragService)
 
                 do {
@@ -636,9 +632,6 @@
             if let pccConsent = configuration.pccConsent {
                 lines.append("Benchmark PCC Consent: \(pccConsent)")
             }
-            if let benchmarkEntitlement = configuration.benchmarkEntitlement {
-                lines.append("Benchmark Entitlement: \(benchmarkEntitlement.rawValue)")
-            }
             lines.append("Model: \(response.metadata.modelUsed)")
             #if targetEnvironment(simulator)
                 lines.append("Runtime: Simulator")
@@ -780,9 +773,6 @@
             if let pccConsent = configuration.pccConsent {
                 lines.append("Benchmark PCC Consent: \(pccConsent)")
             }
-            if let benchmarkEntitlement = configuration.benchmarkEntitlement {
-                lines.append("Benchmark Entitlement: \(benchmarkEntitlement.rawValue)")
-            }
             lines.append("Status: FAILED")
             lines.append("Error: \(error.localizedDescription)")
             lines.append("")
@@ -867,8 +857,6 @@
                 !(LaunchArguments.has("--rag-validation-skip-ingest")
                 || LaunchArguments.has("rag-validation-skip-ingest"))
             let pccConsent = parsePCCConsent(LaunchArguments.valueEither(for: "rag-validation-pcc-consent"))
-            let benchmarkEntitlement = parseBenchmarkEntitlement(
-                LaunchArguments.valueEither(for: "rag-validation-entitlement"))
             let expectedSources = (LaunchArguments.valueEither(for: "rag-validation-expected-sources") ?? "")
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -882,7 +870,6 @@
                 qualityMode: qualityMode,
                 shouldIngest: shouldIngest,
                 pccConsent: pccConsent,
-                benchmarkEntitlement: benchmarkEntitlement,
                 expectedSources: expectedSources,
                 retrievalTopK: retrievalTopK
             )
@@ -904,21 +891,6 @@
             }
             defaults.synchronize()
             print("[RAGValidation] PCC consent preset: \(consent)")
-        }
-
-        private static func seedBenchmarkEntitlementIfNeeded(_ tier: WorkspaceTier?) {
-            guard let tier else { return }
-
-            let defaults = UserDefaults.standard
-            defaults.set(tier.rawValue, forKey: "entitlement.activeTier")
-            if tier == .free {
-                defaults.set(LegacyProtectionState.none.rawValue, forKey: "entitlement.legacyProtectionState")
-            } else {
-                defaults.set(
-                    LegacyProtectionState.historicalPaidPurchase.rawValue, forKey: "entitlement.legacyProtectionState")
-            }
-            defaults.synchronize()
-            print("[RAGValidation] Benchmark entitlement preset: \(tier.rawValue)")
         }
 
         private static func applicationSupportDirectory() -> URL {
@@ -1002,20 +974,5 @@
             }
         }
 
-        private static func parseBenchmarkEntitlement(_ rawValue: String?) -> WorkspaceTier? {
-            guard let rawValue else { return nil }
-            switch rawValue.lowercased() {
-            case "free":
-                return .free
-            case "pro":
-                return .pro
-            case "lifetime", "lifetime-cohort", "lifetime_cohort":
-                return .lifetime
-            case "current", "default", "none":
-                return nil
-            default:
-                return nil
-            }
-        }
     }
 #endif

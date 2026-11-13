@@ -16,18 +16,6 @@ import XCTest
 
 @MainActor
 final class DeletedLibraryTests: XCTestCase {
-    private let tierKey = "entitlement.activeTier"
-    private var savedTier: Any?
-
-    override func setUp() async throws {
-        savedTier = UserDefaults.standard.object(forKey: tierKey)
-        UserDefaults.standard.set(WorkspaceTier.pro.rawValue, forKey: tierKey)
-    }
-
-    override func tearDown() async throws {
-        UserDefaults.standard.set(savedTier, forKey: tierKey)
-    }
-
     func testALibraryDeletedInOneWindowIsNotWrittenBackByAnother() throws {
         let deleting = ContainerService()
         let library = try deleting.createContainer(name: "Deleted library test \(UUID().uuidString.prefix(8))")

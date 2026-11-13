@@ -22,11 +22,11 @@ struct ShareSheetPreview: Equatable {
     /// The address named under the title. Only the header uses it; the items are shared as given.
     var url: URL?
 
-    /// A shared answer. Its text already ends with the App Store link.
+    /// A shared answer. Its text already ends with the project link.
     static let answer = ShareSheetPreview(title: AnswerShareFormatter.attribution, url: nil)
 
-    /// Share the App, in Settings.
-    static let app = ShareSheetPreview(title: "OpenIntelligence", url: OpenIntelligenceLinks.sharedAppStoreURL)
+    /// The app itself.
+    static let app = ShareSheetPreview(title: "OpenIntelligence", url: OpenIntelligenceLinks.projectURL)
 
     #if canImport(UIKit)
         /// The app's icon as the Home Screen shows it, from the bundle's primary icon.

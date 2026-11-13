@@ -22,7 +22,6 @@ struct SettingsView: View {
     @ObservedObject var ragService: RAGService
     @EnvironmentObject private var containerService: ContainerService
     @EnvironmentObject private var settings: SettingsStore
-    @EnvironmentObject private var entitlementStore: EntitlementStore
     @EnvironmentObject private var workspaceSyncService: WorkspaceSyncService
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -33,8 +32,6 @@ struct SettingsView: View {
     @State private var pipelineStages: [ModelPipelineStage] = []
     @State private var settingsSearch = ""
     @State private var showModelConfiguration = false
-    @State private var showPlanSheet = false
-    @State private var planEntryPoint: PlanUpgradeEntryPoint = .settings
     @State private var showAdvancedGeneration = false
     @State private var isRefreshingSharedWorkspace = false
     @State private var sharedWorkspaceRefreshMessage: String?
@@ -66,10 +63,6 @@ struct SettingsView: View {
         containerService.activeContainer
     }
 
-    private var hasICloudSyncAccess: Bool {
-        entitlementStore.effectiveTier.isAtLeast(.pro)
-    }
-
     var body: some View {
         ZStack {
             settingsList
@@ -85,12 +78,8 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-.sheet(isPresented: $showPlanSheet) {
-            PlanUpgradeSheet(entryPoint: planEntryPoint)
-        }
         .onAppear {
             deviceCapabilities = RAGService.checkDeviceCapabilities()
-            entitlementStore.refreshTransientState()
             updatePipelineStages()
         }
         .task { await refreshPCCCapability() }
@@ -127,8 +116,8 @@ struct SettingsView: View {
         case intelligenceMode, appleIntelligence, privateCloudCompute
         case librariesSync
         case devicePerformance, appearance, notifications
-        case plan, siriShortcuts
-        case advanced, developer, about, versionHistory
+        case siriShortcuts
+        case advanced, developer, about
     }
 
     /// One navigable destination, plus the words that should find it.
@@ -225,13 +214,6 @@ struct SettingsView: View {
                 keywords: ["notifications", "notify", "alert", "banner", "finished", "import", "deep think", "maximum", "background"]
             ),
             .init(
-                id: .plan, group: .account,
-                title: "Plan & Usage",
-                subtitle: "Documents, libraries, and Maximum runs",
-                icon: "creditcard", tint: .accentColor,
-                keywords: ["plan", "billing", "subscription", "pro", "lifetime", "quota", "limit", "upgrade", "purchase"]
-            ),
-            .init(
                 id: .siriShortcuts, group: .account,
                 title: "Siri & Shortcuts",
                 subtitle: "Voice commands and automation actions",
@@ -255,16 +237,9 @@ struct SettingsView: View {
             .init(
                 id: .about, group: .system,
                 title: "About",
-                subtitle: "Version, device, and what's new",
+                subtitle: "Version, thesis and credits",
                 icon: "info.circle", tint: .secondary,
-                keywords: ["about", "version", "release notes", "what's new", "support", "feedback", "privacy policy", "terms"]
-            ),
-            .init(
-                id: .versionHistory, group: .system,
-                title: "Version History",
-                subtitle: "Every release, and what changed in it",
-                icon: "clock.arrow.circlepath", tint: .secondary,
-                keywords: ["version", "history", "changelog", "release notes", "updates", "what's new", "previous"]
+                keywords: ["about", "version", "thesis", "credits", "license"]
             ),
         ]
     }
@@ -350,15 +325,6 @@ struct SettingsView: View {
                         Text(group.title)
                             .foregroundStyle(DSColors.secondaryText)
                     }
-                }
-            }
-
-            if trimmedSearch.isEmpty {
-                Section {
-                    supportCard
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
                 }
             }
         }
@@ -591,8 +557,6 @@ struct SettingsView: View {
             detailScroll { appearanceCard }
         case .notifications:
             detailScroll { CompletionNotificationSettingsCard() }
-        case .plan:
-            detailScroll { billingCard }
         case .siriShortcuts:
             detailScroll {
                 siriIntegrationCard
@@ -611,8 +575,6 @@ struct SettingsView: View {
             DeveloperDiagnosticsHubView(ragService: ragService)
         case .about:
             AboutView()
-        case .versionHistory:
-            VersionHistoryView()
         }
     }
 
@@ -711,172 +673,6 @@ struct SettingsView: View {
             // that cannot run Apple Intelligence or has it switched off.
             return AppleIntelligenceCopy.status(for: deviceCapabilities.foundationModelUnavailability)
         }
-    }
-
-    // MARK: - Billing Card
-
-    @ViewBuilder
-    private var billingCard: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            // Header with tier badge
-            HStack {
-                Image(systemName: "creditcard.fill")
-                    .font(.title2)
-                    .foregroundStyle(Color.accentColor)
-                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                    Text("Subscription")
-                        .font(.headline)
-                    Text(subscriptionStatusText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                tierBadge
-            }
-
-            Divider()
-
-            // Always show a button to access subscription management
-            Button {
-                planEntryPoint = .settings
-                showPlanSheet = true
-            } label: {
-                HStack {
-                    Image(systemName: entitlementStore.effectiveTier == .free ? "arrow.up.circle" : "gearshape")
-                    Text(entitlementStore.effectiveTier == .free ? "Upgrade Plan" : "View Plans")
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .font(.subheadline.weight(.medium))
-                .padding(.vertical, DSSpacing.sm)
-                .padding(.horizontal, DSSpacing.md)
-                .background(entitlementStore.effectiveTier == .free ? Color.accentColor : Color.accentColor.opacity(0.1))
-                .foregroundStyle(entitlementStore.effectiveTier == .free ? .white : .accentColor)
-                .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
-            }
-            .buttonStyle(.plain)
-
-            // Show quota info
-            HStack(spacing: DSSpacing.lg) {
-                quotaItem(
-                    icon: "doc.text",
-                    value: entitlementStore.documentLimitDisplayText,
-                    label: "Documents"
-                )
-                quotaItem(
-                    icon: "folder",
-                    value: entitlementStore.libraryLimitDisplayText,
-                    label: "Libraries"
-                )
-            }
-
-            if entitlementStore.activeTier == .free, entitlementStore.isLegacyPaidProtected {
-                Text("Previous paid purchases on this Apple ID now unlock Lifetime access on this device.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if entitlementStore.effectiveTier == .lifetime {
-                lifetimeSupporterBanner
-            }
-        }
-        .padding(DSSpacing.lg)
-        .background(DSColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
-    }
-
-    private var subscriptionStatusText: String {
-        switch entitlementStore.effectiveTier {
-        case .free:
-            return "Free tier • Maximum \(QuotaPolicy.freeMaximumModeDailyLimit)/day"
-        case .pro:
-            return "Pro plan • Unlimited Maximum"
-        case .lifetime:
-            if entitlementStore.activeTier == .free, entitlementStore.isLegacyPaidProtected {
-                return "Lifetime access • Grandfathered from prior purchase"
-            }
-            return "Lifetime • Everything unlocked"
-        }
-    }
-
-    @ViewBuilder
-    private var tierBadge: some View {
-        Text(entitlementStore.effectiveTier.displayName)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, DSSpacing.sm)
-            .padding(.vertical, DSSpacing.xs)
-            .background(tierBadgeColor.opacity(0.15))
-            .foregroundStyle(tierBadgeColor)
-            .clipShape(Capsule())
-    }
-
-    private var tierBadgeColor: Color {
-        switch entitlementStore.effectiveTier {
-        case .free: return .secondary
-        case .pro: return .accentColor
-        case .lifetime: return .accentColor
-        }
-    }
-
-    @ViewBuilder
-    private func quotaItem(icon: String, value: String, label: String) -> some View {
-        HStack(spacing: DSSpacing.xs) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private var lifetimeSupporterBanner: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            HStack(spacing: DSSpacing.sm) {
-                Image(systemName: "heart.text.square.fill")
-                    .foregroundStyle(Color.accentColor)
-                Text("Lifetime")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text("Forever unlocked")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, DSSpacing.sm)
-                    .padding(.vertical, DSSpacing.xs)
-                    .background(Color.accentColor.opacity(0.16))
-                    .foregroundStyle(Color.accentColor)
-                    .clipShape(Capsule())
-            }
-
-            Text("Thanks for backing OpenIntelligence early. Lifetime keeps unlimited documents and libraries unlocked with no recurring subscription.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: DSSpacing.sm) {
-                Button {
-                    openURL(OpenIntelligenceLinks.feedbackMailtoURL(source: "Settings Screen"))
-                } label: {
-                    Label("Send Feedback", systemImage: "envelope.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    openURL(OpenIntelligenceLinks.writeReviewURL)
-                } label: {
-                    Label("Write Review", systemImage: "star.bubble.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .padding(DSSpacing.md)
-        .background(Color.accentColor.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
     }
 
     // MARK: - Model Selection Card
@@ -1364,10 +1160,6 @@ struct SettingsView: View {
     }
 
     private var sharedWorkspaceSummary: String {
-        if !hasICloudSyncAccess {
-            return "iCloud library sync is available on Pro and Lifetime. Local Only keeps each library device-specific."
-        }
-
         if hasConfiguredICloudLibraries {
             return "\(iCloudLibraryCount) iCloud • \(localOnlyLibraryCount) local. Libraries marked iCloud Sync use iCloud as the shared copy. Local Only libraries stay on just this device."
         }
@@ -1377,11 +1169,6 @@ struct SettingsView: View {
 
     @MainActor
     private func resolvePendingBootstrap(_ choice: WorkspaceSyncService.BootstrapChoice) {
-        guard hasICloudSyncAccess else {
-            planEntryPoint = .iCloudSync
-            showPlanSheet = true
-            return
-        }
 
         guard hasConfiguredICloudLibraries else { return }
         guard !isRefreshingSharedWorkspace else { return }
@@ -2346,7 +2133,6 @@ struct SettingsView: View {
                 ForEach(RAGQualityMode.userVisibleCases, id: \.id) { mode in
                     intelligenceModeRow(mode: mode, isSelected: settings.ragQualityMode.canonical == mode)
                         .onTapGesture {
-                            guard canSelectMode(mode) else { return }
                             let previousMode = settings.ragQualityMode.canonical
                             withAnimation(DSAnimations.snappySpring) {
                                 settings.ragQualityMode = mode
@@ -2514,11 +2300,6 @@ struct SettingsView: View {
         // Maximum-exclusive
         if settings.ragQualityMode.isUnlimitedMode {
             items.append(.divider(id: "div-maximum"))
-            if entitlementStore.hasUnlimitedMaximumMode {
-                items.append(.init(id: "maximum-access", icon: "infinity", label: "Unlimited Maximum", desc: "No daily cap on your current plan", color: .orange))
-            } else {
-                items.append(.init(id: "maximum-access", icon: "calendar", label: "Maximum on Free", desc: "\(entitlementStore.maximumModeRemainingUses) of \(QuotaPolicy.freeMaximumModeDailyLimit) uses left today", color: .orange))
-            }
             items.append(.init(id: "exhaustive", icon: "wand.and.stars", label: "Exhaustive Synthesis", desc: "Final pass synthesizes all session insights", color: .orange))
             // Was "200K+ Token Budget — 50 sessions × 4K". That multiplies out to a number
             // that reads like a context window and is not one: Maximum runs up to 50
@@ -2627,10 +2408,7 @@ struct SettingsView: View {
             return "Can search several times and build the answer in steps, for comparisons and questions that need more than one passage."
         case .maximum:
             let work = "Can make up to 50 passes over your documents, fewer when only a few passages match, and stops when its findings stop changing."
-            if entitlementStore.hasUnlimitedMaximumMode {
-                return "\(work) Slowest, with no daily limit on your plan."
-            }
-            return "\(work) Slowest. Free plans get \(QuotaPolicy.freeMaximumModeDailyLimit) a day, and you have \(entitlementStore.maximumModeRemainingUses) left today."
+            return "\(work) Slowest."
         default:
             return mode.description
         }
@@ -2643,21 +2421,10 @@ struct SettingsView: View {
         case .deepThink:
             return ["Several passes", "Best for analysis"]
         case .maximum:
-            if entitlementStore.hasUnlimitedMaximumMode {
-                return ["No daily limit", "Up to 50 passes", "Slowest"]
-            }
-            return ["\(QuotaPolicy.freeMaximumModeDailyLimit) a day", "\(entitlementStore.maximumModeRemainingUses) left today", "Up to 50 passes"]
+            return ["Up to 50 passes", "Slowest"]
         default:
             return []
         }
-    }
-
-    private func canSelectMode(_ mode: RAGQualityMode) -> Bool {
-        guard mode.canonical == .maximum else { return true }
-        guard !entitlementStore.canUseMaximumModeNow else { return true }
-        planEntryPoint = .maximumModeLimit
-        showPlanSheet = true
-        return false
     }
 
     @ViewBuilder
@@ -3423,166 +3190,8 @@ struct SettingsView: View {
     // Both were NavigationLink-in-a-card wrappers; the same destinations are now
     // reached from `SettingsEntry.all` like every other screen.
 
-    // MARK: - Support Card
-
-    @ViewBuilder
-    private var supportCard: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack(spacing: DSSpacing.sm) {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.15))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: "heart.fill")
-                        .scaledFont(size: 14)
-                        .foregroundStyle(Color.accentColor)
-                }
-
-                Text("Support & Feedback")
-                    .font(.headline)
-
-                Spacer()
-            }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.top, DSSpacing.lg)
-            .padding(.bottom, DSSpacing.sm)
-
-            Divider()
-                .padding(.horizontal, DSSpacing.lg)
-
-            // Rate App Row
-            Button {
-                openURL(OpenIntelligenceLinks.writeReviewURL)
-            } label: {
-                HStack(spacing: DSSpacing.md) {
-                    Image(systemName: "star.fill")
-                        .foregroundStyle(Color.accentColor)
-                        .scaledFont(size: 16)
-                        .frame(width: 24, alignment: .center)
-                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                        Text("Rate on the App Store")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(DSColors.primaryText)
-                        Text("Love OpenIntelligence? Rate it 5 stars!")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.up.forward")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.vertical, DSSpacing.md)
-            }
-            .buttonStyle(.plain)
-
-            Divider()
-                .padding(.horizontal, DSSpacing.lg)
-
-            // Feedback Row
-            Button {
-                openURL(OpenIntelligenceLinks.feedbackMailtoURL(source: "Settings Screen"))
-            } label: {
-                HStack(spacing: DSSpacing.md) {
-                    Image(systemName: "envelope.fill")
-                        .foregroundStyle(Color.accentColor)
-                        .scaledFont(size: 16)
-                        .frame(width: 24, alignment: .center)
-                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                        Text("Send Feedback")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(DSColors.primaryText)
-                        Text("Provide feedback to improve the experience")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.up.forward")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.vertical, DSSpacing.md)
-            }
-            .buttonStyle(.plain)
-
-            Divider()
-                .padding(.horizontal, DSSpacing.lg)
-
-            // Share App Row
-            Button {
-                shareApp()
-            } label: {
-                HStack(spacing: DSSpacing.md) {
-                    Image(systemName: "square.and.arrow.up")
-                        .foregroundStyle(Color.accentColor)
-                        .scaledFont(size: 16)
-                        .frame(width: 24, alignment: .center)
-                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                        Text("Share with Friends")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(DSColors.primaryText)
-                        Text("Recommend OpenIntelligence to others")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.up.forward")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.vertical, DSSpacing.md)
-            }
-            .buttonStyle(.plain)
-        }
-        .background(DSColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: DSCorners.card, style: .continuous))
-    }
-
     private var speechAnalysisSubtitle: String {
         settings.showTechnicalDetails ? "Audio transcription & voice input" : "Transcribes audio files and what you say"
-    }
-
-    private func shareApp() {
-        let items: [Any] = [
-            "I'm using OpenIntelligence for private, on-device AI and RAG search. Check it out on the App Store!",
-            OpenIntelligenceLinks.sharedAppStoreURL
-        ]
-        
-        #if canImport(UIKit)
-        // The sheet's header shows the app's name and icon rather than the bare address (5.7).
-        let activityVC = UIActivityViewController(
-            activityItems: PreviewedShareItem.items(items, preview: .app), applicationActivities: nil)
-        
-        // Setup popover for iPad support
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            
-            // For iPad compatibility
-            if let popover = activityVC.popoverPresentationController {
-                popover.sourceView = rootVC.view
-                popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
-            }
-            
-            rootVC.present(activityVC, animated: true)
-        }
-        #elseif os(macOS)
-        let preview = ShareSheetPreview.app
-        let picker = NSSharingServicePicker(items: [
-            items[0],
-            NSPreviewRepresentingActivityItem(
-                item: OpenIntelligenceLinks.sharedAppStoreURL, title: preview.title, image: nil,
-                icon: ShareSheetPreview.appIcon),
-        ])
-        if let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }),
-           let contentView = window.contentView {
-            picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
-        }
-        #endif
     }
 
     // MARK: - Helpers
@@ -3626,6 +3235,5 @@ extension Bundle {
     NavigationStack {
         SettingsView(ragService: RAGService())
             .environmentObject(SettingsStore(ragService: RAGService()))
-            .environmentObject(EntitlementStore(billingService: StoreKitBillingService()))
     }
 }

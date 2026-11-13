@@ -67,7 +67,7 @@ enum SamplePCCCopy {
     /// Architecture guide, "Where the work runs", second bullet and the paragraph after it.
     static let architectureStatus: String = compiledIn
         ? "- **Private Cloud Compute** is Apple's server-side inference on Apple silicon servers, with no data retention and no access for the developer. This build includes it, on iOS, iPadOS and macOS 27. It is used for one step only, writing the answer, and only when the packed evidence will not fit the on-device window, or for a Deep Think or Maximum answer drawn from more than one document, or for every answer when it is picked in the model picker. Measured on an iPhone with the A18 Pro: roughly 86 tokens per second from Private Cloud Compute with 2.2 to 2.5 seconds to first token.\n\nNothing is sent without your permission. By default a consent sheet shows the request that would leave the device and its estimated size, and offers Always Allow or Just Once; after Always Allow, later answers are sent without asking. Pin routing to On-Device in Settings and the sheet never appears. The metrics bar under every answer names the route it actually took."
-        : "- **Private Cloud Compute** is Apple's server-side inference on Apple silicon servers, with no data retention and no access for the developer. Support for it is built into this app and is compiled out of App Store builds by the toolchain those builds use, so nothing escalates today and every answer is produced on this device. It arrives with iOS and macOS 27. On a local build with that toolchain, the same iPhone measured roughly 86 tokens per second from Private Cloud Compute with 2.2 to 2.5 seconds to first token. That measurement is real, and it was taken on a build that is not the one you are running.\n\nWhen Private Cloud Compute is enabled, nothing is sent without asking. A consent sheet shows the request that would leave the device and its estimated size, and offers Always Allow or Just Once. The metrics bar under every answer names the route it actually took."
+        : "- **Private Cloud Compute** is Apple's server-side inference on Apple silicon servers, with no data retention and no access for the developer. Support for it is built into this app and is compiled out of builds made with the iOS 26 toolchain, so nothing escalates today and every answer is produced on this device. It arrives with iOS and macOS 27. On a local build with that toolchain, the same iPhone measured roughly 86 tokens per second from Private Cloud Compute with 2.2 to 2.5 seconds to first token. That measurement is real, and it was taken on a build that is not the one you are running.\n\nWhen Private Cloud Compute is enabled, nothing is sent without asking. A consent sheet shows the request that would leave the device and its estimated size, and offers Always Allow or Just Once. The metrics bar under every answer names the route it actually took."
 
     /// PCC guide, "What stays on the device?" heading line.
     static let staysOnDeviceIntro: String = compiledIn
@@ -82,7 +82,7 @@ enum SamplePCCCopy {
     /// PCC guide, the section that used to be "When does Private Cloud Compute arrive?".
     static let availabilitySection: String = compiledIn
         ? "## When is Private Cloud Compute used?\n\n**Only when you allow it, and only for the writing step.** On iOS, iPadOS and macOS 27 this build can route a request there when the packed evidence will not fit the on-device model, and for a Deep Think or Maximum answer drawn from more than one document, and for every answer when you pick it in the model picker:\n\n- **Nothing is sent without your permission.** By default a consent sheet appears before anything leaves the device, showing the request that would be sent and its estimated size, with Always Allow and Just Once. After Always Allow, later answers are sent without asking.\n- **You can switch it off.** Pin routing to On-Device in Settings and every answer stays here; the sheet never appears.\n- **Every answer names its route.** Expand the metrics bar to see whether it ran on the device or on Private Cloud Compute.\n- **It is fast.** Measured on an iPhone with the A18 Pro, roughly 86 tokens per second from Private Cloud Compute, against 27 on the device.\n\nOn a system older than 27, every answer is produced on this device and the metrics bar says so."
-        : "## When does Private Cloud Compute arrive?\n\n**Not in this build.** Support is built into the app and is compiled out of App Store builds by the toolchain they use, so every answer today is produced on this device, and the metrics bar under each answer will say so. It arrives with iOS and macOS 27.\n\nWhen it is enabled, this is what changes:\n\n- **Nothing is sent without asking.** A consent sheet appears before anything leaves the device, showing the request that would be sent and its estimated size, with Always Allow and Just Once.\n- **Routing becomes a choice the app can make** for questions that need more than the device can give: complex multi-step reasoning across several files, synthesis that exceeds the on-device token budget, or Deep Think and Maximum runs with heavy context.\n- **Every answer still names its route.** Expand the metrics bar to see whether it ran on the device or on Private Cloud Compute.\n- **It is fast.** Measured on a local build with the iOS 27 toolchain, an iPhone with the A18 Pro received roughly 86 tokens per second from Private Cloud Compute, against 27 on the device."
+        : "## When does Private Cloud Compute arrive?\n\n**Not in this build.** Support is built into the app and is compiled out of builds made with the iOS 26 toolchain, so every answer today is produced on this device, and the metrics bar under each answer will say so. It arrives with iOS and macOS 27.\n\nWhen it is enabled, this is what changes:\n\n- **Nothing is sent without asking.** A consent sheet appears before anything leaves the device, showing the request that would be sent and its estimated size, with Always Allow and Just Once.\n- **Routing becomes a choice the app can make** for questions that need more than the device can give: complex multi-step reasoning across several files, synthesis that exceeds the on-device token budget, or Deep Think and Maximum runs with heavy context.\n- **Every answer still names its route.** Expand the metrics bar to see whether it ran on the device or on Private Cloud Compute.\n- **It is fast.** Measured on a local build with the iOS 27 toolchain, an iPhone with the A18 Pro received roughly 86 tokens per second from Private Cloud Compute, against 27 on the device."
 
     /// PCC guide, privacy summary lines two and three.
     static let privacyLines: String = compiledIn
@@ -192,29 +192,6 @@ It is weakest on questions your library says nothing about. When the evidence is
 - **Response details** list each claim in the answer with its verification verdict.
 - **The Silicon HUD** is a small floating readout of the work on the CPU, GPU and Neural Engine. The CPU figure is measured from the system; the GPU and Neural Engine figures show the work the app has started, because Apple doesn't report their load. It is off on a new install, is switched on in Settings under Appearance, and can be dragged anywhere. It sits over the place on the board where that silicon physically is.
 
----
-
-## Plans
-
-### Free
-- 5 documents
-- 1 library
-- Full grounded question answering
-- All three quality modes, with Maximum limited to three runs a day
-
-### Pro Monthly / Annual
-- Maximum mode with no daily cap
-- Up to 1,000 documents
-- Up to 10 libraries
-- Room for large ongoing research and multi-project work
-
-### Lifetime
-- Maximum mode with no daily cap
-- Unlimited documents
-- Unlimited libraries
-- One payment, no renewal
-
-The model is the same in every plan: Apple Intelligence on your device, Deep Think, and Private Cloud Compute after you approve what is sent. The plans differ in how much you can keep and how often you can run Maximum.
 """#
         ),
         SampleDocumentDescriptor(
@@ -272,7 +249,7 @@ All three modes run the full pipeline above, including cross-encoder re-ranking,
 
 - **Standard.** One retrieval pass. 30 candidate passages, a similarity floor of 0.28, no query expansion, and the surrounding passages of each hit included for context. Verification confidence threshold 0.50. Fast, and the right default for lookups and direct questions.
 - **Deep Think.** A multi-step research loop run by an agentic orchestrator. Each step retrieves 35 candidates with a wider similarity floor of 0.25, the question is expanded into up to 8 variants plus a hypothetical answer used as an extra search probe, and retrieved passages are compressed to what bears on the question. Verification threshold 0.60. For synthesis across documents and questions with several parts.
-- **Maximum.** The same loop with the widest net: 50 candidates per step, a similarity floor of 0.20 that lets the re-ranker decide, up to 12 query variants, passages kept in full rather than compressed, and a verification threshold of 0.80. Free plans get three Maximum runs a day; Pro and Lifetime are unlimited.
+- **Maximum.** The same loop with the widest net: 50 candidates per step, a similarity floor of 0.20 that lets the re-ranker decide, up to 12 query variants, passages kept in full rather than compressed, and a verification threshold of 0.80.
 
 ---
 

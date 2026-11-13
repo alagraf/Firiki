@@ -2321,7 +2321,6 @@ struct PipelineTimelineView: View {
             Stage(id: "retrieve", name: "Retrieval", detail: "Run hybrid search + MMR diversification", icon: "arrow.down.circle.fill", category: .retrieval),
             Stage(id: "assemble", name: "Assembly", detail: "Build grounded context + metadata bundle", icon: "square.stack.3d.up.fill", category: .retrieval),
             Stage(id: "generate", name: "Generation", detail: "Stream the answer with citations + tools", icon: "sparkles", category: .generation),
-            Stage(id: "billing", name: "Billing & Entitlements", detail: "StoreKit purchases, restores, and quota updates", icon: "creditcard.fill", category: .billing),
         ]
     }
 
@@ -2400,7 +2399,6 @@ struct PipelineTimelineView: View {
         case .generation: return .green
         case .storage: return DSColors.accent
         case .system: return .secondary
-        case .billing: return .green
         case .error: return .red
         }
     }

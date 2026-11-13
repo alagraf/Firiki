@@ -39,7 +39,6 @@ struct GreekProcessingLogTests {
         try #require(GreekPaddleOCRService.shared.isAvailable)
         try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
         let saved = UserDefaults.standard.object(forKey: "entitlement.activeTier")
-        UserDefaults.standard.set(WorkspaceTier.pro.rawValue, forKey: "entitlement.activeTier")
         defer { UserDefaults.standard.set(saved, forKey: "entitlement.activeTier") }
 
         let engine = IntentSupport.engine()

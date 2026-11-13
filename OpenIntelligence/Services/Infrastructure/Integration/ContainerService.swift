@@ -122,12 +122,6 @@ final class ContainerService: ObservableObject {
         syncMode: LibrarySyncMode = .localOnly,
         retrievalConfig: RetrievalConfig? = nil
     ) throws -> KnowledgeContainer {
-        let limit = EntitlementStore.currentLibraryLimit()
-        let tier = EntitlementStore.currentEffectiveTier()
-        guard containers.count < limit else {
-            throw LibraryQuotaError(limit: limit, attemptedCount: containers.count + 1, tier: tier)
-        }
-
         let effectiveRetrievalConfig = retrievalConfig ?? .default
         let container = KnowledgeContainer(
             name: name,

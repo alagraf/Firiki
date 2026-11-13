@@ -6,13 +6,11 @@
 //
 
 import AppIntents
-import StoreKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct DocumentLibraryView: View {
     @EnvironmentObject private var onboardingStore: OnboardingStateStore
-    @EnvironmentObject private var entitlementStore: EntitlementStore
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var workspaceSyncService: WorkspaceSyncService
     @ObservedObject var ragService: RAGService
@@ -42,8 +40,6 @@ struct DocumentLibraryView: View {
     @State private var refreshedSampleNames: [String]?
     @State private var sampleImportError: String?
     @State private var sampleImportStatusMessage: String?
-    @State private var showingPlanSheet = false
-    @State private var activePaywallEntryPoint: PlanUpgradeEntryPoint = .documents
 
     // New library naming
     @State private var showingNewLibraryPrompt = false
@@ -96,18 +92,11 @@ struct DocumentLibraryView: View {
 
     let onViewVisualizations: (() -> Void)?
 
-    private var documentLimit: Int { entitlementStore.documentLimit }
-    /// How many files a dropped or chosen folder may bring in: the room left on the plan, and never
-    /// more than 500 (5.7).
-    private var folderFileRoom: Int { max(0, min(500, documentLimit - ragService.documents.count)) }
-    private var isAtDocumentLimit: Bool {
-        ragService.documents.count >= documentLimit
-    }
-
-    private var libraryLimit: Int { entitlementStore.libraryLimit }
-    private var shouldShowQuotaBanner: Bool {
-        !entitlementStore.hasUnlimitedDocuments
-    }
+    /// There is no document limit; kept for the empty-state view's interface.
+    private var documentLimit: Int { .max }
+    /// How many files a dropped or chosen folder may bring in at once: at most 500.
+    private var folderFileRoom: Int { 500 }
+    private var isAtDocumentLimit: Bool { false }
 
     init(ragService: RAGService, containerService: ContainerService, onViewVisualizations: (() -> Void)? = nil) {
         _ragService = ObservedObject(wrappedValue: ragService)
@@ -146,10 +135,6 @@ struct DocumentLibraryView: View {
 
     private var activeLibrary: KnowledgeContainer? {
         containerService.activeContainer
-    }
-
-    private var hasICloudSyncAccess: Bool {
-        entitlementStore.effectiveTier.isAtLeast(.pro)
     }
 
     private var pendingSharedSyncConflict: WorkspaceSyncService.PendingBootstrapConflict? {
@@ -450,17 +435,6 @@ struct DocumentLibraryView: View {
     private var documentBanners: some View {
         sharedWorkspaceBanner
             .padding(.horizontal, DSSpacing.lg)
-
-        if shouldShowQuotaBanner {
-            DocumentQuotaBanner(
-                currentCount: ragService.documents.count,
-                limit: documentLimit,
-                tierName: entitlementStore.currentPlanDisplayName,
-                addOnPacks: entitlementStore.addOnPacks,
-                onUpgrade: { presentPlanSheet(for: .quotaBanner) }
-            )
-            .padding(.horizontal, DSSpacing.lg)
-        }
     }
 
     private var syncModeBinding: Binding<LibrarySyncMode> {
@@ -1073,11 +1047,6 @@ struct DocumentLibraryView: View {
 
     @MainActor
     private func resolvePendingBootstrap(_ choice: WorkspaceSyncService.BootstrapChoice) {
-        guard hasICloudSyncAccess else {
-            presentPlanSheet(for: .iCloudSync)
-            return
-        }
-
         Task { @MainActor in
             guard !isRefreshingSharedWorkspace else { return }
             isRefreshingSharedWorkspace = true
@@ -1101,11 +1070,6 @@ struct DocumentLibraryView: View {
 
     @MainActor
     private func refreshSharedWorkspaceNow() {
-        guard hasICloudSyncAccess else {
-            presentPlanSheet(for: .iCloudSync)
-            return
-        }
-
         Task { @MainActor in
             await performSharedWorkspaceRefresh(isManual: true)
         }
@@ -1113,11 +1077,6 @@ struct DocumentLibraryView: View {
 
     @MainActor
     private func connectExistingICloudLibraries() {
-        guard hasICloudSyncAccess else {
-            presentPlanSheet(for: .iCloudSync)
-            return
-        }
-
         Task { @MainActor in
             guard !isRefreshingSharedWorkspace else { return }
             isRefreshingSharedWorkspace = true
@@ -1410,17 +1369,6 @@ struct DocumentLibraryView: View {
                     Text(error)
                 }
             }
-            .alert("Billing Error", isPresented: entitlementErrorBinding) {
-                Button("OK", role: .cancel) {
-                    Task { @MainActor in
-                        entitlementStore.lastError = nil
-                    }
-                }
-            } message: {
-                if let error = entitlementStore.lastError {
-                    Text(error)
-                }
-            }
             .sheet(isPresented: $showingOpenedFiles, onDismiss: finishOpenedFiles) {
                 OpenedFilesSheet(
                     files: openedFiles,
@@ -1597,10 +1545,6 @@ struct DocumentLibraryView: View {
                     containerService: containerService,
                     initialQuery: handedOverSearch
                 )
-            }
-            .sheet(isPresented: $showingPlanSheet) {
-                PlanUpgradeSheet(entryPoint: activePaywallEntryPoint)
-                    .environmentObject(entitlementStore)
             }
             .sheet(isPresented: $showCachedDocs) {
                 CachedDocsView(ragService: ragService)
@@ -1831,20 +1775,7 @@ struct DocumentLibraryView: View {
         )
     }
 
-    private var entitlementErrorBinding: Binding<Bool> {
-        Binding(
-            get: { entitlementStore.lastError != nil },
-            set: { newValue in
-                if !newValue {
-                    Task { @MainActor in
-                        entitlementStore.lastError = nil
-                    }
-                }
-            }
-        )
-    }
-
-    /// Launches the file picker if the user still has document quota remaining.
+    /// Launches the file picker.
     ///
     /// macOS opens `NSOpenPanel` directly rather than presenting `DocumentPicker`
     /// in a sheet. A sheet would stack two windows for one action, and its
@@ -1852,10 +1783,6 @@ struct DocumentLibraryView: View {
     /// start a modal panel at all.
     @MainActor
     private func presentDocumentPickerOrUpgrade() {
-        guard entitlementStore.canAddDocument(currentCount: ragService.documents.count) else {
-            presentPlanSheet(for: .documentLimit)
-            return
-        }
         #if os(macOS)
         MacDocumentImportPanel.present(folderFileLimit: folderFileRoom) { urls in
             reviewAndEnqueueDocuments(urls)
@@ -1879,11 +1806,6 @@ struct DocumentLibraryView: View {
         let fileURLs = urls.filter(\.isFileURL)
         guard !fileURLs.isEmpty else { return false }
 
-        guard entitlementStore.canAddDocument(currentCount: ragService.documents.count) else {
-            presentPlanSheet(for: .documentLimit)
-            return false
-        }
-
         let staged = ImportedFileStaging.copyIntoWorkspaceExpandingFolders(fileURLs, limit: folderFileRoom)
         guard !staged.isEmpty else { return false }
 
@@ -1891,29 +1813,17 @@ struct DocumentLibraryView: View {
         return true
     }
 
-    /// Files another app handed over, already copied into the app. They get the same plan check
-    /// and import review as a picked or dropped file. When the plan has no room, the copies are
-    /// removed so they do not stay in the app's storage unimported.
+    /// Files another app handed over, already copied into the app. They get the same import review
+    /// as a picked or dropped file.
     @MainActor
     private func importOpenedFiles(_ staged: [URL], into library: UUID? = nil) {
         guard !staged.isEmpty else { return }
-        guard entitlementStore.canAddDocument(currentCount: ragService.documents.count) else {
-            staged.forEach { try? FileManager.default.removeItem(at: $0) }
-            presentPlanSheet(for: .documentLimit)
-            return
-        }
         reviewAndEnqueueDocuments(staged, into: library)
     }
 
-    /// Files "Open in" handed over: the plan check first, as for any import, then the viewer. Files
-    /// that come while it is open join it.
+    /// Files "Open in" handed over, shown in the viewer. Files that come while it is open join it.
     @MainActor
     private func showOpenedFiles(_ staged: [URL]) {
-        guard entitlementStore.canAddDocument(currentCount: ragService.documents.count) else {
-            ImportedFileStaging.discardViewingCopies(staged)
-            presentPlanSheet(for: .documentLimit)
-            return
-        }
         openedFiles.append(contentsOf: staged)
         showingOpenedFiles = true
     }
@@ -1999,25 +1909,6 @@ struct DocumentLibraryView: View {
         sampleImportError = nil
         sampleImportStatusMessage = nil
 
-        let currentCount = ragService.documents.count
-        let sampleCount = SampleDocumentManager.shared.sampleCount
-        let remainingSlots = documentLimit - currentCount
-
-        guard remainingSlots > 0 else {
-            sampleImportStatusMessage =
-                "Current workspace supports up to \(documentLimit) documents. Remove a document or upgrade to import the sample workspace."
-            presentPlanSheet(for: .sampleImport)
-            return
-        }
-
-        guard remainingSlots >= sampleCount else {
-            let needed = sampleCount - remainingSlots
-            sampleImportStatusMessage =
-                "Importing the curated workspace requires \(sampleCount) slots, but only \(remainingSlots) remain. Remove \(needed) document\(needed == 1 ? "" : "s") or upgrade to proceed."
-            presentPlanSheet(for: .sampleImport)
-            return
-        }
-
         isImportingSamples = true
 
         Task {
@@ -2034,12 +1925,6 @@ struct DocumentLibraryView: View {
 
     @MainActor
     private func handleNewLibraryTapped() {
-        let currentCount = containerService.containers.count
-        guard entitlementStore.canAddLibrary(currentCount: currentCount) else {
-            presentPlanSheet(for: .libraryCreation)
-            return
-        }
-
         // Suggest a default name but let user customize. Ask the service for a name that is
         // actually free rather than deriving one from the count; see nextAvailableLibraryName.
         newLibraryName = containerService.nextAvailableLibraryName()
@@ -2050,12 +1935,6 @@ struct DocumentLibraryView: View {
 
     @MainActor
     private func createNewLibrary(syncMode: LibrarySyncMode) {
-        if syncMode == .iCloudShared, !hasICloudSyncAccess {
-            pendingNewLibraryName = ""
-            presentPlanSheet(for: .iCloudSync)
-            return
-        }
-
         let trimmedName = pendingNewLibraryName.isEmpty
             ? newLibraryName.trimmingCharacters(in: .whitespacesAndNewlines)
             : pendingNewLibraryName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2074,10 +1953,6 @@ struct DocumentLibraryView: View {
                 embeddingDim: embeddingService.outputDimension,
                 syncMode: syncMode
             )
-        } catch is LibraryQuotaError {
-            pendingNewLibraryName = ""
-            presentPlanSheet(for: .libraryCreation)
-            return
         } catch {
             pendingNewLibraryName = ""
             return
@@ -2101,11 +1976,6 @@ struct DocumentLibraryView: View {
         confirmed: Bool = false
     ) {
         guard container.syncMode != syncMode else { return }
-
-        if syncMode == .iCloudShared, !hasICloudSyncAccess {
-            presentPlanSheet(for: .iCloudSync)
-            return
-        }
 
         // Leaving iCloud removes this library's copy from iCloud. Ask first.
         if syncMode == .localOnly, container.syncMode == .iCloudShared, !confirmed {
@@ -2259,16 +2129,6 @@ struct DocumentLibraryView: View {
                 sharedWorkspaceRefreshMessage = "\(container.name) is your only library, so it was not deleted."
             }
         }
-    }
-
-    @MainActor
-    private func presentPlanSheet(for entryPoint: PlanUpgradeEntryPoint) {
-        activePaywallEntryPoint = entryPoint
-        showingPlanSheet = true
-        TelemetryCenter.emitBillingEvent(
-            "Paywall presented",
-            metadata: ["entryPoint": entryPoint.analyticsValue]
-        )
     }
 }
 
@@ -2459,31 +2319,11 @@ private enum DocumentImportReadiness {
 #if DEBUG
     #Preview {
         let containerService = ContainerService()
-        let billingService = PreviewBillingService()
-        let entitlementStore = EntitlementStore(billingService: billingService)
-        let ragService = RAGService(containerService: containerService, entitlementStore: entitlementStore)
+        let ragService = RAGService(containerService: containerService)
         let settingsStore = SettingsStore(ragService: ragService)
         DocumentLibraryView(ragService: ragService, containerService: containerService)
             .environmentObject(OnboardingStateStore())
-            .environmentObject(entitlementStore)
             .environmentObject(settingsStore)
-    }
-
-    @MainActor
-    private final class PreviewBillingService: BillingService {
-        let events: AsyncStream<BillingEvent>
-
-        init() {
-            events = AsyncStream { continuation in
-                continuation.finish()
-            }
-        }
-
-        func refreshProducts() async {}
-
-        func purchase(_: BillingProduct) async throws -> StoreKit.Transaction? { nil }
-
-        func restorePurchases() async {}
     }
 #endif
 

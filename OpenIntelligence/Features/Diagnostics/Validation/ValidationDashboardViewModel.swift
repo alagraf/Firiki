@@ -110,8 +110,7 @@ class ValidationDashboardViewModel: ObservableObject {
                     outputDirectory: outputURL,
                     qualityMode: mode,
                     shouldIngest: true,
-                    pccConsent: "allow",
-                    benchmarkEntitlement: .pro
+                    pccConsent: "allow"
                 )
                 
                 do {
@@ -168,8 +167,7 @@ class ValidationDashboardViewModel: ObservableObject {
                 outputDirectory: outputURL,
                 qualityMode: qualityMode,
                 shouldIngest: true,
-                pccConsent: "allow",
-                benchmarkEntitlement: .pro
+                pccConsent: "allow"
             )
             
             do {

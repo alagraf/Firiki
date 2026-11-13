@@ -10,7 +10,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// An answer drawn as a picture, with the documents it cites, the app's name and a code that
-/// opens the app's App Store page, for posting where plain text would lose its sources (5.7).
+/// opens the project's page, for posting where plain text would lose its sources (5.7).
 ///
 /// Rendered with `ImageRenderer` and handed to the share sheet as a PNG file, which Messages, Mail,
 /// Photos and the social apps take on iPhone, iPad and Mac alike. The colours are fixed rather
@@ -55,7 +55,7 @@ enum AnswerCardRenderer {
             answer: cardText(message.content),
             sources: Array(sources.prefix(maxSources)),
             moreSources: max(0, sources.count - maxSources),
-            code: qrCode(for: OpenIntelligenceLinks.sharedAppStoreURL)
+            code: qrCode(for: OpenIntelligenceLinks.projectURL)
         )
         guard let data = pngData(of: card) else { return nil }
         // A folder of its own for each card, so a second share cannot overwrite the first while the
@@ -150,8 +150,7 @@ struct AnswerCardView: View {
                     Text(AnswerShareFormatter.attribution)
                         .scaledFont(size: 12, weight: .medium)
                         .foregroundStyle(ink)
-                    // The App Store subtitle, word for word.
-                    Text("Chat With Your Files Offline, on the App Store")
+                    Text("On-device assistant for Greek labour law")
                         .scaledFont(size: 11)
                         .foregroundStyle(muted)
                 }

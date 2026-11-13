@@ -65,7 +65,7 @@ struct SourcePageView: View {
         }
         #if os(macOS)
             // A Mac sheet takes its size from its content, and a PDF view has none of its own: hosted with no frame it
-            // measured 0 by 0 (2026-10-16). `PrivacyPolicyView` and `ContainerSettingsSheet` have the same note.
+            // measured 0 by 0 (2026-10-16). `ContainerSettingsSheet` has the same note.
             .frame(minWidth: 560, idealWidth: 720, maxWidth: 1000, minHeight: 560, idealHeight: 760, maxHeight: .infinity)
         #endif
     }

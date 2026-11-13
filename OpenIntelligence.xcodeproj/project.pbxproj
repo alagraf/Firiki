@@ -188,8 +188,6 @@
 				"MLModels/Translation/opus-mt-tc-big-en-el_decoder_step.onnx",
 				"MLModels/Translation/opus-mt-tc-big-en-el_encoder.onnx",
 				"MLModels/Translation/opus-mt-tc-big-en-el_tokenizer.json",
-				StoreKit/StoreKitConfiguration.storekit,
-				StoreKit/StoreKitTestHarness.swift,
 			);
 			target = E0A100072F0F5F5F00AABA0C /* OpenIntelligenceEngine */;
 		};

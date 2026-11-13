@@ -259,12 +259,4 @@ final class EvidenceThreadStoreTests: XCTestCase {
             XCTAssertEqual(Set(ids), ["a", "b"], side.lastPathComponent)
         }
     }
-
-    /// The conversation limits the store's callers enforce, which the move does not change: 5 on Free,
-    /// 20 on Pro, none on Lifetime.
-    func testTheConversationLimitsAreFiveTwentyAndUnlimited() {
-        XCTAssertEqual(QuotaPolicy.evidenceThreadLimit(for: .free), 5)
-        XCTAssertEqual(QuotaPolicy.evidenceThreadLimit(for: .pro), 20)
-        XCTAssertEqual(QuotaPolicy.evidenceThreadLimit(for: .lifetime), .max)
-    }
 }

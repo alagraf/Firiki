@@ -405,12 +405,8 @@ public final class OIEngine {
             return Self.makeLibrary(from: existing)
         }
 
-        do {
-            let created = try containerService.createContainer(name: trimmedName)
-            return Self.makeLibrary(from: created)
-        } catch let error as LibraryQuotaError {
-            throw OpenIntelligenceEngineError.invalidRequest(error.errorDescription ?? "Library limit reached.")
-        }
+        let created = try containerService.createContainer(name: trimmedName)
+        return Self.makeLibrary(from: created)
     }
 
     public func deleteLibrary(id: UUID) throws {
@@ -648,22 +644,14 @@ public final class OIEngine {
                 return activeContainer
             }
 
-            do {
-                return try containerService.createContainer(name: "General")
-            } catch let error as LibraryQuotaError {
-                throw OpenIntelligenceEngineError.invalidRequest(error.errorDescription ?? "Library limit reached.")
-            }
+            return try containerService.createContainer(name: "General")
         }
 
         if let existing = findContainer(named: trimmed) {
             return existing
         }
 
-        do {
-            return try containerService.createContainer(name: trimmed)
-        } catch let error as LibraryQuotaError {
-            throw OpenIntelligenceEngineError.invalidRequest(error.errorDescription ?? "Library limit reached.")
-        }
+        return try containerService.createContainer(name: trimmed)
     }
 
     private static func mapQualityMode(_ qualityMode: OIQueryQualityMode) -> RAGQualityMode {

@@ -8,7 +8,6 @@
 import AppIntents
 import Combine
 import CoreSpotlight
-import StoreKit
 import SwiftUI
 
 struct ContentView: View {
@@ -19,10 +18,6 @@ struct ContentView: View {
     @StateObject private var settingsStore: SettingsStore
     @StateObject private var modelResolutionService: ModelResolutionService
     @StateObject private var onboardingStore: OnboardingStateStore
-    @StateObject private var whatsNewStore: WhatsNewStore
-    @StateObject private var entitlementStore: EntitlementStore
-    /// Asks for a rating after the third verified answer; see ReviewPromptService.
-    @ObservedObject private var reviewPrompt = ReviewPromptService.shared
     /// Answers that finished while another tab was showing; badges the Chat tab.
     @ObservedObject private var chatAnswerNotice = ChatAnswerNotice.shared
     /// A Private Cloud Compute consent request from an engine the chat does not show, such as the one
@@ -30,16 +25,12 @@ struct ContentView: View {
     @ObservedObject private var consentRelay = CloudConsentRelay.shared
     @State private var relayedConsent: CloudConsentRelay.Request?
     @State private var windowID = UUID()
-    @Environment(\.requestReview) private var requestReview
     @Environment(\.openURL) private var openURL
-    /// A crash report saved since the app last offered one (`CrashReports`, 5.7).
-    @State private var crashReportToOffer: URL?
     /// What could not be added of what was shared from another app's share sheet, and what was (5.7).
     @State private var sharedItemsMessage: SharedItemsMessage?
     @State private var selectedTab: Tab = .chat
     @State private var previousScenePhase: ScenePhase = .inactive
     @State private var showVisualValidationDashboard = false
-    @State private var showOnboardingPlans = false
     private let screenshotMode: ScreenshotMode
 
     init() {
@@ -47,16 +38,9 @@ struct ContentView: View {
             DebugRAGValidationHarness.configureStorageIfNeeded()
         #endif
         self.screenshotMode = ScreenshotMode.current
-        #if DEBUG
-            if !screenshotMode.isEnabled {
-                StoreKitTestHarness.startIfNeeded()
-            }
-        #endif
         let workspaceSyncSvc = WorkspaceSyncService()
         let containerSvc = ContainerService()
-        let billingSvc = StoreKitBillingService()
-        let entitlementStore = EntitlementStore(billingService: billingSvc)
-        let ragSvc = RAGService(containerService: containerSvc, entitlementStore: entitlementStore)
+        let ragSvc = RAGService(containerService: containerSvc)
         // The app's engine is the one actions reach for imports, lists and conversations. It sets
         // itself here; an engine an action builds for one question registers only when none is set.
         RAGService.activePresentedInstance = ragSvc
@@ -73,12 +57,9 @@ struct ContentView: View {
             let defaults = UserDefaults(suiteName: suite) ?? .standard
             defaults.removePersistentDomain(forName: suite)
             _onboardingStore = StateObject(wrappedValue: OnboardingStateStore(defaults: defaults))
-            _whatsNewStore = StateObject(wrappedValue: WhatsNewStore(defaults: defaults))
         } else {
             _onboardingStore = StateObject(wrappedValue: OnboardingStateStore())
-            _whatsNewStore = StateObject(wrappedValue: WhatsNewStore())
         }
-        _entitlementStore = StateObject(wrappedValue: entitlementStore)
 
         if let initialTab = screenshotMode.initialTab {
             _selectedTab = State(initialValue: initialTab)
@@ -92,10 +73,6 @@ struct ContentView: View {
     private var shouldShowChecklistLauncher: Bool {
         guard !screenshotMode.isEnabled else { return false }
         return onboardingStore.hasOutstandingSteps && !onboardingStore.isChecklistVisible
-    }
-
-    private var hasICloudSyncAccess: Bool {
-        entitlementStore.effectiveTier.isAtLeast(.pro)
     }
 
     /// Computed accent color from settings, with system default fallback
@@ -177,7 +154,6 @@ struct ContentView: View {
             }
         #endif
         .environmentObject(onboardingStore)
-        .environmentObject(entitlementStore)
         .environmentObject(workspaceSyncService)
         .environmentObject(containerService)
         .sheet(isPresented: $showVisualValidationDashboard) {
@@ -192,68 +168,6 @@ struct ContentView: View {
         // Documents tried to create a new library (it reads settings.useHighAccuracyEmbeddings).
         .environmentObject(settingsStore)
         .environmentObject(modelResolutionService)
-        // The rating request, two seconds after a verified answer has landed so
-        // the sheet never covers the answer itself. StoreKit decides whether
-        // it actually appears (at most three times a year).
-        .onChange(of: reviewPrompt.wantsPrompt) { _, wants in
-            guard wants else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                requestReview()
-                reviewPrompt.didAsk()
-            }
-        }
-        // The one look at the plans that comes at the end of setup rather than at a limit.
-        // Only when the checklist was finished (not skipped), free tier only, once per install,
-        // and a beat after the chat appears so it never lands on top of the transition.
-        .onChange(of: onboardingStore.hasDismissedPermanently) { _, dismissed in
-            guard dismissed, onboardingStore.wasCompletedProperly, !screenshotMode.isEnabled else { return }
-            let isFree = !entitlementStore.effectiveTier.isAtLeast(.pro)
-            guard PlanAskService.shared.noteOnboardingCompleted(isFreeTier: isFree) else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1.5))
-                showOnboardingPlans = true
-            }
-        }
-        .sheet(isPresented: $showOnboardingPlans) {
-            // Attached below the .environmentObject block, so this sheet inherits none of it, and
-            // PlanUpgradeSheet reads EntitlementStore as it draws. Without this line SwiftUI traps:
-            // build 469 crashed 1.5 s after setup's "Start Asking" (simulator, 2026-09-22).
-            PlanUpgradeSheet(entryPoint: .onboarding)
-                .environmentObject(entitlementStore)
-        }
-        // Proactively refresh StoreKit products once the root view appears.
-        // In production this fetches App Store Connect products; in DEBUG/simulator,
-        // this will emit a single warning if no StoreKit configuration is present.
-        // `onDismiss` rather than a callback from the Done button: a sheet can also be
-        // swiped away, which is how most people close one, and that path never invoked
-        // the button's action — so the sheet would return on the next launch. Marking
-        // seen here covers every route out.
-        .sheet(
-            item: $whatsNewStore.pendingRelease,
-            onDismiss: {
-                whatsNewStore.markSeen()
-            }
-        ) { release in
-            WhatsNewView(release: release)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: CrashReports.didSave)) { _ in
-            offerCrashReportIfAny()
-        }
-        .alert(
-            "OpenIntelligence closed unexpectedly",
-            isPresented: Binding(get: { crashReportToOffer != nil }, set: { if !$0 { crashReportToOffer = nil } }),
-            presenting: crashReportToOffer
-        ) { report in
-            Button("Email Report") {
-                openURL(CrashReports.mailURL(for: report, to: OpenIntelligenceLinks.feedbackEmailAddress))
-            }
-            Button("Not Now", role: .cancel) {}
-        } message: { _ in
-            Text(
-                "A report of where it stopped was saved on this device. It has the app and system versions, the device model and the app's code that was running, and none of your documents, questions or answers. You can also email or share it later from Settings, About."
-            )
-        }
         .modifier(SharedItemsAlert(message: $sharedItemsMessage))
         .onReceive(consentRelay.$request) { request in
             guard let request else {
@@ -276,12 +190,6 @@ struct ContentView: View {
             #endif
         }
         .task {
-            // Screenshot runs wipe their defaults suite on launch, which would read as
-            // a fresh install and stay silent anyway; skipping keeps captures clean.
-            if !screenshotMode.isEnabled {
-                whatsNewStore.evaluateOnLaunch()
-            }
-            offerCrashReportIfAny()
             // A Focus that changed while the app was closed (5.7). Not awaited here, so nothing
             // below waits on the system's answer.
             if !screenshotMode.isEnabled {
@@ -341,11 +249,6 @@ struct ContentView: View {
                     }
                 }
             #endif
-
-            await entitlementStore.billingService.refreshProducts()
-            // Auto-reconcile existing purchases on launch so paid users
-            // are recognized immediately after reinstall or device change.
-            await entitlementStore.reconcileEntitlementsOnLaunch()
 
             await refreshSharedWorkspaceIfNeeded(forceReload: true)
 
@@ -410,7 +313,6 @@ struct ContentView: View {
             SwiftUI.Tab("Chat", systemImage: "bubble.left.and.bubble.right", value: Tab.chat) {
                 NavigationStack {
                     ChatScreen(ragService: ragService)
-                        .safeAreaInset(edge: .top, spacing: 0) { if !screenshotMode.isEnabled { LaunchSaleBanner() } }
                 }
             }
             .badge(chatAnswerNotice.unseenAnswers)
@@ -421,7 +323,6 @@ struct ContentView: View {
                         ragService: ragService,
                         containerService: containerService
                     )
-                    .safeAreaInset(edge: .top, spacing: 0) { if !screenshotMode.isEnabled { LaunchSaleBanner() } }
                 }
             }
 
@@ -438,7 +339,6 @@ struct ContentView: View {
                     SettingsView(ragService: ragService)
                 }
                 .environmentObject(settingsStore)
-                .environmentObject(entitlementStore)
             }
         }
         #if os(iOS)
@@ -542,7 +442,6 @@ struct ContentView: View {
             }
 
         case .active:
-            entitlementStore.refreshTransientState()
             BackgroundTaskService.shared.applyIngestionExecutionProfileForCurrentState()
             // What finished while the app was away is on screen now (5.7): its notifications and the Lock Screen's
             // card for a finished import or answer go, where they stayed for up to ten minutes after the person was back.
@@ -559,8 +458,6 @@ struct ContentView: View {
             takeSharedItems()
             // Pages scanned from the Lock Screen while the app was away (5.7).
             takeLockedCaptures()
-            // The storefront's country, for a sale's regular price where it differs by territory (5.7).
-            Task { await StorefrontTerritory.shared.refresh() }
             Task { @MainActor in
                 await refreshSharedWorkspaceIfNeeded(forceReload: workspaceSyncService.isUsingSharedWorkspace)
             }
@@ -648,22 +545,15 @@ struct ContentView: View {
     /// The number of Lock Screen pages the app last said were waiting, so it says so once and not at every return.
     @MainActor private static var lockScreenPagesSaidWaiting = 0
 
-    /// How many more documents the plan takes, counted up to `cap` (5.7). The Documents screen removes a handed-over file
-    /// it can't add, so what's taken from the Lock Screen camera or the share inbox is only what fits (review of
-    /// 2026-10-17).
-    private func documentRoom(cap: Int = 1_000) -> Int {
-        let count = ragService.documents.count
-        var room = 0
-        while room < cap, entitlementStore.canAddDocument(currentCount: count + room) { room += 1 }
-        return room
-    }
+    /// How many handed-over documents to take at once, at most `cap`. There is no document limit.
+    private func documentRoom(cap: Int = 1_000) -> Int { cap }
 
     @MainActor
     private func refreshSharedWorkspaceIfNeeded(forceReload: Bool = false) async {
         let didChangeWorkspaceRoots = await workspaceSyncService.reconfigureIfNeeded()
         guard
             didChangeWorkspaceRoots || forceReload
-                || (hasICloudSyncAccess && workspaceSyncService.isUsingSharedWorkspace)
+                || workspaceSyncService.isUsingSharedWorkspace
         else {
             return
         }
@@ -707,13 +597,6 @@ struct ContentView: View {
     }
 
     /// An activity continued from another device: the library it names, then its screen.
-    /// Offers a crash report saved since the last offer, once: the first window to ask takes it.
-    /// Not during screenshot runs.
-    private func offerCrashReportIfAny() {
-        guard !screenshotMode.isEnabled, crashReportToOffer == nil else { return }
-        crashReportToOffer = CrashReports.takePending()
-    }
-
     private func continueActivity(_ activity: NSUserActivity) {
         let destinations = AppActivity.destinations(type: activity.activityType, userInfo: activity.userInfo)
         Log.info("[Handoff] Continuing \(activity.activityType): \(destinations.count) step(s)", category: .ui)

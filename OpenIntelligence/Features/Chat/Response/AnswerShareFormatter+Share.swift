@@ -6,7 +6,7 @@
 import Foundation
 
 /// What Share and Copy send for one message. The answer and its source list are `AnswerShareFormatter`
-/// (`Services/RAG/Citations`, compiled into the engine too); the app's name and App Store link are added here,
+/// (`Services/RAG/Citations`, compiled into the engine too); the app's name and project link are added here,
 /// for Share only, since `OpenIntelligenceLinks` belongs to the app.
 nonisolated extension AnswerShareFormatter {
     static let attribution = "Answered with OpenIntelligence"
@@ -26,7 +26,7 @@ nonisolated extension AnswerShareFormatter {
         answer: String,
         evidence: [StructuredAnswer.Evidence],
         retrievedChunks: [RetrievedChunk],
-        appLink: URL = OpenIntelligenceLinks.sharedAppStoreURL
+        appLink: URL = OpenIntelligenceLinks.projectURL
     ) -> String {
         let text = textWithSources(answer: answer, evidence: evidence, retrievedChunks: retrievedChunks)
         return [text, "\(attribution)\n\(appLink.absoluteString)"].joined(separator: "\n\n")

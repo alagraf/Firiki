@@ -16,18 +16,6 @@ import XCTest
 final class PassagesFromKnownDocumentsTests: XCTestCase {
     // A second library needs a plan that allows one (the free plan allows one library), as in
     // `ImportTargetLibraryTests`.
-    private let tierKey = "entitlement.activeTier"
-    private var savedTier: Any?
-
-    override func setUp() async throws {
-        savedTier = UserDefaults.standard.object(forKey: tierKey)
-        UserDefaults.standard.set(WorkspaceTier.pro.rawValue, forKey: tierKey)
-    }
-
-    override func tearDown() async throws {
-        UserDefaults.standard.set(savedTier, forKey: tierKey)
-    }
-
     private func passage(_ document: UUID, named name: String = "") -> RetrievedChunk {
         RetrievedChunk(
             chunk: DocumentChunk(

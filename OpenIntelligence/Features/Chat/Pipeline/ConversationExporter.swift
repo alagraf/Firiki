@@ -62,7 +62,7 @@ nonisolated enum ConversationExporter {
         title: String? = nil,
         exportedAt: Date = Date(),
         timeZone: TimeZone = .current,
-        appLink: URL = OpenIntelligenceLinks.sharedAppStoreURL
+        appLink: URL = OpenIntelligenceLinks.projectURL
     ) -> String {
         let kept = exportable(messages)
         let stamp = DateFormatter()
@@ -204,7 +204,7 @@ nonisolated enum ConversationExporter {
         exportedAt: Date = Date(),
         timeZone: TimeZone = .current,
         pageSize: CGSize = pdfPageSize,
-        appLink: URL = OpenIntelligenceLinks.sharedAppStoreURL
+        appLink: URL = OpenIntelligenceLinks.projectURL
     ) -> Data {
         let kept = exportable(messages)
         let stamp = DateFormatter()

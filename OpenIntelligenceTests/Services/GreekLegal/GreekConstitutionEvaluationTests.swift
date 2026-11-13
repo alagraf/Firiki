@@ -169,11 +169,8 @@ struct GreekConstitutionEvaluationTests {
         print("[GreekEval] model availability: \(SystemLanguageModel.default.availability)")
         try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish) && LocalNeuralTranslator.isAvailable(.englishToGreek))
 
-        let plan = UserDefaults(suiteName: "GreekConstitutionEvaluation.plan") ?? .standard
-        plan.set(WorkspaceTier.pro.rawValue, forKey: "entitlement.activeTier")
-        let store = EntitlementStore(billingService: StoreKitBillingService(), defaults: plan)
         let libraries = IntentSupport.libraries()
-        let engine = RAGService(llmService: GreekEvalOnDeviceModel(), containerService: libraries, entitlementStore: store)
+        let engine = RAGService(llmService: GreekEvalOnDeviceModel(), containerService: libraries)
         for _ in 0..<100 where !engine.hasLoadedDocumentsFromDisk {
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -194,11 +191,7 @@ struct GreekConstitutionEvaluationTests {
             library = nil
         }
         if library == nil {
-            let tierKey = "entitlement.activeTier"
-            let savedTier = UserDefaults.standard.string(forKey: tierKey)
-            UserDefaults.standard.set(WorkspaceTier.pro.rawValue, forKey: tierKey)
             let created = Result { try libraries.createContainer(name: libraryName) }
-            if let savedTier { UserDefaults.standard.set(savedTier, forKey: tierKey) } else { UserDefaults.standard.removeObject(forKey: tierKey) }
             let made = try created.get()
             let importStart = Date()
             let imported = await engine.ingestDocuments(pdfs, containerId: made.id)

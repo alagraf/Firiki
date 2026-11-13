@@ -150,11 +150,8 @@ private actor EvaluationLibrary {
             try await Task.sleep(for: .seconds(5))
         }
         print("[AnswerQualityEvaluation] model availability: \(SystemLanguageModel.default.availability)")
-        let plan = UserDefaults(suiteName: "AnswerQualityEvaluation.plan") ?? .standard
-        plan.set(WorkspaceTier.pro.rawValue, forKey: "entitlement.activeTier")
-        let store = EntitlementStore(billingService: StoreKitBillingService(), defaults: plan)
         let libraries = IntentSupport.libraries()
-        let importer = RAGService(llmService: OnDeviceModel(), containerService: libraries, entitlementStore: store)
+        let importer = RAGService(llmService: OnDeviceModel(), containerService: libraries)
         for _ in 0..<100 where !importer.hasLoadedDocumentsFromDisk {
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -166,18 +163,7 @@ private actor EvaluationLibrary {
         } else {
             print("[AnswerQualityEvaluation] the documents were not loaded in 10 s; earlier libraries are left as they are")
         }
-        // `ContainerService.createContainer` checks the plan the app saved (`EntitlementStore.currentLibraryLimit()`,
-        // standard defaults), not an engine's store, and on the test simulator that plan is Free with its one library
-        // taken. Pro is set there for this one call and what was there is put back (2026-10-21).
-        let tierKey = "entitlement.activeTier"
-        let savedTier = UserDefaults.standard.string(forKey: tierKey)
-        UserDefaults.standard.set(WorkspaceTier.pro.rawValue, forKey: tierKey)
         let created = Result { try libraries.createContainer(name: "\(namePrefix)\(UUID().uuidString.prefix(6))") }
-        if let savedTier {
-            UserDefaults.standard.set(savedTier, forKey: tierKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: tierKey)
-        }
         let container = try created.get()
         let files = AnswerQualityData.fixtureFiles
         let result = await importer.ingestDocuments(files, containerId: container.id)

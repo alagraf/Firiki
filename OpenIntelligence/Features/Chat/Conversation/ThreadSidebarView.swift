@@ -12,8 +12,6 @@ struct ThreadSidebarView: View {
     var onThreadSelected: (UUID) -> Void
     
     @State private var threads: [EvidenceThread] = []
-    @State private var errorMessage: String? = nil
-    @State private var showQuotaAlert = false
     
     var body: some View {
         HStack(spacing: 0) {
@@ -28,10 +26,6 @@ struct ThreadSidebarView: View {
                             try ragService.createNewThread(for: containerId)
                             onThreadSelected(ragService.activeThreadId ?? UUID())
                             loadThreads()
-                        } catch let quotaError as EvidenceThreadQuotaError {
-                            DSHaptics.error()
-                            errorMessage = quotaError.localizedDescription
-                            showQuotaAlert = true
                         } catch {
                             Log.error("[ThreadSidebarView] Failed to create thread: \(error.localizedDescription)", category: .initialization)
                         }
@@ -99,11 +93,6 @@ struct ThreadSidebarView: View {
         }
         .onChange(of: ragService.containerService.activeContainerId) { _, _ in
             loadThreads()
-        }
-        .alert("Thread Limit Reached", isPresented: $showQuotaAlert, presenting: errorMessage) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { detail in
-            Text(detail)
         }
     }
     

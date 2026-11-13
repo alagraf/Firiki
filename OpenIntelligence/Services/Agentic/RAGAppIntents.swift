@@ -23,37 +23,6 @@ private struct DocumentImportStatusSnapshot: Sendable {
 
 // MARK: - What the ask actions share
 
-/// Applies the free plan's daily Maximum allowance to an action, the way the chat applies it.
-///
-/// The chat counts each Maximum answer through `EntitlementStore.consumeMaximumModeUseIfNeeded`.
-/// An action has no entitlement store of its own, so this reads the plan from where the app stores
-/// it and uses the same counter (`MaximumModeQuotaStore` on the standard defaults). The allowance
-/// is checked before the question and counted only after an answer came back, so a question that
-/// fails does not spend one. The app's own remaining-runs display is refreshed the next time the
-/// app recalculates it, not at once.
-@available(iOS 26.0, macOS 26.0, *)
-enum ShortcutsPlanGate {
-    private static var isMetered: Bool { EntitlementStore.currentEffectiveTier() == .free }
-
-    /// Throws when the free plan has no Maximum answer left today.
-    @MainActor
-    static func checkMaximumAvailable() throws {
-        guard isMetered else { return }
-        let limit = QuotaPolicy.freeMaximumModeDailyLimit
-        if MaximumModeQuotaStore().currentState(limit: limit).remainingUses <= 0 {
-            throw OIIntentError(
-                "Today's \(limit) free Maximum answers are used. Choose Standard or Deep Think, or try again tomorrow.")
-        }
-    }
-
-    /// Counts one Maximum answer.
-    @MainActor
-    static func countMaximumAnswer() {
-        guard isMetered else { return }
-        _ = MaximumModeQuotaStore().consumeIfAllowed(limit: QuotaPolicy.freeMaximumModeDailyLimit)
-    }
-}
-
 /// Lets the system stop an ask action and see how far it has got (5.7).
 ///
 /// From iOS and macOS 26.4 the system can cancel an action (`CancellableIntent`): when it has gone
@@ -238,10 +207,6 @@ enum AskActionRunner {
             effectiveMode = .standard
         }
 
-        if effectiveMode == .maximum {
-            try await MainActor.run { try ShortcutsPlanGate.checkMaximumAvailable() }
-        }
-
         // The question runs in a task of its own, so a stop from the system can cancel it, and the
         // engine's status and a two-second tick are its progress.
         let queryTask = Task { () async throws -> RAGResponse in
@@ -309,9 +274,6 @@ enum AskActionRunner {
             }
         }
 
-        if effectiveMode == .maximum {
-            await MainActor.run { ShortcutsPlanGate.countMaximumAnswer() }
-        }
         Log.info(
             "[Shortcuts] Ask complete (mode=\(effectiveMode.rawValue), answerChars=\(response.generatedResponse.count), passages=\(response.retrievedChunks.count), scoped=\(documentIds?.count ?? 0))",
             category: .pipeline)

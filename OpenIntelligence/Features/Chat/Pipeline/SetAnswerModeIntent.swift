@@ -10,8 +10,7 @@ import Foundation
 ///
 /// A shortcut can switch to Deep Think before it asks, or a Focus automation can pick a mode. With
 /// the app open the chat changes at once; otherwise the mode is saved where the chat reads it at
-/// launch (`AnswerModeSetting`). Maximum on the free plan follows the daily limit, as Settings does
-/// (`ShortcutsPlanGate.checkMaximumAvailable`). Run from the app, the change can be undone
+/// launch (`AnswerModeSetting`). Run from the app, the change can be undone
 /// (`UndoableIntent`). An ask action that names its own mode answers in that mode and leaves this
 /// setting as it was.
 @available(iOS 26.0, macOS 26.0, *)
@@ -34,9 +33,6 @@ struct SetAnswerModeIntent: SetValueIntent, UndoableIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<OIAnswerMode> & ProvidesDialog {
         let wanted = value
-        if wanted == .maximum {
-            try await MainActor.run { try ShortcutsPlanGate.checkMaximumAvailable() }
-        }
         let previous = await MainActor.run { () -> RAGQualityMode in
             let before = AnswerModeSetting.current
             AnswerModeSetting.set(wanted.qualityMode)

@@ -92,11 +92,8 @@ struct EUHoldoutEvaluationTests {
         let data = try JSONDecoder().decode(EUHoldoutData.self, from: Data(contentsOf: dataURL))
         try #require(data.passages_en.count == data.passages_el.count && !data.questions.isEmpty)
 
-        let plan = UserDefaults(suiteName: "EUHoldoutEvaluation.plan") ?? .standard
-        plan.set(WorkspaceTier.pro.rawValue, forKey: "entitlement.activeTier")
-        let store = EntitlementStore(billingService: StoreKitBillingService(), defaults: plan)
         let libraries = IntentSupport.libraries()
-        let engine = RAGService(llmService: GreekEvalOnDeviceModel(), containerService: libraries, entitlementStore: store)
+        let engine = RAGService(llmService: GreekEvalOnDeviceModel(), containerService: libraries)
         for _ in 0..<100 where !engine.hasLoadedDocumentsFromDisk {
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -118,11 +115,7 @@ struct EUHoldoutEvaluationTests {
                 library = nil
             }
             if library == nil {
-                let tierKey = "entitlement.activeTier"
-                let savedTier = UserDefaults.standard.string(forKey: tierKey)
-                UserDefaults.standard.set(WorkspaceTier.pro.rawValue, forKey: tierKey)
                 let created = Result { try libraries.createContainer(name: name) }
-                if let savedTier { UserDefaults.standard.set(savedTier, forKey: tierKey) } else { UserDefaults.standard.removeObject(forKey: tierKey) }
                 let made = try created.get()
                 let folder = FileManager.default.temporaryDirectory.appendingPathComponent("eu-holdout-\(language)", isDirectory: true)
                 try? FileManager.default.removeItem(at: folder)

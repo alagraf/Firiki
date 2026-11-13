@@ -75,58 +75,6 @@ final class SpotlightIndexService {
     ) {}
 }
 
-final class EntitlementStore {
-    var documentLimit: Int { QuotaPolicy.documentLimit() }
-    var activeTier: WorkspaceTier { .free }
-    var effectiveTier: WorkspaceTier { activeTier }
-    var currentPlanDisplayName: String { effectiveTier.displayName }
-    var legacyProtectionState: LegacyProtectionState { .none }
-    var isLegacyPaidProtected: Bool { false }
-    var hasUnlimitedDocuments: Bool { false }
-    var hasUnlimitedMaximumMode: Bool { false }
-    var canUseMaximumModeNow: Bool { true }
-    var maximumModeRemainingUses: Int { QuotaPolicy.freeMaximumModeDailyLimit }
-    var shouldOfferDocumentPack: Bool { false }
-
-    func canAddDocument(currentCount: Int) -> Bool {
-        currentCount < documentLimit
-    }
-
-    func refreshTransientState() {}
-
-    func consumeMaximumModeUseIfNeeded() -> MaximumModeExecutionDecision {
-        .allowedUnlimited
-    }
-
-    static func currentEffectiveTier(defaults: UserDefaults = .standard) -> WorkspaceTier {
-        return .free
-    }
-
-    static func currentLibraryLimit(defaults: UserDefaults = .standard) -> Int {
-        return 1
-    }
-
-    /// The SDK has no plans: the free plan's document limit, as everything else here (5.7; the app's
-    /// `EntitlementStore.savedDocumentAllowance` reads the saved plan).
-    static func savedDocumentAllowance(
-        defaults: UserDefaults = .standard
-    ) -> (limit: Int, isUnlimited: Bool, tier: WorkspaceTier) {
-        (QuotaPolicy.documentLimit(), false, .free)
-    }
-}
-
-enum LegacyProtectionState: String, Codable, Sendable {
-    case none
-    case historicalPaidPurchase
-    case legacyDocumentPackOwner
-}
-
-enum MaximumModeExecutionDecision: Sendable {
-    case allowedUnlimited
-    case allowedMetered(remaining: Int, dailyLimit: Int)
-    case blocked(remaining: Int, dailyLimit: Int, resetsAt: Date)
-}
-
 final class ProjectionCache {
     static let shared = ProjectionCache()
 

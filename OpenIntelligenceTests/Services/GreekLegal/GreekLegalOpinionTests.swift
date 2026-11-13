@@ -327,10 +327,8 @@ struct GreekLegalOpinionEvaluation {
         }
         try #require(LocalNeuralTranslator.isAvailable(.englishToGreek))
 
-        let plan = UserDefaults(suiteName: "GreekConstitutionEvaluation.plan") ?? .standard
-        let store = EntitlementStore(billingService: StoreKitBillingService(), defaults: plan)
         let libraries = IntentSupport.libraries()
-        let engine = RAGService(llmService: GreekEvalOnDeviceModel(), containerService: libraries, entitlementStore: store)
+        let engine = RAGService(llmService: GreekEvalOnDeviceModel(), containerService: libraries)
         for _ in 0..<100 where !engine.hasLoadedDocumentsFromDisk {
             try await Task.sleep(for: .milliseconds(100))
         }

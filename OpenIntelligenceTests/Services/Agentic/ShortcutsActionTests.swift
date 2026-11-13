@@ -215,14 +215,6 @@ final class ShortcutsActionTests: XCTestCase {
         }
     }
 
-    /// Puts the app on a paid plan for the rest of the test: the free plan allows one library and five documents.
-    private func onAPaidPlan() {
-        let key = "entitlement.activeTier"
-        let saved = UserDefaults.standard.object(forKey: key)
-        UserDefaults.standard.set(WorkspaceTier.pro.rawValue, forKey: key)
-        addTeardownBlock { UserDefaults.standard.set(saved, forKey: key) }
-    }
-
     /// Waits, at most three minutes, until `names` are all documents of `library` with passages.
     private func imported(_ names: [String], in library: UUID) async throws -> [Document] {
         let engine = IntentSupport.engine()
@@ -296,7 +288,6 @@ final class ShortcutsActionTests: XCTestCase {
     /// 3f449a74d54f8191a690c82195d5fbc9), as the engine records it on the answer.
     func testEachAnswerModeRunsInTheModeChosen() async throws {
         guard #available(iOS 26.0, macOS 26.0, *) else { throw XCTSkip("needs iOS 26") }
-        onAPaidPlan()
         _ = try await addNote("The tamsin bike store code for the test flat is 2468, changed every autumn.")
         let model = StandInModel(answer: "The tamsin bike store code for the test flat is 2468.")
         AskActionRunner.makeEngine = { RAGService(llmService: model) }
@@ -314,7 +305,6 @@ final class ShortcutsActionTests: XCTestCase {
     /// note goes into it, and the switch back takes.
     func testCreateLibraryMakesItActiveAndAddToLibraryFillsIt() async throws {
         guard #available(iOS 26.0, macOS 26.0, *) else { throw XCTSkip("needs iOS 26") }
-        onAPaidPlan()
         let libraries = IntentSupport.libraries()
         let engine = IntentSupport.engine()
         let before = try XCTUnwrap(libraries.activeContainerId)
@@ -345,7 +335,6 @@ final class ShortcutsActionTests: XCTestCase {
     /// says so (roadmap row 3f449a74d54f8129a1baf215e16bf18f), not with passages from elsewhere.
     func testAQuestionToAnEmptyLibrarySaysItHasNoDocuments() async throws {
         guard #available(iOS 26.0, macOS 26.0, *) else { throw XCTSkip("needs iOS 26") }
-        onAPaidPlan()
         _ = try await addNote("The ashgrove recycling for the test flat goes out on Thursday mornings.")
         let libraries = IntentSupport.libraries()
         let empty = try libraries.createContainer(name: "Empty library \(UUID().uuidString.prefix(8))")
@@ -365,7 +354,6 @@ final class ShortcutsActionTests: XCTestCase {
     /// Needs the network.
     func testAddToLibraryTakesAFileALinkAndTextInOneRun() async throws {
         guard #available(iOS 26.0, macOS 26.0, *) else { throw XCTSkip("needs iOS 26") }
-        onAPaidPlan()
         // Thesis fork: strict local mode (on by default) refuses web downloads; this test is about
         // the link path itself, so it runs with the mode off.
         UserDefaults.standard.set(false, forKey: StrictLocalControlGuard.strictLocalModeDefaultsKey)
@@ -401,7 +389,6 @@ final class ShortcutsActionTests: XCTestCase {
     /// 3f449a74d54f8152bc4af3b9baa7d8d4). Needs the network.
     func testSaveAWebPageImportsTheArticlesText() async throws {
         guard #available(iOS 26.0, macOS 26.0, *) else { throw XCTSkip("needs iOS 26") }
-        onAPaidPlan()
         // Thesis fork: strict local mode (on by default) refuses web downloads; this test is about
         // saving a page itself, so it runs with the mode off.
         UserDefaults.standard.set(false, forKey: StrictLocalControlGuard.strictLocalModeDefaultsKey)

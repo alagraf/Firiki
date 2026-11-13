@@ -446,37 +446,6 @@ final class WorkspaceSyncService: ObservableObject {
             return activateLocalWorkspace(reason: "Could not load local libraries for iCloud sync.")
         }
 
-        // Entitlement Demotion Check: iCloud sync requires at least Pro status.
-        let effectiveTier = EntitlementStore.currentEffectiveTier(defaults: self.defaults)
-        guard effectiveTier.isAtLeast(.pro) else {
-            let hasSyncedLibraries = localInventory.containers.contains(where: { $0.syncMode == .iCloudShared })
-            if hasSyncedLibraries || isUsingSharedWorkspace {
-                var demotedContainers = localInventory.containers
-                for idx in 0..<demotedContainers.count {
-                    if demotedContainers[idx].syncMode == .iCloudShared {
-                        demotedContainers[idx].syncMode = .localOnly
-                    }
-                }
-                
-                // Write demoted containers back to local containers.json
-                do {
-                    try Self.writeJSON(demotedContainers, to: localWorkspaceRoot.appendingPathComponent("containers.json"))
-                } catch {
-                    // Fail silently to avoid breaking local usage if writing fails.
-                }
-                
-                defaults.removeObject(forKey: Self.hasBootstrappedSharedWorkspaceDefaultsKey)
-                clearPendingBootstrapState()
-                unsupportedSyncContainerNames = []
-                lastErrorMessage = nil
-                
-                return activateLocalWorkspace(reason: "iCloud sync requires a Pro subscription.")
-            }
-            
-            clearPendingBootstrapState()
-            unsupportedSyncContainerNames = []
-            return activateLocalWorkspace(reason: "All libraries are local only.")
-        }
 
         let localSyncedInventory = syncedInventory(from: localInventory)
 
@@ -580,7 +549,6 @@ final class WorkspaceSyncService: ObservableObject {
     @discardableResult
     func resolvePendingBootstrap(using choice: BootstrapChoice) async -> Bool {
         guard isSyncEnabled else { return false }
-        guard EntitlementStore.currentEffectiveTier(defaults: self.defaults).isAtLeast(.pro) else { return false }
         guard let pendingBootstrapPlan else {
             return await reconfigureIfNeeded()
         }
@@ -634,7 +602,6 @@ final class WorkspaceSyncService: ObservableObject {
 
     @discardableResult
     func connectExistingICloudLibraries() async -> Bool {
-        guard EntitlementStore.currentEffectiveTier(defaults: self.defaults).isAtLeast(.pro) else { return false }
         let localWorkspaceRoot = OpenIntelligenceRuntimePaths.applicationSupportRoot()
 
         Self.isSyncWriteInProgress = true
@@ -1210,7 +1177,6 @@ final class WorkspaceSyncService: ObservableObject {
         let finalLocalContainers = sortedContainers(localOnlyContainers + finalSyncedContainers)
         let finalLocalDocuments = deduplicatedDocuments(localOnlyDocuments + finalLocalSyncedDocuments)
 
-        try enforceLibraryLimit(for: finalLocalContainers)
 
         // Everything above was computed from `localInventory`, a snapshot taken at
         // the start of this pass. Between that snapshot and this write we merged
@@ -1261,11 +1227,7 @@ final class WorkspaceSyncService: ObservableObject {
             return try encoder.encode(result)
         }
 
-        // Libraries get the same treatment as documents, with one extra
-        // constraint: `enforceLibraryLimit` throws rather than truncating, and it
-        // used to run against the computed set only. Folding a library in after
-        // that check could carry a workspace past its tier limit, which is why
-        // this write was left alone in the first pass.
+        // Libraries get the same treatment as documents.
         //
         // Resolved by enforcing against the *merged* set inside the accessor. If
         // the fold would exceed the limit we throw without writing, which leaves
@@ -1276,7 +1238,6 @@ final class WorkspaceSyncService: ObservableObject {
         // pre-merge source for one that is present, so folding on id alone would
         // resurrect a duplicate the merge had just collapsed.
         let localContainersURL = localRoot.appendingPathComponent("containers.json")
-        let localLimit = EntitlementStore.currentLibraryLimit(defaults: defaults)
         let containerAliases = mergeResult.sourceToCanonical
 
         try Self.coordinatedMergeData(at: localContainersURL) { existing in
@@ -1293,18 +1254,6 @@ final class WorkspaceSyncService: ObservableObject {
                 }
 
                 if !arrivedDuringPass.isEmpty {
-                    guard result.count + arrivedDuringPass.count <= localLimit else {
-                        Log.error(
-                            "[WorkspaceSync] \(arrivedDuringPass.count) library(s) were created while this sync pass ran, and folding them in would exceed the \(localLimit)-library limit. Leaving containers.json untouched so nothing is lost; the next pass will reconcile them.",
-                            category: .vectorDB
-                        )
-                        throw LibraryQuotaError(
-                            limit: localLimit,
-                            attemptedCount: result.count + arrivedDuringPass.count,
-                            tier: EntitlementStore.currentEffectiveTier(defaults: defaults)
-                        )
-                    }
-
                     Log.warning(
                         "[WorkspaceSync] Keeping \(arrivedDuringPass.count) library(s) created while this pass ran, rather than overwriting them: \(arrivedDuringPass.map(\.name).joined(separator: ", ")).",
                         category: .vectorDB
@@ -3504,14 +3453,6 @@ final class WorkspaceSyncService: ObservableObject {
         let heartbeatScore = Int(item.lastLeaseHeartbeatAt?.timeIntervalSince1970 ?? 0)
         let progressScore = Int((item.progress ?? 0) * 1000)
         return (activeLeaseScore, stageScore, progressScore, heartbeatScore)
-    }
-
-    nonisolated private func enforceLibraryLimit(for containers: [KnowledgeContainer]) throws {
-        let limit = EntitlementStore.currentLibraryLimit(defaults: defaults)
-        guard containers.count <= limit else {
-            let tier = EntitlementStore.currentEffectiveTier(defaults: defaults)
-            throw LibraryQuotaError(limit: limit, attemptedCount: containers.count, tier: tier)
-        }
     }
 
     nonisolated private func resolveSharedMetadataConflictsIfNeeded(in sharedRoot: URL) async throws {

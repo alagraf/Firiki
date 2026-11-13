@@ -8,7 +8,6 @@ enum TelemetryCategory: String, CaseIterable {
     case generation
     case storage
     case system
-    case billing
     case error
 
     var symbolName: String {
@@ -19,7 +18,6 @@ enum TelemetryCategory: String, CaseIterable {
         case .generation: return "sparkles"
         case .storage: return "externaldrive"
         case .system: return "gear"
-        case .billing: return "creditcard"
         case .error: return "exclamationmark.triangle"
         }
     }
@@ -67,7 +65,7 @@ final class TelemetryCenter: ObservableObject {
     @Published private(set) var events: [TelemetryEvent] = []
 
     private let maxEvents = 500
-    private let mirroredCategories: Set<TelemetryCategory> = [.system, .generation, .retrieval, .billing, .error]
+    private let mirroredCategories: Set<TelemetryCategory> = [.system, .generation, .retrieval, .error]
 
     func log(
         _ category: TelemetryCategory,
@@ -145,20 +143,3 @@ final class TelemetryCenter: ObservableObject {
     }
 }
 
-extension TelemetryCenter {
-    /// Convenience helper for emitting StoreKit and entitlement telemetry with a dedicated category.
-    nonisolated static func emitBillingEvent(
-        _ title: String,
-        severity: TelemetrySeverity = .info,
-        metadata: [String: String] = [:],
-        duration: TimeInterval? = nil
-    ) {
-        emit(
-            .billing,
-            severity: severity,
-            title: title,
-            metadata: metadata,
-            duration: duration
-        )
-    }
-}

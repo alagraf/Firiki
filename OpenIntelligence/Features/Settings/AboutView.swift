@@ -1,35 +1,10 @@
 import SwiftUI
 
 enum OpenIntelligenceLinks {
-    nonisolated static let appStoreID = "6756559175"
-    static let githubURL = URL(string: "https://github.com/Gunnarguy/OpenIntelligence")!
-    static let appStoreURL = URL(string: "https://apps.apple.com/app/id\(appStoreID)")!
-    /// Campaign tag on every App Store link the app hands to someone else (Share the App, a shared
-    /// answer, an exported conversation). One tag for all of them: App Store Connect shows a tag
-    /// only after first-time downloads from five people, so splitting it would hide the number.
-    nonisolated static let shareCampaignTag = "In_App_Share"
-    /// The App Store link for sharing. `pt` is the provider token, the same public value as in the
-    /// repository README's link; `ct` is the campaign tag App Store Connect reports under Acquisition.
-    nonisolated static let sharedAppStoreURL = URL(
-        string: "https://apps.apple.com/app/apple-store/id\(appStoreID)?pt=127101782&ct=\(shareCampaignTag)&mt=8")!
-    static let writeReviewURL = URL(string: "https://apps.apple.com/app/id\(appStoreID)?action=write-review")!
-    static let feedbackEmailAddress = "gunnarguy@me.com"
-    static let notionRoadmapURL = URL(string: "https://app.notion.com/p/gunzino/37f49a74d54f81b79424dae1288c0043")!
-
-    static func feedbackMailtoURL(source: String) -> URL {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
-
-        var components = URLComponents()
-        components.scheme = "mailto"
-        components.path = feedbackEmailAddress
-        components.queryItems = [
-            URLQueryItem(name: "subject", value: "[OpenIntelligence App Feedback] \(source) | v\(version) (\(build))"),
-            URLQueryItem(
-                name: "body", value: "Source: \(source)\nApp Version: \(version) (\(build))\n\nTopic:\n\nDetails:\n"),
-        ]
-        return components.url ?? URL(string: "mailto:\(feedbackEmailAddress)")!
-    }
+    /// This project's repository. Shared answers and exported conversations link here.
+    static let projectURL = URL(string: "https://github.com/alagraf/Firiki")!
+    /// The open-source app this project extends (MIT licence), credited in About.
+    static let upstreamURL = URL(string: "https://github.com/Gunnarguy/OpenIntelligence")!
 }
 
 /// Presents product metadata and device-specific capability information.
@@ -37,9 +12,6 @@ struct AboutView: View {
     @EnvironmentObject private var settings: SettingsStore
     @Environment(\.openURL) private var openURL
     @State private var deviceCapabilities = DeviceCapabilities()
-    /// The privacy policy in the app (`PrivacyPolicyView`, 5.7). Its only way in, a button on the Plans
-    /// screen, became a link to the website on 2026-05-28, and nothing opened it after that.
-    @State private var showingPrivacyPolicy = false
 
     /// Single source of truth for hardware identity. `deviceCapabilities` is still used
     /// for the OS version and the Apple Intelligence availability rows, both of which it
@@ -82,7 +54,7 @@ struct AboutView: View {
                         VStack(alignment: .leading, spacing: DSSpacing.sm) {
                             Text("OpenIntelligence")
                                 .font(.title.bold())
-                            Text("Privacy-First RAG Application")
+                            Text("On-device assistant for Greek labour law · thesis proof of concept")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             Text(
@@ -93,59 +65,6 @@ struct AboutView: View {
                             .foregroundStyle(.secondary)
                         }
                         .padding(.vertical, DSSpacing.xxs)
-                    }
-
-                    SurfaceCard {
-                        SectionHeader(icon: "sparkles.rectangle.stack", title: "Latest Update")
-                        // Rendered from `WhatsNewStore.releases`, the same source as the
-                        // sheet shown after an update. These three highlights used to be
-                        // hardcoded here and had gone stale: they described an older
-                        // release ("Quality modes are easier to scan") while the app was
-                        // on 4.8. Two places holding release copy is two places to drift,
-                        // and this one already had. It also gives the update sheet a
-                        // permanent home, so dismissing it does not lose the content.
-                        // Three highlights, not the whole release.
-                        //
-                        // This rendered every item in the release, which for 5.0 is
-                        // nineteen — the same content Version History already shows in
-                        // full, one screen away. Two surfaces printing the same changelog
-                        // at the same length is not two views of it, it is the same wall
-                        // twice. About is now the teaser and Version History the record.
-                        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                            if let release = WhatsNewStore().releaseForCurrentVersion() {
-                                ForEach(release.items.prefix(3)) { item in
-                                    releaseHighlight(
-                                        icon: item.symbol,
-                                        tint: .accentColor,
-                                        title: item.title,
-                                        detail: item.detail
-                                    )
-                                }
-
-                                if release.items.count > 3 {
-                                    NavigationLink {
-                                        VersionHistoryView()
-                                    } label: {
-                                        HStack(spacing: DSSpacing.xs) {
-                                            Text("See all \(release.items.count) changes in \(release.version)")
-                                                .font(.footnote.weight(.medium))
-                                                .monospacedDigit()
-                                            Image(systemName: "arrow.forward")
-                                                .scaledFont(size: 10, weight: .semibold)
-                                        }
-                                        .foregroundStyle(DSColors.accent)
-                                        .padding(.top, DSSpacing.xxs)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            } else {
-                                Text(
-                                    "Release notes for this version aren't available in the app. The App Store listing has the full list."
-                                )
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
                     }
 
                     // Your Device
@@ -222,57 +141,36 @@ struct AboutView: View {
                             LabeledContent("RAG Pipeline", value: "Hybrid (Vector + BM25 → RRF)")
                             LabeledContent("Embeddings", value: embeddingDisplayName)
                             LabeledContent("Vector Store", value: "Persistent JSON (exact k-NN)")
-                            LabeledContent("Minimum iOS", value: "18.0")
-                                .monospacedDigit()
-                            LabeledContent("Optimized for", value: "iOS 26.0+")
+                            LabeledContent("Minimum OS", value: "iOS 26 · macOS 26")
                                 .monospacedDigit()
                         }
                         .font(.subheadline)
                     }
 
                     SurfaceCard {
-                        SectionHeader(
-                            icon: "bubble.left.and.exclamationmark.bubble.right.fill", title: "Feature Requests")
-                        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                            externalLinkRow(
-                                title: "Send a Feature Request",
-                                subtitle: "Email feature ideas and product requests directly from the app",
-                                icon: "sparkles.rectangle.stack.fill",
-                                tint: .accentColor
-                            ) {
-                                openFeatureRequestEmail()
-                            }
-                        }
-                    }
-
-                    // Contact & Support
-                    SurfaceCard {
-                        SectionHeader(icon: "envelope.fill", title: "Contact & Support")
+                        SectionHeader(icon: "book.closed.fill", title: "Project")
                         VStack(alignment: .leading, spacing: DSSpacing.md) {
-                            Text("Need help or have feedback? Get in touch:")
+                            Text("Developed by Alexandros Agrafiotis as a thesis proof of concept. Not legal advice.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-
                             externalLinkRow(
-                                title: OpenIntelligenceLinks.feedbackEmailAddress,
-                                subtitle: "Feature ideas, bugs, and product feedback land in the product inbox",
-                                icon: "envelope.fill",
+                                title: "Source Code",
+                                subtitle: "This project's repository",
+                                icon: "chevron.left.forwardslash.chevron.right",
                                 tint: .accentColor
                             ) {
-                                openEmail()
+                                openURL(OpenIntelligenceLinks.projectURL)
                             }
-                            // The newest crash report, when there is one (`CrashReports`, 5.7).
+                            externalLinkRow(
+                                title: "Built on OpenIntelligence",
+                                subtitle: "The open-source app by Gunnar Hostetler that this project extends (MIT licence)",
+                                icon: "heart.fill",
+                                tint: .secondary
+                            ) {
+                                openURL(OpenIntelligenceLinks.upstreamURL)
+                            }
+                            // The newest crash report, when there is one (`CrashReports`).
                             if let crashReport = CrashReports.all().first {
-                                externalLinkRow(
-                                    title: "Email the Last Crash Report",
-                                    subtitle: "A summary of where the app stopped, sent from your mail app",
-                                    icon: "exclamationmark.triangle.fill",
-                                    tint: .red
-                                ) {
-                                    openURL(
-                                        CrashReports.mailURL(
-                                            for: crashReport, to: OpenIntelligenceLinks.feedbackEmailAddress))
-                                }
                                 ShareLink(item: crashReport) {
                                     linkRowLabel(
                                         title: "Share the Last Crash Report",
@@ -281,46 +179,6 @@ struct AboutView: View {
                                         tint: .red)
                                 }
                                 .buttonStyle(.plain)
-                            }
-                            externalLinkRow(
-                                title: "Privacy Policy",
-                                subtitle: "What stays on your device, and what can leave it",
-                                icon: "hand.raised.fill",
-                                tint: .accentColor
-                            ) {
-                                showingPrivacyPolicy = true
-                            }
-                            externalLinkRow(
-                                title: "GitHub Repository",
-                                subtitle: "Browse the codebase, releases, and implementation details",
-                                icon: "chevron.left.forwardslash.chevron.right",
-                                tint: .secondary
-                            ) {
-                                openURL(OpenIntelligenceLinks.githubURL)
-                            }
-                            externalLinkRow(
-                                title: "Notion Roadmap",
-                                subtitle: "Track the features, tasks, and future technical roadmap milestones",
-                                icon: "map.fill",
-                                tint: .secondary
-                            ) {
-                                openURL(OpenIntelligenceLinks.notionRoadmapURL)
-                            }
-                            externalLinkRow(
-                                title: "Write an App Store Review",
-                                subtitle: "Open the App Store review form directly when you want to leave feedback",
-                                icon: "star.bubble.fill",
-                                tint: .accentColor
-                            ) {
-                                openURL(OpenIntelligenceLinks.writeReviewURL)
-                            }
-                            externalLinkRow(
-                                title: "App Store Listing",
-                                subtitle: "Browse the public listing, screenshots, and release notes",
-                                icon: "apple.logo",
-                                tint: .accentColor
-                            ) {
-                                openURL(OpenIntelligenceLinks.appStoreURL)
                             }
                         }
                     }
@@ -337,9 +195,6 @@ struct AboutView: View {
                 deviceCapabilities = RAGService.checkDeviceCapabilities()
             }
         }
-        .sheet(isPresented: $showingPrivacyPolicy) {
-            PrivacyPolicyView()
-        }
     }
 
     private func capabilityRow(title: String, condition: Bool) -> some View {
@@ -349,23 +204,6 @@ struct AboutView: View {
             Spacer()
             Image(systemName: condition ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .foregroundStyle(condition ? .green : .secondary)
-        }
-    }
-
-    private func releaseHighlight(icon: String, tint: Color, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: DSSpacing.sm) {
-            Image(systemName: icon)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(tint)
-                .frame(width: 18, alignment: .center)
-
-            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
@@ -411,14 +249,6 @@ struct AboutView: View {
         }
         .padding(.vertical, DSSpacing.xxs)
         .frame(minHeight: DSSpacing.tapTarget)
-    }
-
-    private func openEmail() {
-        openURL(OpenIntelligenceLinks.feedbackMailtoURL(source: "About Screen"))
-    }
-
-    private func openFeatureRequestEmail() {
-        openURL(OpenIntelligenceLinks.feedbackMailtoURL(source: "About Screen Feature Request"))
     }
 }
 

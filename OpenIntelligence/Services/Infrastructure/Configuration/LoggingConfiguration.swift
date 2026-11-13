@@ -93,7 +93,6 @@ nonisolated enum LoggingConfiguration {
         case streaming // Token streaming
         case telemetry // Telemetry events
         case ui // UI updates
-        case billing // StoreKit and entitlement flows
         case pipelineTrace // Smart pipeline trace (condensed mode awareness)
     }
 

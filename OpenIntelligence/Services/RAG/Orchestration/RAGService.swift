@@ -352,7 +352,6 @@ class RAGService: ObservableObject {
     private let extractiveSummarizationService: ExtractiveSummarizationService
     private let specificationExtractor = SpecificationExtractor()
     let threadStore = EvidenceThreadStore()
-    private weak var entitlementStore: EntitlementStore?
     private var cancellables = Set<AnyCancellable>()
     @MainActor private weak var settingsStore: SettingsStore?
     @MainActor private var queryRuntimeCoordinator: QueryRuntimeCoordinator?
@@ -1200,16 +1199,6 @@ class RAGService: ObservableObject {
 
     @MainActor
     func createNewThread(for containerId: UUID) throws {
-        // An engine built by an action while the app is closed has no entitlement store. The plan is
-        // kept in UserDefaults, so read it from there instead of treating a paying person as free.
-        let tier = entitlementStore?.effectiveTier ?? EntitlementStore.currentEffectiveTier()
-        let limit = QuotaPolicy.evidenceThreadLimit(for: tier)
-        let currentCount = listThreads(for: containerId).count
-
-        if currentCount >= limit {
-            throw EvidenceThreadQuotaError(limit: limit, tier: tier)
-        }
-
         let newId = UUID()
         activeThreadId = newId
         activeThreadIds[containerId] = newId
@@ -2243,8 +2232,7 @@ class RAGService: ObservableObject {
         vectorDatabase _: VectorDatabase? = nil,
         llmService: LLMService? = nil,
         containerService: ContainerService? = nil,
-        vectorRouter: VectorStoreRouter? = nil,
-        entitlementStore: EntitlementStore? = nil
+        vectorRouter: VectorStoreRouter? = nil
     ) {
         self.documentProcessor = documentProcessor ?? DocumentProcessor()
 
@@ -2261,7 +2249,6 @@ class RAGService: ObservableObject {
         // Container + Vector store routing
         self.containerService = containerService ?? ContainerService()
         self.vectorRouter = vectorRouter ?? VectorStoreRouter()
-        self.entitlementStore = entitlementStore
 
         // Initialize context packing with graph index
         self.contextPackingService = ContextPackingService(graphIndex: self.graphIndexService)
@@ -2289,10 +2276,7 @@ class RAGService: ObservableObject {
             )
 
             // Try to instantiate the user's selected model first
-            let primaryService = Self.instantiateService(
-                for: selectedModelRaw,
-                entitlementStore: entitlementStore
-            )
+            let primaryService = Self.instantiateService(for: selectedModelRaw)
             var fallbackServices = Self.buildFallbackChain(excluding: selectedModelRaw)
 
             let resolvedService: LLMService
@@ -2570,7 +2554,7 @@ class RAGService: ObservableObject {
 
         let primaryKey = store.selectedModel.rawValue
         var primary: LLMService =
-            Self.instantiateService(for: primaryKey, entitlementStore: entitlementStore)
+            Self.instantiateService(for: primaryKey)
             ?? AppleFoundationLLMServiceUnavailable()
 
         var fallbacks: [LLMService] = []
@@ -2578,7 +2562,7 @@ class RAGService: ObservableObject {
 
         if store.enableFirstFallback {
             if let service = Self.instantiateService(
-                for: store.firstFallback.rawValue, entitlementStore: entitlementStore),
+                for: store.firstFallback.rawValue),
                 service.modelName != primary.modelName
             {
                 fallbacks.append(service)
@@ -2587,7 +2571,7 @@ class RAGService: ObservableObject {
 
         if store.enableSecondFallback {
             if let service = Self.instantiateService(
-                for: store.secondFallback.rawValue, entitlementStore: entitlementStore),
+                for: store.secondFallback.rawValue),
                 service.modelName != primary.modelName,
                 !fallbacks.contains(where: { $0.modelName == service.modelName })
             {
@@ -7155,54 +7139,6 @@ class RAGService: ObservableObject {
             return
         }
 
-        // Onboarding sample docs bypass quota — they're educational material
-        // that ships with the app, not user-generated content
-        let skipQuota = (context == .onboarding)
-
-        let gating = await MainActor.run { () -> (limit: Int, canAdd: Bool, tier: WorkspaceTier, count: Int) in
-            let count = self.documents.count
-            if let store = self.entitlementStore {
-                return (
-                    store.documentLimit, skipQuota || store.canAddDocument(currentCount: count), store.activeTier, count
-                )
-            } else {
-                // No entitlement store: an engine a Shortcuts or Siri action built while the app is closed
-                // (`IntentSupport.engine`). Until 5.7 this used the free plan's limit, so Add to Library refused
-                // a Pro or Lifetime library of five documents or more; it reads the plan and the document packs
-                // the app's store last saved (`EntitlementStore.savedDocumentAllowance`).
-                let saved = EntitlementStore.savedDocumentAllowance()
-                return (saved.limit, skipQuota || saved.isUnlimited || count < saved.limit, saved.tier, count)
-            }
-        }
-        let documentLimit = gating.limit
-        let currentDocumentCount = gating.count
-        if !gating.canAdd {
-            let quotaError = DocumentQuotaError(limit: documentLimit)
-            await MainActor.run {
-                self.lastError = quotaError.errorDescription
-            }
-            TelemetryCenter.emit(
-                .ingestion,
-                severity: .warning,
-                title: "Document quota reached",
-                metadata: [
-                    "file": filename,
-                    "limit": "\(documentLimit)",
-                    "currentCount": "\(currentDocumentCount)",
-                ]
-            )
-            TelemetryCenter.emitBillingEvent(
-                "Quota hit",
-                severity: .warning,
-                metadata: [
-                    "tier": gating.tier.rawValue,
-                    "limit": "\(documentLimit)",
-                    "currentCount": "\(currentDocumentCount)",
-                    "file": filename,
-                ]
-            )
-            throw quotaError
-        }
         let preExistingDocumentsInContainerCount = await MainActor.run {
             self.documentsForContainer(activeContainerId).count
         }
@@ -19613,10 +19549,7 @@ class RAGService: ObservableObject {
 
     /// Returns a configured service for the given settings key, if available.
     /// Simplified: only Apple Intelligence and On-Device Analysis are supported.
-    private static func instantiateService(
-        for modelKey: String,
-        entitlementStore _: EntitlementStore?
-    ) -> LLMService? {
+    private static func instantiateService(for modelKey: String) -> LLMService? {
         // Migrate deprecated model keys to supported types
         let effectiveKey = LLMModelType.isDeprecatedRawValue(modelKey) ? "apple_intelligence" : modelKey
 
@@ -22016,7 +21949,6 @@ enum RAGServiceError: LocalizedError {
     case routingAbstained
 
     case noRelevantContext
-    case maximumModeQuotaReached(limit: Int)
     case cloudConsentDenied(provider: CloudProvider)
     case cloudConsentUnavailable(provider: CloudProvider)
 
@@ -22037,8 +21969,6 @@ enum RAGServiceError: LocalizedError {
         case .rebuildBlockedByQueue(let blocked):
             return
                 "Could not rebuild the search index: \(blocked) document(s) are still being processed. Try again once the import queue is clear."
-        case .maximumModeQuotaReached(let limit):
-            return "Maximum mode is limited to \(limit) uses per day on the free tier"
         case .cloudConsentDenied(let provider):
             return "Cloud transmission denied for \(provider.shortName)"
         case .cloudConsentUnavailable(let provider):

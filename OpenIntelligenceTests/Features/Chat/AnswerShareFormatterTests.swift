@@ -154,6 +154,6 @@ final class AnswerShareFormatterTests: XCTestCase {
     func testAnAnswerMessageUsesTheTaggedAppStoreLink() {
         let answer = ChatMessage(role: .assistant, content: "Rent is late after the 5th.")
         let text = AnswerShareFormatter.shareText(for: answer)
-        XCTAssertTrue(text.hasSuffix(OpenIntelligenceLinks.sharedAppStoreURL.absoluteString), text)
+        XCTAssertTrue(text.hasSuffix(OpenIntelligenceLinks.projectURL.absoluteString), text)
     }
 }

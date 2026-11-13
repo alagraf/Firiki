@@ -13,7 +13,6 @@ struct ContainerSettingsSheet: View {
     @ObservedObject var containerService: ContainerService
     @ObservedObject var ragService: RAGService
     @EnvironmentObject var settings: SettingsStore
-    @EnvironmentObject private var entitlementStore: EntitlementStore
     @EnvironmentObject private var workspaceSyncService: WorkspaceSyncService
     @Environment(\.dismiss) var dismiss
     @State var name: String = ""
@@ -33,7 +32,6 @@ struct ContainerSettingsSheet: View {
     @State var providerAvailability: [String: Bool] = [:]
     @State var showingDBChangeConfirmation = false
     @State var pendingDBChange: VectorDBKind?
-    @State private var showingPlanSheet = false
     @State var showingDeleteConfirmation = false
     /// Why a delete did not happen, shown in an alert.
     ///
@@ -83,10 +81,6 @@ struct ContainerSettingsSheet: View {
         } else {
             return "This will permanently delete \"\(lib.name)\" only on this device, along with all \(docCount) document\(suffix) inside it. This cannot be undone."
         }
-    }
-
-    private var hasICloudSyncAccess: Bool {
-        entitlementStore.effectiveTier.isAtLeast(.pro)
     }
 
 
@@ -335,10 +329,6 @@ struct ContainerSettingsSheet: View {
                 if let message = reembedError {
                     Text(message)
                 }
-            }
-            .sheet(isPresented: $showingPlanSheet) {
-                PlanUpgradeSheet(entryPoint: .iCloudSync)
-                    .environmentObject(entitlementStore)
             }
             .alert("Library not deleted", isPresented: Binding(
                 get: { deleteError != nil },
@@ -627,15 +617,6 @@ let coreAIDetail = "The same all-MiniLM-L6-v2 weights as the Neural Engine optio
     private func handleSave() {
         guard var container = activeContainer else { return }
         let previousSyncMode = container.syncMode
-
-        if previousSyncMode != .iCloudShared,
-           syncMode == .iCloudShared,
-           !hasICloudSyncAccess
-        {
-            syncMode = previousSyncMode
-            showingPlanSheet = true
-            return
-        }
 
         let previousProvider = container.embeddingProviderId
         let previousDim = container.embeddingDim
