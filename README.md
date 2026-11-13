@@ -1,241 +1,279 @@
+<h1 align="center">🍎 Firiki (Φιρίκι)</h1>
+
 <p align="center">
-  <h1 align="center">🍎 Firiki (Φιρίκι)</h1>
-  <p align="center">
-    <strong>On-Device Greek Legal AI Assistant for iOS</strong>
-  </p>
-  <p align="center">
-    <em>A privacy-preserving, retrieval-augmented intelligence assistant for Greek labour law running entirely on-device.</em>
-  </p>
+  <strong>A private, on-device AI assistant for Greek labour law</strong><br>
+  <em>Answers, summaries, legal opinions and contract templates from your own legal documents, on an iPhone or Mac, with every claim tied to an article.</em>
 </p>
 
 <p align="center">
-  <img alt="Platform" src="https://img.shields.io/badge/Platform-iOS%2018%2B%20%7C%20macOS%2015%2B-blue?style=flat-square&logo=apple">
-  <img alt="Swift" src="https://img.shields.io/badge/Swift-6.0-orange?style=flat-square&logo=swift">
-  <img alt="Inference" src="https://img.shields.io/badge/Inference-100%25%20On--Device-success?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/Platforms-iOS%2026%2B%20%7C%20macOS%2026%2B-blue?style=flat-square&logo=apple">
+  <img alt="Model" src="https://img.shields.io/badge/Model-Apple%20Foundation%20Models%20(on--device)-black?style=flat-square">
+  <img alt="Status" src="https://img.shields.io/badge/Status-Proof%20of%20concept-orange?style=flat-square">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-purple?style=flat-square">
-  <img alt="Fork of" src="https://img.shields.io/badge/Forked%20from-OpenIntelligence-informational?style=flat-square">
 </p>
 
 ---
 
-## 📖 Overview
+## Why Firiki
 
-**Firiki** (named after the historic, small Pelion apple variety *φιρίκι*) is an open-source, on-device legal intelligence assistant for iPhone and iPad. Developed as a Master's thesis proof of concept, Firiki adapts local Retrieval-Augmented Generation (RAG) to the complex domain of **Greek labour law**—operating across codified statutes (the Hellenic Labour Code Π.Δ. 62/2025), newer amending statutes, ministerial decisions, and constitutional provisions.
+Lawyers and HR teams can't paste client files into a cloud chatbot, and general-purpose assistants
+handle Greek legal text poorly: they misread Greek scans, confuse article numbers between statutes,
+and answer confidently when the law doesn't say.
 
-While commercial cloud LLMs transmit sensitive user documents to external servers and frequently stumble over Greek legal terminology, statutory numbering, and Greek-alphabet OCR, **Firiki operates under strict zero-egress local constraints**:
-- **Zero Cloud Leakage:** Ingestion, OCR, translation, indexing, retrieval, multi-turn reasoning, and verification run 100% on Apple Silicon hardware.
-- **No Fine-Tuning Required:** Bridges pretrained open weights (PaddleOCR PP-OCRv5, Helsinki-NLP Opus-MT) with Apple's on-device foundation model through an evaluation-driven, modular pipeline.
-- **Strict Verification & Auditing:** Answers cite exact statutory articles and paragraphs, enforce numeric sanity, prune out-of-scope figures, and deterministically abstain when evidence is insufficient or points to unindexed jurisdictions.
+Firiki is built around those three problems:
+
+| Problem | What Firiki does |
+|---|---|
+| **Confidential documents** | Import, OCR, translation, search and answering all run on the device. Private Cloud Compute is not enabled in this build, cloud sync and remote web import are blocked, and the local stores are excluded from backups. |
+| **Greek-language documents** | Reads Greek PDFs, scans and photos with an on-device Greek OCR model (Apple's Vision OCR doesn't read Greek), and bridges to Apple's on-device model with on-device Greek↔English translation. |
+| **Trust** | Every answer cites the article and paragraph it comes from. A set of verification checks removes sentences the sources don't support, and the app refuses, in Greek, rather than guess when the evidence is weak or the question is about a law it doesn't hold. |
+
+It's an academic thesis proof of concept (scope: Greek labour law), built by extending the
+open-source [OpenIntelligence](https://github.com/Gunnarguy/OpenIntelligence) on-device RAG app.
 
 ---
 
-## ⚡ Key Capabilities & Fork Features
+## What it does
 
-Firiki extends the upstream [OpenIntelligence](https://github.com/Gunnarguy/OpenIntelligence) engine with domain-specific legal intelligence capabilities and specialized architectural components:
+| Capability | Example request | Result |
+|---|---|---|
+| **Questions over a legal library** | «Πόσες ημέρες άδεια πατρότητας δικαιούται ο εργαζόμενος;» | A Greek answer citing article and paragraph, searched across several statutes at once (Labour Code π.δ. 62/2025, Laws 5239/2025, 5278/2026, 5316/2026, Ministerial Decision 8934/2026). A question that names a law is searched in that law. |
+| **Statute summary** | «Σύνοψε το ν. 5278/2026» | An article-by-article summary of one imported law: purpose, key provisions, deadlines and amounts, each with its article. |
+| **Legal opinion** | «Θέλω γνωμοδότηση: ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;» | A structured opinion over several documents (question, applicable law, what each text provides, how they combine, conclusion), with amendments to the Labour Code detected automatically, and a not-legal-advice note. |
+| **Contract template** | «Ποιο υπόδειγμα σύμβασης ταιριάζει για τηλεργασία;» | The best of 10 bundled Greek employment-contract templates (indefinite, fixed-term, part-time, telework, apprenticeship…), with the reason and the relevant Labour Code articles, or "none fits". |
+
+All four work by typing in the normal chat (the request is recognised automatically), from the
+**Greek Legal AI** sheet in the chat, and from Siri / Shortcuts (`RouteLabourContractIntent`,
+`SummarizeStatuteIntent`, `GreekLegalOpinionIntent`).
+
+---
+
+## How it works
 
 ```
-[Greek Legal PDF / Photo / Scan]
-               │
-               ▼
-   [OCR Router & Deskewing]    ──────► (PaddleOCR PP-OCRv5 + Oriented TextLineBox Sampling)
-               │
-               ▼
-  [Structure-Aware Chunking]   ──────► (Statutory articles, numbered paragraphs & table rows)
-               │
-               ▼
-[Masker & Terminology Engine]  ──────► (Protects laws, ΦΕΚ citations, ELOT 743 names)
-               │
-               ▼
-   [On-Device Translation]     ──────► (INT8 Opus-MT el ↔ en with KV cache & Accelerate)
-               │
-               ▼
-   [Bilingual Hybrid Index]    ──────► (Dense vector on EN text + Greek BM25 keywords)
-               │
-               ▼
- [Reasoning & Verification]    ──────► (Apple Foundation Model + Statutory Isolation Gates)
-               │
-               ▼
-    [Four PoC Capabilities]    ──────► (Q&A · Statute Summary · Legal Opinion · Contract Routing)
+ Greek PDF · scan · photo
+          │
+          ▼
+ ① Read        Greek OCR (PaddleOCR PP-OCRv5 via ONNX Runtime), tilt-aware line boxes,
+               Gazette layout and reading order, header removal, hyphen rejoining
+          │
+          ▼
+ ② Structure   One passage per article paragraph, article title kept with each passage,
+               table rows kept intact, the document's statute identity recorded (e.g. LAW:5278/2026)
+          │
+          ▼
+ ③ Translate   Citations and names protected, then Greek→English with Opus-MT (INT8, on-device),
+               a legal glossary keeps terms consistent
+          │
+          ▼
+ ④ Search      Hybrid search: meaning (embeddings of the English text) + Greek keywords
+          │
+          ▼
+ ⑤ Answer      Apple's on-device foundation model drafts in English from the cited passages
+          │
+          ▼
+ ⑥ Verify      Checks A–I: sources, numbers, article citations, statute identity, foreign law;
+               unsupported sentences dropped, or a fixed Greek refusal
+          │
+          ▼
+ ⑦ Deliver     English→Greek translation, Greek wording repairs, official Greek terms restored;
+               the details card shows the English draft, models used and each check's result
 ```
 
-### 1. Four Core Proof-of-Concept Capabilities
+---
 
-Firiki implements four specialized legal workflows designed to assist legal professionals and HR administrators:
+## What this fork added
 
-1. **Multi-Document Statutory Q&A (5-Document Library)**:
-   - Query across multiple interacting statutes simultaneously: the Labour Code (Π.Δ. 62/2025), Law 5239/2025, Law 5278/2026, Law 5316/2026, and Ministerial Decision 8934/2026 (minimum wage).
-   - Features automatic named-statute query scoping, front-matter skipping, Gazette spatial reading order, and single-column vs. multi-column layout detection.
-2. **Legislative Statute Summarization (`GreekLegalDocumentSummarizer`)**:
-   - Generates structured, faithful summaries of entire statutes or decrees, detailing key provisions, deadlines, and figures with article citations.
-   - Built with a map-reduce architecture strictly sized for on-device 4,096-token windows. Article provisions are assembled deterministically in code (preventing LLM renumbering hallucinations), with each claim verified against statutory evidence. Handles texts without article divisions (such as ministerial decisions) via content partition chunks.
-3. **Multi-Document Legal Opinion Drafting (`GreekLegalOpinionWriter`)**:
-   - Synthesizes formal legal opinions analyzing how newer statutes interact with or supersede the Labour Code.
-   - Automatically detects statutory amendments ("τροποποιεί / αντικαθιστά άρθρο στον Κώδικα Εργατικού Δικαίου") directly from headings to prioritize latest statutory amendments over historical text.
-   - Structured into: *Question, Applicable Law, Statutory Provisions, Synthesis/Harmonization, and Conclusion* (with non-advice disclaimer).
-4. **Labour Contract Template Routing (`LabourContractTemplateRouter`)**:
-   - Given a natural-language hiring prompt in Greek or English (e.g., *"Χρειαζόμαστε σερβιτόρο μόνο για τη θερινή σεζόν"* or *"part-time teleworking accountant"*), dynamically matches the requirement to one of 10 bundled Greek labour contract templates (or abstains with `none`).
-   - Employs dynamic JSON schema decoding, safety guardrail retries (for minor/apprenticeship regulations), and dual-language keyword fallbacks.
-5. **Native App Intents & Siri Shortcuts**:
-   - Exposes `RouteLabourContractIntent`, `SummarizeStatuteIntent`, and `GreekLegalOpinionIntent` directly to iOS Shortcuts and Spotlight.
+Built on OpenIntelligence (upstream commit `a7276983`). The full record of every change, with the
+reason and how it was verified, is in [`Docs/Thesis/FORK_CHANGES.md`](Docs/Thesis/FORK_CHANGES.md).
+
+**New components**
+
+| Area | Component | Role |
+|---|---|---|
+| Legal capabilities | `Services/Legal/GreekLegalChatRouter` | Recognises a summary, opinion or template request in the chat and runs it |
+| | `GreekLegalDocumentSummarizer` | Statute summary in passes sized to the on-device context window |
+| | `GreekLegalOpinionWriter` | Opinion across several documents, amendment detection, Greek post-editing |
+| | `LabourContractTemplateRouter` + 10 templates in `Resources/LabourContractTemplates/` | Picks a contract template (model, with keyword fallback) |
+| Greek OCR | `Services/Document/OCR/GreekPaddleOCRService`, `OCRRouterService` | On-device Greek OCR and the choice between it and Apple Vision |
+| Greek ingestion | `Services/Document/Localization/GreekLegalStructureChunker`, `GreekLegalNotesChunker`, `GreekLegalQAChunker`, `GreekLegalDocumentClassifier`, `GreekLegalIngestion`, `PDFPage+Greek` | Statute structure, document type, statute identity, Greek PDF text |
+| Translation | `LocalNeuralTranslator`, `GreekLegalEntityMasker`, `SpelledNumber` | On-device Opus-MT el↔en with citation masking, glossary and pre/post-edits |
+| Verification | `Services/RAG/Safety/LegalVerificationPolicy`, `GreekLegalAnswerService`, `Retrieval/LegalCrossReferences` | Legal checks, Greek refusals, cross-references between articles |
+| Privacy | `Infrastructure/Configuration/StrictLocalControlGuard` | Blocks backups, cloud sync, web import and Private Cloud Compute |
+| Interface | `Features/Chat/Response/GreekLegalAssistantSheet`, `GreekLegalReviewCard` | The Greek Legal AI sheet and the answer's legal review card |
+| Evaluation | `OpenIntelligenceTests/Services/GreekLegal/` (10 suites), `Benchmarks/Greek*`, `Benchmarks/LabourContractTemplates`, `scripts/thesis/` | Unit tests, benchmark sets and the evaluation harness |
+
+**Changes to the original app**
+
+- **Ingestion** (`DocumentProcessor`, `StructuredDocumentParser`): Greek pages routed to the Greek
+  OCR, Greek legal chunking, translation at import, table rows kept, single-column detection.
+- **Retrieval and answering** (`RAGService`, `QueryRuntimeCoordinator`, `VerificationGateService`):
+  Greek legal mode, search by named law, on-device context budget whenever cloud compute is off,
+  the original medical domain-isolation rules replaced by the legal statute-isolation check.
+- **Chat and app** (`ChatScreen`, `GroundedAnswerView`, `ResponseDetailsView`, `RAGAppIntents`):
+  in-chat routing of the four capabilities, legal review card, three new App Intents.
+- **Repository**: the original author's release process, agent rules and Notion sync removed;
+  thesis agent rules in `AGENTS.md`.
 
 ---
 
-### 2. Specialized Engine & Infrastructure Components
+## Results
 
-#### Hybrid On-Device Greek OCR Router & Tilted Scan Deskewing
-Apple Vision OCR natively lacks support for the Greek alphabet. Firiki incorporates `OCRRouterService` and `GreekPaddleOCRService`:
-- Runs **PaddleOCR PP-OCRv5** (DB text detector and Greek recognizer via ONNX Runtime) directly on the device.
-- **Oriented Line Bounding Boxes (`TextLineBox`)**: Rather than axis-aligned rectangles that take in parts of adjacent lines on crooked scans, Firiki computes bounding boxes along the line's principal axis and uses bilinear sampling. On tilted scans (±1.5°–2.5°), word recall improves from **48% to 96%**, matching clean pages (and reaching **98%** on full scanned PDFs).
-- Automated pre- and post-processing: NFKC Unicode normalization, Greek homoglyph repair (correcting Latin look-alikes like `ΦΕΚ A'`), hyphenation rejoining across line wraps, and Gazette running header removal.
+Measured on official Greek texts, 28–30 October 2026, in the iOS 27 Simulator on an M3 Pro Mac with
+Apple's on-device model (AFM 3 Core Advanced, 8,192-token window).
 
-#### Legislative Structure-Aware Chunking & Table Preservation
-Generic token-based chunking breaks legal articles arbitrarily across token bounds. Firiki implements a specialized legal parser:
-- **Statutory Article & Paragraph Chunking**: Splits statutes strictly along legal boundaries (one chunk per numbered paragraph), embedding the parent article title into every chunk to preserve legislative context.
-- **Table Row Preservation**: Detects tabular schedules (such as severance pay brackets in Labour Code Art. 333) and keeps rows intact without line concatenation, preventing cross-row figure mixing during translation and retrieval.
+| Task | Result | Starting point |
+|---|---|---|
+| Greek OCR, share of words read (10 pages: clean / scanned / photographed) | **96% / 96% / 96%** | Apple Vision 5%; scans 48% before tilt-aware line boxes |
+| Greek OCR, whole scanned PDF | **98%** of words | 62% |
+| Greek Constitution, 10 questions | **9 of 10** (right article found 10 of 10); 8 of 10 in later runs | 6 of 10 |
+| Labour Code, development set (46 questions) | **38 of 46**; 5 of 5 out-of-scope questions refused | 24 of 46 |
+| Labour Code, test set (23 questions, full 260-page Code) | **15 of 23**; 3 of 3 refused | 11 of 23 |
+| Five-document library (development 24 / test 12) | **14 of 24 / 6 of 12** | 13 of 24 |
+| Contract template choice (development 44 / test 22, half in Greek) | **43 of 44 / 20 of 22** | keywords alone: 26 of 44 / 8 of 22 |
+| Statute summary, Law 5278/2026 | **5 of 6** key provisions, 3 of 3 articles cited | 2 of 6, 0 of 3 |
+| Legal opinion (development 6 / test 4) | citations **10 of 12 / 3 of 8**; key facts **11 of 20 / 7 of 10** | — |
+| Independent EU labour-law set, never tuned on (16 questions × 3 language conditions, graded by hand, two runs) | **38 of 39** answerable right and **9 of 9** unanswerable refused, in each run | Original app, all-Greek condition: 0 of 13 answered in Greek, 0 of 3 refused |
 
-#### Translation-Bridged Bilingual Architecture
-Apple's on-device foundation model operates with highest accuracy in English. Firiki provides a bidirectional translation bridge:
-- **Quantized Opus-MT**: Compact INT8 `el↔en` and `en↔el` models with a decoder key/value cache and Accelerate-backed argmax, reducing full 260-page Code import times from 29 minutes to 15 minutes.
-- **Legal Entity & Citation Masking**: Protects statutory citations (laws, presidential decrees, Gazette / ΦΕΚ issues, court decisions) with canonical placeholders before translation to prevent corruption.
-- **ELOT 743 Transliteration**: Greek proper names are systematically transliterated rather than mistakenly translated.
-- **Bilingual Legal Glossary**: Enforces consistent terminology during indexing and restores authentic Greek statutory wording (e.g., ensuring official phrasing in dismissal or leave provisions).
+How to read these numbers:
+- Each figure is a single run. The model's drafts vary between runs: 2 to 8 of the 46 Labour Code
+  development questions flip between runs, so a difference of 1–3 questions isn't meaningful.
+- "Starting point" is the first measurement of this fork, except where it names Apple Vision or the
+  original app.
+- A few Labour Code test questions shaped refusal rules during development, so it's a test split
+  rather than a clean held-out set. [`Docs/Thesis/EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md)
+  lists which.
+- Later refinements (31 October, 9 November 2026: chunking, translation wording, refusals) were
+  checked with unit tests and in the Mac app, but the figures above weren't re-measured.
+- Nothing has been measured on a physical iPhone yet (speed, memory, answer quality).
 
-#### Statutory Verification Gates & Strict Abstention
-- **Document Statutory Identity (`documentStatuteKey`)**: Passages record their statutory origin (e.g., `PD:62/2025`, `CONST`, `LAW:5278/2026`). Questions asking about unindexed statutes (e.g., asking about Article 16 of the Constitution in a Labour Code library) are refused prior to generation.
-- **Verification Gates (A–I)**: Every draft answer is audited for numeric sanity (Gate C), statutory citations (Gate F), and source alignment (Gate B).
-- **Off-Topic Figure Pruning**: If an extraneous figure from an adjacent passage appears, it is pruned without rejecting the valid cited answer.
-- **Deterministic Greek Abstention**: Refuses gracefully when evidence is weak or out of scope.
-- **Auditable Response Details**: Full transparency into intermediate English drafts, active models, and gate telemetry.
-
-#### Strict Local Privacy Guardrails
-- Enforces thesis requirements R1.1–R1.4 via `StrictLocalControlGuard`: excludes local stores from device backup (`isExcludedFromBackup`), disables cloud sync (`WorkspaceSyncService`), and blocks outbound remote web fetching.
+Full records: [`EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md),
+[`METHODS_SUMMARY.md`](Docs/Thesis/METHODS_SUMMARY.md), [`FORK_CHANGES.md`](Docs/Thesis/FORK_CHANGES.md).
 
 ---
 
-## 🛠️ Installation Instructions
+## Setup
 
-### Prerequisites
-- **macOS Sequoia (15.0+)** with **Xcode 16.0+**
-- **iOS 18+** / iOS Simulator (Apple Silicon Mac recommended)
-- **Python 3.10+** (used once to prepare quantized ONNX translation weights)
+### Requirements
 
-### Step 1: Clone the Repository
+- An Apple-silicon Mac with **Xcode 27** (iOS 27 / macOS 27 SDK) and Python 3 (once, for the
+  translation models).
+- To get answers: **Apple Intelligence turned on**, on the Mac (macOS 26 or later) or an Apple
+  Intelligence iPhone (iOS 26 or later). Apple Intelligence doesn't support Greek as the system
+  language, so keep the device language English; documents and questions can be in Greek.
+- About 3 GB of free disk space for the model preparation step.
+
+### 1. Clone
+
 ```bash
 git clone https://github.com/alagraf/Firiki.git
+```
+
+```bash
 cd Firiki
 ```
 
-### Step 2: Fetch and Prepare Translation Weights
-Firiki uses quantized INT8 Helsinki-NLP Opus-MT models for on-device translation. Run the automated setup script:
+### 2. Prepare the translation models (once)
+
+The Greek↔English Opus-MT models (about 700 MB) aren't stored in git. This script downloads
+`opus-mt-tc-big-el-en` and `opus-mt-tc-big-en-el` from Hugging Face, converts them to INT8 ONNX and
+puts them in `OpenIntelligence/Resources/MLModels/Translation/`:
+
 ```bash
-chmod +x scripts/thesis_fetch_translation_models.sh
 ./scripts/thesis_fetch_translation_models.sh
 ```
-*This downloads `opus-mt-tc-big-el-en` and `opus-mt-tc-big-en-el`, applies INT8 quantization with KV-cache export, and places the compiled assets in `OpenIntelligence/Resources/MLModels/Translation/` (~730 MB).*
 
-### Step 3: Verify Model Assets
-Ensure the Greek OCR and translation models exist in the resources directory:
-```bash
-ls -la OpenIntelligence/Resources/MLModels/GreekOCR/
-# Expected: PP-OCRv5_mobile_det.onnx, el_PP-OCRv5_mobile_rec.onnx, el_dict.txt
+The Greek OCR models (12 MB) are already in `OpenIntelligence/Resources/MLModels/GreekOCR/`.
 
-ls -la OpenIntelligence/Resources/MLModels/Translation/
-# Expected: encoder, decoder_step, decoder_cross, and tokenizer files
-```
+### 3. Build and run
 
-### Step 4: Build the Project
-To run a headless smoke build on the simulator:
-```bash
-bash scripts/build_simulator_smoke.sh
-```
-Or open in Xcode:
 ```bash
 open OpenIntelligence.xcodeproj
 ```
-Select the **OpenIntelligence** scheme and target your connected iOS device or iOS Simulator.
 
----
+Choose the **OpenIntelligence** scheme, then **My Mac** (recommended for demos) or a connected
+iPhone, and run. No API keys or `.env` file are needed: nothing calls a server.
 
-## 🚀 Usage
+A command-line build check (iOS Simulator, iPhone 18 Pro by default; set
+`OPENINTELLIGENCE_SIMULATOR_DESTINATION` to change it):
 
-### 1. Ingesting Greek Legal Documents
-1. Launch Firiki on your device or simulator.
-2. Tap **Add to Library** to import Greek statutory texts (Labour Code PDF, Gazette issues, or scanned contracts).
-3. The live pipeline will display:
-   - Dynamic routing to **PaddleOCR** with line-angle deskewing for scans.
-   - Statutory article/paragraph chunking and table row preservation.
-   - Background translation via **Opus-MT**.
-
-### 2. Querying Legal Provisions & Statutes
-Ask questions in natural Greek:
-- *"Ποιες είναι οι προϋποθέσεις για τη χορήγηση άδειας πατρότητας;"*
-- *"Ποια είναι η νόμιμη προθεσμία προειδοποίησης για απόλυση υπαλλήλου με 5 έτη υπηρεσίας;"*
-- *"Τι προβλέπει ο ν. 5278/2026 για την ψηφιακή κάρτα εργασίας;"*
-
-Answers cite exact articles and paragraphs, with clickable excerpts.
-
-### 3. Summaries, Opinions & Contract Routing
-- **Statute Summarization**: Select a statute and trigger "Summarize Statute" (or use Shortcuts) to receive an article-by-article synthesis of rules, deadlines, and figures.
-- **Legal Opinion Drafting**: Submit a multi-statute scenario to receive a structured memorandum analyzing applicable laws, statutory conflicts, and legal conclusions.
-- **Contract Template Routing**: Submit a prompt (e.g., *"Θέλουμε να προσλάβουμε υπάλληλο γραφείου για 3 ημέρες την εβδομάδα με τηλεργασία"*) to receive the recommended contract template from the 10 bundled templates.
-
-### 4. Running Thesis Benchmarks & Evaluations
-Firiki contains automated evaluation suites across all capabilities:
 ```bash
-# Greek legal unit tests
-./scripts/thesis_run_tests.sh /tmp/thesis_test.log -only-testing:OpenIntelligenceTests/GreekLegalPipelineTests
-
-# Tilted OCR benchmark (clean, scan, photo)
-TEST_RUNNER_OI_OCR_BENCH=1 ./scripts/thesis_run_tests.sh /tmp/ocr_bench.log -only-testing:OpenIntelligenceTests/GreekOCRBenchmarkTests
-
-# Labour contract template routing evaluation (dev/test splits)
-TEST_RUNNER_OI_TEMPLATE_ROUTING=1 TEST_RUNNER_OI_TEMPLATE_ROUTING_SPLIT=test ./scripts/thesis_run_tests.sh /tmp/routing.log -only-testing:OpenIntelligenceTests/LabourContractTemplateRoutingEvaluation
-
-# Legislative statute summarization evaluation
-TEST_RUNNER_OI_GREEK_SUMMARY=1 TEST_RUNNER_OI_GREEK_SUMMARY_SPLIT=dev ./scripts/thesis_run_tests.sh /tmp/summary.log -only-testing:OpenIntelligenceTests/GreekLegalSummaryEvaluation
-
-# Multi-document legal opinion evaluation
-TEST_RUNNER_OI_GREEK_OPINION=1 TEST_RUNNER_OI_GREEK_OPINION_SPLIT=dev ./scripts/thesis_run_tests.sh /tmp/opinion.log -only-testing:OpenIntelligenceTests/GreekLegalOpinionEvaluation
+bash scripts/build_simulator_smoke.sh
 ```
 
----
+If a build fails for no clear reason, check for iCloud duplicate files (the repository may live in
+an iCloud-synced folder):
 
-## 📊 Empirical Evaluation (Thesis Summary)
+```bash
+bash scripts/check_icloud_conflicts.sh
+```
 
-Tested on official Greek statutory corpora (Labour Code Π.Δ. 62/2025, Greek Constitution, amending laws, and parallel EU directives) in the iOS Simulator with Apple's on-device foundation model:
+### 4. Try it
 
-| Task / Metric | Baseline (Upstream) | Firiki (This Fork) | Notes |
-|---|---|---|---|
-| **OCR Word Recall (Clean & Photo)** | 5.0% (Vision) | **96.0%** (PaddleOCR) | Evaluated on Greek statute pages |
-| **OCR Word Recall (Tilted Scans)** | 5.0% (Vision) | **96.0%** (PaddleOCR) | Improved from 48% with oriented bounding boxes |
-| **OCR Recall on Full Scanned PDF** | ~5% | **98.0%** (words), **96.0%** (citations) | Whole-document import |
-| **Constitution QA (10 Qs)** | 6 / 10 | **9 / 10** (10/10 retrieval) | Single-statute legal questions |
-| **Labour Code Full Code (260 pages, 23 Qs)** | 11 / 23 (excerpt: 24/46) | **15 / 23** | Answerable: 12/20; right article retrieved 18/20 |
-| **Statutory Abstention / Refusal** | 0% (answers hallucinatory) | **3 / 3 (100%)** on Full Code | Correctly refuses off-statute questions (e.g. Case 69) |
-| **Contract Template Routing (66 prompts)** | N/A | **43 / 44** dev (97.7%), **20 / 22** test (90.9%) | Bilingual prompts; keywords alone: 26/44, 8/22 |
-| **5-Document Library Q&A (36 Qs)** | N/A | **14 / 24** dev, **6 / 12** test | Multi-statute cross-retrieval |
-| **Statute Summary (Law 5278/2026)** | N/A | **5 / 6** provisions, **3 / 3** articles | 0 dropped sentences |
-| **Legal Opinion Citations & Facts** | N/A | Dev: **10 / 12** citations, **11 / 20** facts | Test: 3/8 citations, 7/10 facts |
-| **EU Directives Holdout (Final Hand Grade)** | 0 / 13 in Greek (9 in EN) | **38 / 39 (97.4%)** correct, **9 / 9 (100%)** refused | Evaluated over two hand-graded runs across all conditions |
-
-*For full experimental records, ablations, and error analyses, refer to [`Docs/Thesis/EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md), [`Docs/Thesis/METHODS_SUMMARY.md`](Docs/Thesis/METHODS_SUMMARY.md), and [`Docs/Thesis/FORK_CHANGES.md`](Docs/Thesis/FORK_CHANGES.md).*
+1. In **Documents**, import the Greek laws in `Benchmarks/GreekLabourLibrary/` and the Labour Code
+   (`Benchmarks/GreekLabourCode/pd_62_2025_fek_a121.pdf`), or your own PDFs, scans or photos. Translation runs at import; import a large statute before a demo, since the
+   full 260-page Labour Code takes about 15 minutes.
+2. In **Chat**, ask a question in Greek, or a summary, opinion or template request like the
+   examples in [What it does](#what-it-does).
+3. Open an answer's details to see the sources, the English draft and the verification result.
 
 ---
 
-## ⚖️ Credits & Acknowledgements
+## Tests and evaluations
 
-Firiki is developed by **Alexandros Agrafiotis** as part of an academic thesis exploring privacy-preserving, on-device Retrieval-Augmented Generation for specialized legal domains.
+The unit tests run in the iOS Simulator. `scripts/thesis_run_tests.sh` builds once, runs the
+selected suites and stops `xcodebuild` cleanly. `-only-testing:` must name the suite struct (for
+example `GreekLegalVerificationTests`), not the file (`GreekLegalPipelineTests.swift` holds several
+suites), or the tests silently don't run.
 
-### Upstream Foundation
-Firiki is built upon and extends **[OpenIntelligence](https://github.com/Gunnarguy/OpenIntelligence)**, originally created by **[Gunnar Hostettler](https://github.com/Gunnarguy)**. We gratefully acknowledge OpenIntelligence's pioneering architecture for on-device vector indexing, hybrid BM25 search, and offline Apple Silicon execution.
+```bash
+./scripts/thesis_run_tests.sh /private/tmp/greek_tests.log -only-testing:OpenIntelligenceTests/GreekLegalVerificationTests -only-testing:OpenIntelligenceTests/StrictLocalControlGuardTests -only-testing:OpenIntelligenceTests/GreekLegalOpinionTests -only-testing:OpenIntelligenceTests/GreekLegalSummaryTests -only-testing:OpenIntelligenceTests/GreekLegalChatRouterTests -only-testing:OpenIntelligenceTests/LabourContractTemplateTests
+```
 
-### Pretrained Models & Frameworks
-- **[PaddlePaddle / PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)**: Lightweight text detection and Greek character recognition models (PP-OCRv5).
-- **[Helsinki-NLP (Opus-MT)](https://huggingface.co/Helsinki-NLP)**: Bilingual Greek↔English transformer models.
-- **[ONNX Runtime](https://onnxruntime.ai/)**: High-performance mobile neural network execution engine.
+The benchmark evaluations need Apple Intelligence on the Mac and are switched on by environment
+variables, for example:
+
+```bash
+TEST_RUNNER_OI_TEMPLATE_ROUTING=1 TEST_RUNNER_OI_TEMPLATE_ROUTING_SPLIT=test ./scripts/thesis_run_tests.sh /private/tmp/routing.log -only-testing:OpenIntelligenceTests/LabourContractTemplateRoutingEvaluation
+```
+
+Others: `TEST_RUNNER_OI_OCR_BENCH=1` (`GreekOCRBenchmarkTests`), `TEST_RUNNER_OI_GREEK_SUMMARY=1`
+(`GreekLegalSummaryEvaluation`), `TEST_RUNNER_OI_GREEK_OPINION=1` (`GreekLegalOpinionEvaluation`),
+each with a `…_SPLIT=dev|test` variable.
 
 ---
 
-## 📜 Disclaimer
+## Known limitations
 
-Firiki is an academic research proof of concept and is intended for research and informational purposes only. It does not provide certified legal advice. Always consult official publications of the Hellenic Government Gazette (*Εφημερίδα της Κυβερνήσεως*) and qualified legal counsel for binding legal interpretations.
+- Proof of concept for Greek labour law only. Not legal advice, and not a product.
+- Not yet measured on a physical iPhone. The smaller on-device model of older iPhones (4,096-token
+  window) wasn't used in any evaluation.
+- Answers vary between runs, as the model's drafts do.
+- Translation is the weakest stage: some Greek wording is repaired by fixed rules, and new phrasings
+  can still read unnaturally.
+- A question naming a law without its year («ν. 5239») may not be matched to that law.
+
+More in [`METHODS_SUMMARY.md` §9](Docs/Thesis/METHODS_SUMMARY.md).
+
+---
+
+## Credits
+
+Firiki is developed by **Alexandros Agrafiotis** as an academic thesis on private, on-device
+retrieval-augmented generation for specialised legal domains.
+
+- **[OpenIntelligence](https://github.com/Gunnarguy/OpenIntelligence)** by Gunnar Hostetler: the
+  on-device RAG app this project extends (document import, vector index, hybrid search, answer
+  verification).
+- **[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)**: PP-OCRv5 text detection and Greek
+  recognition models.
+- **[Helsinki-NLP Opus-MT](https://huggingface.co/Helsinki-NLP)**: Greek↔English translation models.
+- **[ONNX Runtime](https://onnxruntime.ai/)**: on-device execution of the OCR and translation models.
+
+Released under the MIT License (see [`LICENSE`](LICENSE)).
+
+## Disclaimer
+
+Firiki is a research prototype for research and information only. It doesn't give legal advice.
+Rely on the official Government Gazette (*Εφημερίδα της Κυβερνήσεως*) and qualified counsel for any
+legal decision.

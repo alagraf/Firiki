@@ -2031,3 +2031,29 @@ excluded): `Test run with 119 tests in 20 suites passed`, `** TEST SUCCEEDED **`
 - The two empty ya_8934 copies in the «Γνωμοδότηση» library were not deleted (the owner's data);
   sources with no passages are never chosen, so they don't change the opinion.
 - The thesis screenshots (Figs. 6.5–6.7) were not retaken.
+
+## 13 Nov 2026: README for the company demo; commit identity
+
+**Why:** the repository is being shown to a company CEO. The README was written before the PoC
+work ended and had several claims the records don't support (a 0% "upstream" refusal baseline, the
+fork's own first runs labelled as the original app, "Master's thesis", iOS 18 / Swift 6 / Xcode 16
+requirements, a test command naming suites that don't exist).
+
+**What:**
+- `README.md` rewritten: what the app does and why (privacy, Greek documents, verified answers),
+  the four capabilities with example requests, the pipeline, the components this fork added and
+  the original code it changed, the results table taken from `METHODS_SUMMARY.md` §8 with how to
+  read it (single runs, run-to-run variation, test split not fully held out, not re-measured after
+  31 Oct / 9 Nov, no iPhone measurement), setup for Xcode 27 with Apple Intelligence and an English
+  system language, the Mac as the demo target, test commands with real suite names, known
+  limitations and credits.
+- Commit identity: the owner's commits on all local branches were rewritten from the machine's
+  host-name address to the GitHub account `alagraf` (noreply address), and the global git identity
+  set to it. File contents unchanged (tree of the branch tip identical before and after); the
+  original author's commits untouched. Backup refs: `refs/backup/pre-identity-rewrite/*`.
+- `.gitignore`: `node_modules/`, `Docs/Thesis/code_backup_*/`, `/thesis_v8_notes.md` (private
+  review notes; the repository is public).
+
+**Verification:** every README figure checked against `METHODS_SUMMARY.md` §8; suite names checked
+with `grep` in `OpenIntelligenceTests/`; model sizes with `du`; deployment targets in
+`project.pbxproj`. No code changed, nothing built or run.
