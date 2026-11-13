@@ -296,3 +296,7 @@ OpenIntelligence/Resources/MLModels/Translation/
 
 # Node dependencies (none today; guard against accidental commits from tooling)
 node_modules/
+
+# Local-only thesis material: pre-edit code copies (already in history) and private draft review notes
+Docs/Thesis/code_backup_*/
+/thesis_v8_notes.md
