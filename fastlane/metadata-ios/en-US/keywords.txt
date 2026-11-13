@@ -1,1 +1,0 @@
-ai,llm,pdf,private,local,apple,intelligence,document,search,summarize,ocr,transcribe,research,manual
