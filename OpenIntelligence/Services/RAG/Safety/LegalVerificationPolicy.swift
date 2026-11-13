@@ -126,6 +126,8 @@ nonisolated enum LegalVerificationPolicy {
         for retrieved in chunks {
             let chunk = retrieved.chunk
             keys.formUnion(chunk.legal?.canonicalKeys ?? [])
+            if let primary = chunk.legal?.primaryStatuteKey { keys.insert(primary) }
+            if let document = chunk.legal?.documentStatuteKey { keys.insert(document) }
             keys.formUnion(GreekLegalEntityMasker.canonicalKeys(in: chunk.content))
             if let parent = chunk.parentContent { keys.formUnion(GreekLegalEntityMasker.canonicalKeys(in: parent)) }
             if let source = chunk.sourceTextEl { keys.formUnion(GreekLegalEntityMasker.canonicalKeys(in: source)) }
@@ -141,8 +143,15 @@ nonisolated enum LegalVerificationPolicy {
             .map(\.canonicalKey)
         guard !answerKeys.isEmpty else { return [] }
         let evidence = evidenceKeys(chunks)
+        func isSupported(_ key: String) -> Bool {
+            if evidence.contains(key) { return true }
+            if key.hasPrefix("LAW:") || key.hasPrefix("PD:") || key.hasPrefix("MD:") {
+                return evidence.contains { ($0.hasPrefix("LAW:") || $0.hasPrefix("PD:") || $0.hasPrefix("MD:")) && sameStatute($0, key) }
+            }
+            return false
+        }
         var seen = Set<String>()
-        return answerKeys.filter { !evidence.contains($0) && seen.insert($0).inserted }
+        return answerKeys.filter { !isSupported($0) && seen.insert($0).inserted }
     }
 
     // MARK: Gate I

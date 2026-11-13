@@ -8,12 +8,11 @@ not support and changes that were dropped. The result lines of each run are kept
 `FORK_CHANGES.md`; the high-level results table is in `METHODS_SUMMARY.md`.
 
 **Conventions.**
-- All runs are in the iOS 27 Simulator on an M3 Mac, with Apple's on-device model, greedy decoding.
+- All runs are in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB), with Apple's on-device model (`AFM 3 Core Advanced`, 8,192-token window), greedy decoding.
+- All benchmark numbers and run logs in `experiments/runs/` come from the 29–30 October 2026 runs (up to commit `e85ae0cc` / `ffff0241`), prior to the 31 October post-evaluation refinements (`2af92e2e`–`f10190e1`, which updated `Αρ.` entity masking, worker-origin foreign-jurisdiction checks, whole-word passage overlap, spelled-number fraction filtering, long-segment translation splitting, OCR benchmark line-end dehyphenation, and context-aware chunking / in-chat routing).
 - "Dev" is tuned on; "test" is run once per milestone and never tuned on. The EU holdout is
   evaluation only (AGENTS.md step 5): only its counts are recorded.
-- Run-to-run variation: on the Labour Code dev split (46), 2 to 8 questions flip between pass and
-  fail across runs of the same code. On the 24-question library dev split, 2 to 3 flips per run
-  were seen. A difference of 1–3 questions in one run is within this variation.
+- Run-to-run variation: on the Labour Code dev split (46), identical-code runs (`labour15` and `labour16`) differed on 1 question (Case 31), while across development iterations 2 to 8 questions flipped between pass and fail. On the 24-question library dev split, 2 to 3 flips per run were seen. A difference of 1–3 questions in one run is within this variation.
 - A per-case table lists only the questions whose result changed.
 
 ## Earlier experiments (2026-10-28 to 2026-10-30, before the PoC capabilities)

@@ -293,3 +293,6 @@ default.profraw
 
 # Thesis fork: Opus-MT ONNX models (~225 MB), made by scripts/thesis_fetch_translation_models.sh
 OpenIntelligence/Resources/MLModels/Translation/
+
+# Node dependencies (none today; guard against accidental commits from tooling)
+node_modules/

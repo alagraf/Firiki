@@ -1149,7 +1149,9 @@ class DocumentProcessor {
             case .generic:
                 processedChunks = []
             }
-        } else if usedStructuredParsing && !structuredElements.isEmpty {
+        }
+        if jsonRecordPassages == nil, processedChunks.isEmpty {
+            if usedStructuredParsing && !structuredElements.isEmpty {
             // HUD telemetry: Chunking is CPU-intensive NaturalLanguage processing
             Task { @MainActor in
                 HardwareTelemetryState.shared.pulse(.textChunking, intensity: 0.75, duration: 0.4)
@@ -1247,6 +1249,7 @@ class DocumentProcessor {
                 return ProcessedChunk(text: chunk.content, parentText: chunk.parentContent, metadata: metadata)
             }
             emitProgress(stage: "chunking", detail: "✅ Created \(processedChunks.count) semantic chunks", page: nil, totalPages: nil)
+            }
         }
 
         let chunkedCounts = await Self.ledgerCounts(processedChunks.map(\.text))

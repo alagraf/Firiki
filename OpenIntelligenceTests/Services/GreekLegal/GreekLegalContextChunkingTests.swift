@@ -43,6 +43,21 @@ struct GreekLegalContextChunkingTests {
         #expect(result?.kind == .statute)
     }
 
+    @Test func unarticledGazetteDecisionFallsBackToGenericChunking() {
+        let ministerialDecision = """
+        ΕΦΗΜΕΡΙΔΑ ΤΗΣ ΚΥΒΕΡΝΗΣΕΩΣ
+        ΤΗΣ ΕΛΛΗΝΙΚΗΣ ΔΗΜΟΚΡΑΤΙΑΣ
+        Τεύχος Β’ 1759/27.03.2026
+        ΑΠΟΦΑΣΕΙΣ
+        Αριθμ. 8934
+        Καθορισμός νόμιμου κατώτατου μισθού και νόμιμου κατώτατου ημερομισθίου.
+        α) Για τους υπαλλήλους ο κατώτατος μισθός ορίζεται στα εννιακόσια είκοσι ευρώ (920,00 €).
+        β) Για τους εργατοτέχνες το κατώτατο ημερομίσθιο ορίζεται σε σαράντα ένα ευρώ και εννέα λεπτά (41,09 €).
+        """
+        let result = GreekLegalDocumentClassifier.classifyByRules(text: ministerialDecision, filename: "ya_8934_2026_fek_b1759.pdf")
+        #expect(result?.kind == .generic)
+    }
+
     @Test func classifiesQADocumentInGreekAndEnglish() {
         let greekQAText = """
         Συχνές Ερωτήσεις για τα Εργασιακά Δικαιώματα

@@ -332,3 +332,10 @@ unchanged (2.11.31); owner's hand grade 38 of 39 right, 9 of 9 refused (as on 20
   a lawyer, adapted to the collective agreement). No test reads that line (checked 2026-10-31).
   Leave the thesis records that say who drafted the templates (`Benchmarks/LabourContractTemplates/README.md`,
   FORK_CHANGES 2.11.26) as they are, since they document the method.
+
+## Native macOS Greek PDF verification (2026-11-01)
+- [x] **Run digital and scanned Greek PDFs through the native macOS app (`OpenIntelligence.app`, `platform=macOS`).**
+  - Fixed unarticled Gazette fallback in `GreekLegalDocumentClassifier.swift` and `DocumentProcessor.swift` (FORK_CHANGES 2.11.34).
+  - Fixed native macOS `.onDeviceOnly` context budget in `QueryRuntimeCoordinator.swift` when `StrictLocalControlGuard.canUsePCC()` is false.
+  - Fixed Gate F `documentStatuteKey` / `sameStatute` matching in `LegalVerificationPolicy.swift`.
+  - Verified end-to-end on macOS with `ya_8934_2026_fek_b1759.pdf` (37 chunks, Opus-MT translation, 8,192-token local budget, verified Greek answer) and `scan_page_p04.pdf` (PP-OCRv5 ONNX OCR, 22 chunks, Opus-MT translation, verified Greek answer).

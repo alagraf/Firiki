@@ -59,6 +59,25 @@ nonisolated enum LabourContractTemplateRouter {
     /// The answer when no template fits (a question about pay or leave, another kind of contract).
     static let noTemplate = "none"
 
+    /// The reason shown in a Greek answer, written by the program from the chosen template: the
+    /// model's one-sentence reason is English, and it was shown in English in a Greek answer
+    /// (9 Nov 2026).
+    static func greekReason(for template: LabourContractTemplate) -> String {
+        let description = template.descriptionEl.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "Το αίτημα ταιριάζει στο υπόδειγμα «\(template.titleEl)»" + (description.isEmpty ? "." : ": " + description)
+    }
+
+    /// A visible blank for a field the user fills in.
+    static let blank = "………"
+
+    /// The template as shown in the chat: a placeholder glued to its preposition
+    /// («Στ{{place_of_signing}}», «στ{{workplace}}», where the article's ending depends on the
+    /// place) becomes a visible blank («Στ………»); the other fields keep their `{{names}}`, which say
+    /// what goes where.
+    static func displayedBody(_ template: LabourContractTemplate) -> String {
+        template.body.replacingOccurrences(of: #"(?<=\p{L})\{\{[a-z_]+\}\}"#, with: blank, options: .regularExpression)
+    }
+
     /// The templates shipped in the app (`NN_<id>.md`), in their numbered order.
     static func bundledTemplates(bundle: Bundle = .main) -> [LabourContractTemplate] {
         let urls = (bundle.urls(forResourcesWithExtension: "md", subdirectory: nil) ?? [])

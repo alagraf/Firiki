@@ -66,10 +66,26 @@ struct GreekLegalSummaryTests {
         #expect(cleaned.map(\.article) == ["8", "8", "9"], "\(cleaned)")
         #expect(cleaned[0].text == "The normative terms continue for three (3) months after expiry.")
         #expect(cleaned[1].text == "after the three months all normative terms continue until a new agreement.")
-        #expect(cleaned[2].text.hasPrefix("extension needs") && cleaned[2].text.count <= GreekLegalDocumentSummarizer.noteLineCharacters + 1)
-        #expect(cleaned[2].text.hasSuffix("…") && cleaned[2].text.contains("(40%)"))
+        // 307 characters: under `maxNoteLineCharacters`, so kept whole (9 Nov 2026: cut at 230 it
+        // ended in «…»).
+        #expect(cleaned[2].text.hasPrefix("extension needs") && cleaned[2].text.hasSuffix("employment and prices."))
         #expect(GreekLegalDocumentSummarizer.linesPerGroup(articles: 1) == 3 && GreekLegalDocumentSummarizer.linesPerGroup(articles: 2) == 4
             && GreekLegalDocumentSummarizer.linesPerGroup(articles: 9) == 8)
+    }
+
+    /// A line over `maxNoteLineCharacters` is cut at a sentence end, else at a clause end, not in
+    /// the middle of a phrase (Article 7 of Law 5278/2026 ended «… και φυλάσσονται στην …»).
+    @Test func longNoteLinesAreCutAtASentenceOrClauseEnd() {
+        let shorten = GreekLegalDocumentSummarizer.shortenedNoteLine
+        let first = "The minutes of the counting of ballots and of the electronic votes are delivered on the next working day after the election of the court representative to the secretary of the competent Court of First Instance."
+        let sentences = first + " They are kept there for five years, and any member may read them, with the secretary present, during the court's opening hours, on a written request."
+        #expect(sentences.count > GreekLegalDocumentSummarizer.maxNoteLineCharacters)
+        #expect(shorten(sentences) == first)
+        let clauses = "The minutes of the counting of ballots and of the electronic votes are delivered on the next working day after the election of the court representative to the secretary of the competent Court of First Instance, where they are kept for five years and may be read by any member of the union on a written request to the secretary"
+        #expect(clauses.count > GreekLegalDocumentSummarizer.maxNoteLineCharacters)
+        #expect(shorten(clauses) == "The minutes of the counting of ballots and of the electronic votes are delivered on the next working day after the election of the court representative to the secretary of the competent Court of First Instance.")
+        let short = "The normative terms continue for three (3) months after expiry."
+        #expect(shorten(short) == short)
     }
 
     @Test func provisionsAreOneBulletAnArticle() {

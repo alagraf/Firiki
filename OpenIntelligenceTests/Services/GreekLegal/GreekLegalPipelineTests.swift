@@ -606,6 +606,19 @@ struct GreekLegalVerificationTests {
             response: "Σύμφωνα με το Άρθρο 99 του Ν. 4808/2021 ο εργοδότης ...", chunks: [Self.article38]) == ["ART:99"])
         #expect(LegalVerificationPolicy.unsupportedLegalIdentifiers(
             response: "Under Article 38 of Law 4808/2021 working time is recorded [C1].", chunks: [Self.article38]).isEmpty)
+        let mdChunk = RetrievedChunk(
+            chunk: DocumentChunk(
+                documentId: UUID(),
+                content: "For employees the minimum wage is set at 920.00 euros.",
+                embedding: [],
+                metadata: ChunkMetadata(chunkIndex: 0),
+                legal: LegalChunkMetadata(sourceTextEl: "Για τους υπαλλήλους ο κατώτατος μισθός ορίζεται στα 920,00 ευρώ.", sourceLanguage: "el", legalEntities: [], documentStatuteKey: "MD:8934")
+            ),
+            similarityScore: 0.9, rank: 1, sourceDocument: "ya_8934_2026_fek_b1759.pdf"
+        )
+        #expect(LegalVerificationPolicy.unsupportedLegalIdentifiers(
+            response: "According to Ministerial Decision 8934/2026, the minimum wage is 920.00 euros [S1].",
+            chunks: [mdChunk]).isEmpty)
 
         let draft = "Under Article 99 of Law 4808/2021, the employer records working time in the digital work card [C1]."
         let result = await VerificationGateService().verify(
@@ -697,6 +710,19 @@ struct GreekLegalVerificationTests {
             query: "Can a worker from Albania get annual leave under Greek law?", chunks: [maternity]) == nil)
         #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
             query: "Δικαιούται άδεια ένας εργαζόμενος από την Αλβανία;", chunks: [maternity]) == nil)
+        // A country's adjective: the Mac app answered this from the Greek Code (9 Nov 2026).
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "How many weeks of maternity leave does German labour law provide?", chunks: [maternity]) == "Germany")
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "What does the French Labour Code say about overtime?", chunks: [maternity]) == "France")
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "How many weeks of maternity leave does German labour law provide?", chunks: [posted]) == nil,
+            "a passage that names Germany")
+        // Not a jurisdiction: a worker's nationality, or EU law.
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "Is a German worker in Athens entitled to maternity leave?", chunks: [maternity]) == nil)
+        #expect(GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction(
+            query: "What does European law provide on maternity leave?", chunks: [maternity]) == nil)
     }
 
     @Test func documentStatuteIsReadFromTheTitlePage() {

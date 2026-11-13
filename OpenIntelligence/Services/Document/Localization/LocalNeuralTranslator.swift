@@ -728,12 +728,49 @@ actor LocalNeuralTranslator {
         return s
     }
 
+    /// English words the translator renders wrongly in a legal text, reworded before translation.
+    /// "Quarter" (three months, from a passage's «τρίμηνο») came back «τέταρτο», a fourth, in the
+    /// summary of Law 5278/2026 (9 Nov 2026); "a quarter of …" (a fraction) is left as it is.
+    /// "Statute" (a law) came back «καταστατικό» (articles of association) in the same summary:
+    /// it becomes "law", except in "statute of limitations".
+    nonisolated static func legalEnglishPreEdited(_ text: String) -> String {
+        let rules: [(String, String)] = [
+            (#"(?i)\b(?:a|one)\s+quarter\b(?!\s+of\b)"#, "three months"),
+            (#"(?i)\bquarters\b(?!\s+of\b)"#, "three-month periods"),
+            (#"(?i)\bquarter\b(?!\s+of\b)"#, "three-month period"),
+            (#"\bStatutes\b"#, "Laws"),
+            (#"\bstatutes\b"#, "laws"),
+            (#"\bStatute\b(?!\s+of\s+limitations?)"#, "Law"),
+            (#"\bstatute\b(?!\s+of\s+limitations?)"#, "law"),
+            // An em dash between words ("overtime—up to four hours daily—is paid") was dropped by
+            // the translator and the words around it glued («υπερωρίαςέως», 9 Nov 2026): commas.
+            // A range ("Articles 130–134") keeps its en dash.
+            (#"\s*—\s*"#, ", "),
+            (#"(?<=\p{L})\s+–\s+(?=\p{L})"#, ", "),
+        ]
+        var s = text
+        for (pattern, template) in rules {
+            s = s.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        }
+        return s.replacingOccurrences(of: spelledAmount, with: "$1 €", options: .regularExpression)
+    }
+
+    /// An amount in words followed by its figure, "forty-one euros and nine cents (41.09 €)" or
+    /// "nine hundred and twenty euros (920,00 €)": only the figure is kept. The model wrote "nine
+    /// minutes" for the cents, and the words came back «40-ένα ευρώ και 9 λεπτά» in the opinion over
+    /// three documents (9 Nov 2026). Runs after the number words became digits ("40-one").
+    private static let spelledAmount: String = {
+        let word = "(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)"
+        let number = "\(word)(?:(?:[\\s-]+|\\s+and\\s+)\(word))*"
+        return "(?i)\\b\(number)\\s+euros?(?:\\s+and\\s+\(number)\\s+(?:cents?|minutes?))?\\s*\\(\\s*([\\d.,]+)\\s*€\\s*\\)"
+    }()
+
     func translateEnglishToGreekPreservingCitations(_ textEn: String, entities: [LegalEntityRecord] = [], documentNames: [String] = []) async throws -> String {
         // Numbers in words go to Greek as digits ("three hundred" came back "τρία εκατοντάδες"), and
         // the answer goes as plain text: the translator returned "**δώδεκα (12)** μήνες",
         // "8 (****) εβδομάδες" and "# #" headings from the draft's markdown (labour run 1).
-        let collapsed = SpelledNumber.digitsForEnglishNumberWords(
-            Self.withoutMarkdown(GreekLegalEntityMasker.collapseBilingualAnchors(textEn)))
+        let collapsed = Self.legalEnglishPreEdited(SpelledNumber.digitsForEnglishNumberWords(
+            Self.withoutMarkdown(GreekLegalEntityMasker.collapseBilingualAnchors(textEn))))
         // File names stay as written: "passage 3-2.txt" came back «διόδου 3-2.txt».
         let (withoutNames, names) = GreekLegalEntityMasker.maskDocumentNames(in: collapsed, names: documentNames)
         let (maskedWithTerms, allFound) = GreekLegalEntityMasker.maskEntities(in: withoutNames)

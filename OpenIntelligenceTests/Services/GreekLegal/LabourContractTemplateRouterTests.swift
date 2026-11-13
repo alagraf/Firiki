@@ -28,6 +28,20 @@ struct LabourContractTemplateTests {
         }
     }
 
+    /// A Greek answer shows a Greek reason built from the template, and the place of signing as a
+    /// visible blank (9 Nov 2026: the model's English reason and «Στ{{place_of_signing}}»).
+    @Test func greekAnswerHasAGreekReasonAndABlankPlace() throws {
+        let telework = try #require(LabourContractTemplateRouter.bundledTemplates().first { $0.id == "telework" })
+        let reason = LabourContractTemplateRouter.greekReason(for: telework)
+        #expect(reason.hasPrefix("Το αίτημα ταιριάζει στο υπόδειγμα «Σύμβαση τηλεργασίας»: Εργασία που παρέχεται εξ αποστάσεως"))
+        #expect(GreekLegalEntityMasker.greekLetterRatio(reason) > 0.9)
+        let body = LabourContractTemplateRouter.displayedBody(telework)
+        #expect(!body.contains("{{place_of_signing}}"))
+        #expect(body.contains("Στ……… σήμερα, {{date_of_signing}}"))
+        #expect(body.contains("Η εργασία παρέχεται στ………."), "the workplace too")
+        #expect(body.contains("{{employer_name}}"), "a field with a space before it keeps its name")
+    }
+
     @Test func frontMatterIsParsed() throws {
         let template = try #require(LabourContractTemplate(markdown: """
             ---

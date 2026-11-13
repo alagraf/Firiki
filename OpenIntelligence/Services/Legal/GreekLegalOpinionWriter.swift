@@ -204,13 +204,185 @@ nonisolated enum GreekLegalOpinionWriter {
         }
     }
 
+    // MARK: Greek wording written by the program
+
+    /// A statute's short Greek name, as Greek legal text cites it: "ν. 5239/2025", "π.δ. 62/2025",
+    /// "Υ.Α. 8934". The translator turned these into «της Ν. 5239/2025» (a law is masculine).
+    static func greekStatuteName(_ key: String) -> String {
+        if key == "CONST" { return "Σύνταγμα" }
+        if key == labourCodeKey { return "Κώδικας Εργατικού Δικαίου (π.δ. 62/2025)" }
+        let names = ["LAW:": "ν. ", "PD:": "π.δ. ", "MD:": "Υ.Α. "]
+        for (prefix, name) in names where key.hasPrefix(prefix) { return name + key.dropFirst(prefix.count) }
+        return key
+    }
+
+    /// The Greek article before a statute's name: "του ν." and "του π.δ.", but "της Υ.Α.".
+    private static func greekGenitive(_ key: String) -> String {
+        if key == labourCodeKey { return "του Κώδικα Εργατικού Δικαίου" }
+        return (key.hasPrefix("MD:") ? "της " : "του ") + greekStatuteName(key)
+    }
+
+    /// The "how they combine" sentences in Greek, written by the program like the English ones.
+    /// Translated, "Article 7 of Law 5239/2025 amended Article 194" came back with the English
+    /// "modified" in the middle of the Greek (9 Nov 2026).
+    static func combinationGreek(_ links: [CodeLink]) -> [String] {
+        links.map { link in
+            let genitive = greekGenitive(link.statuteKey)
+            switch link.kind {
+            case .amends:
+                return "Το άρθρο \(link.article ?? "") \(genitive) τροποποίησε το άρθρο \(link.codeArticle) του Κώδικα Εργατικού Δικαίου· εφαρμόζεται το τροποποιημένο κείμενο."
+            case .adds:
+                return "Το άρθρο \(link.article ?? "") \(genitive) πρόσθεσε το άρθρο \(link.codeArticle) στον Κώδικα Εργατικού Δικαίου."
+            case .appliesUnder:
+                let subject = link.statuteKey.hasPrefix("MD:") ? "Η " : "Ο "
+                return subject + greekStatuteName(link.statuteKey) + " εκδόθηκε κατ’ εξουσιοδότηση του άρθρου \(link.codeArticle) του Κώδικα Εργατικού Δικαίου και το εφαρμόζει."
+            }
+        }
+    }
+
+    /// The applicable law: each document with a section and the articles its passages head, then
+    /// each Labour Code article a used link amends or adds (its passages were replaced by the
+    /// amending article's, so it had no section of its own and was missing from the list).
+    static func applicableLaw(_ sources: [Source], links: [CodeLink]) -> (english: String, greek: String) {
+        var english: [String] = []
+        var greek: [String] = []
+        var codeArticles: [String] = []
+        for source in sources {
+            let articles = source.passages.compactMap { LegalCrossReferences.definedArticle(of: $0.chunk) }
+                .map { String($0.dropFirst("ART:".count)) }
+            let unique = articles.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+            english.append(source.name + (unique.isEmpty ? "" : ", Article " + unique.joined(separator: ", Article ")))
+            let greekName = source.statuteKey.map(greekStatuteName) ?? source.document
+            let greekArticles = unique.isEmpty ? "" : (unique.count == 1 ? ", άρθρο " : ", άρθρα ") + unique.joined(separator: ", ")
+            greek.append(greekName + greekArticles)
+            if source.statuteKey == labourCodeKey { codeArticles += unique }
+        }
+        for link in links where link.kind != .appliesUnder && !codeArticles.contains(where: { sameArticle($0, link.codeArticle) }) {
+            codeArticles.append(link.codeArticle)
+            let verbEn = link.kind == .amends ? "as amended" : "as added"
+            let verbEl = link.kind == .amends ? "όπως τροποποιήθηκε" : "όπως προστέθηκε"
+            english.append("the Labour Code (Presidential Decree 62/2025), Article \(link.codeArticle) \(verbEn)")
+            greek.append(greekStatuteName(labourCodeKey) + ", άρθρο \(link.codeArticle), \(verbEl)")
+        }
+        let english_ = english.joined(separator: "; ") + (english.isEmpty ? "" : ".")
+        let greek_ = greek.joined(separator: "· ") + (greek.isEmpty ? "" : ".")
+        return (english_, greek_)
+    }
+
+    /// Fixes the translator leaves in Greek legal text: a law's article («της Ν. 5239/2025» for
+    /// «του ν. 5239/2025»), a repeated anchor («Άρθρο 7 (Άρθρο 7)»), a capital «Άρθρο» in the
+    /// middle of a sentence, the nominative after «του» («του άρθρο 194»), English anchors, and
+    /// mistranslated terms. Also applied to the statute summary.
+    static func repairedGreek(_ text: String) -> String {
+        var s = text
+        let rules: [(String, String)] = [
+            (#"(Άρθρ(?:ο|ου)\s+(\d{1,4}[Α-Ωα-ω]?))\s*\(\s*Άρθρ(?:ο|ου)\s+\2\s*\)"#, "$1"),
+            (#"(?<![\p{L}])(?:της|η)\s+Ν\.\s*(\d{1,5}/\d{4})"#, "του ν. $1"),
+            (#"(?<![\p{L}])(?:την|τη)\s+Ν\.\s*(\d{1,5}/\d{4})"#, "τον ν. $1"),
+            (#"(?<![\p{L}])(στη|στην|στο)\s+Ν\.\s*(\d{1,5}/\d{4})"#, "στον ν. $2"),
+            (#"(?<=[\p{Ll}\d,·;)]\s)Άρθρ(ο|ου|α|ων)(?=\s+\d)"#, "άρθρ$1"),
+            (#"(?<=\()Άρθρ(ο|ου|α|ων)(?=\s+\d)"#, "άρθρ$1"),
+            (#"(?<![\p{L}])(του|τον|στον|ο)\s+Ν\.\s*(\d{1,5}/\d{4})"#, "$1 ν. $2"),
+            (#"(?<![\p{L}])(του|στου)\s+[Άά]ρθρο\s+(\d)"#, "$1 άρθρου $2"),
+            // An English anchor the translator left: «υπό Article 141Α» (9 Nov 2026, the opinion
+            // over three documents). "Under" a Code article is «κατ’ εξουσιοδότηση του άρθρου».
+            (#"(?<![\p{L}])υπό\s+(?:το\s+)?Articles?\s+(\d{1,4}[\p{L}]?)(?![\p{L}\d])"#, "κατ’ εξουσιοδότηση του άρθρου $1"),
+            (#"(?<![\p{L}])(του|στου)\s+Articles?\s+(\d{1,4}[\p{L}]?)(?![\p{L}\d])"#, "$1 άρθρου $2"),
+            (#"(?m)(?:^|(?<=[.:]\s))Articles?\s+(?=\d)"#, "Άρθρο "),
+            (#"(?<![\p{L}])Articles\s+(?=\d)"#, "άρθρα "),
+            (#"(?<![\p{L}])Article\s+(?=\d)"#, "άρθρο "),
+            // "The hourly wage" came back «ωριαίο ποσοστό» and «ωριαίο επιτόκιο» (an interest
+            // rate); the Labour Code's term is «καταβαλλόμενο ωρομίσθιο» (9 Nov 2026). A participle
+            // before it is absorbed: "the paid hourly wage" came back «καταβεβλημένο καταβαλλόμενο
+            // ωρομίσθιο».
+            (#"(?:\p{L}+(?:μένο|μενο)\s+)?ωριαίο\s+(?:ποσοστό|επιτόκιο|μισθό|ποσό)"#, "καταβαλλόμενο ωρομίσθιο"),
+            (#"\p{L}+(?:μένο|μενο)\s+(?=καταβαλλόμενο\s+ωρομίσθιο)"#, ""),
+            // The feminine variants: «με ισοτιμία ίση με την πληρωμένη ωριαία τιμή».
+            (#"(?<![\p{L}])(?:την\s+)?(?:\p{L}+(?:μένη|μενη)\s+)?ωριαία\s+(?:τιμή|αμοιβή|αποζημίωση)(?![\p{L}])"#, "το καταβαλλόμενο ωρομίσθιο"),
+            (#"(?<![\p{L}])με\s+ισοτιμία\s+ίση\s+με(?![\p{L}])"#, "με αμοιβή ίση με"),
+            // «ο οποίος τροποποιεί άρθρο 194»: the article needs its «το».
+            (#"(?<![\p{L}])(τροποποιεί|τροποποίησε|αντικαθιστά|αντικατέστησε|σύμφωνα\s+με|υπό)\s+άρθρο(?=\s+\d)"#, "$1 το άρθρο"),
+            // "This increased rate" (of pay) came back «αυτό το αυξημένο τέλος», a fee.
+            (#"(?<![\p{L}])αυτό\s+το\s+αυξημένο\s+τέλος(?![\p{L}])"#, "αυτή την αυξημένη αμοιβή"),
+            (#"(?<![\p{L}])το\s+αυξημένο\s+τέλος(?![\p{L}])"#, "την αυξημένη αμοιβή"),
+            // "Legal overtime" (the lawful kind) came back «νομικές υπερωρίες»: «νόμιμες».
+            (#"(?<![\p{L}])([Νν])ομική(?=\s+υπερωρ)"#, "$1όμιμη"),
+            (#"(?<![\p{L}])([Νν])ομικής(?=\s+υπερωρ)"#, "$1όμιμης"),
+            (#"(?<![\p{L}])([Νν])ομικές(?=\s+υπερωρ)"#, "$1όμιμες"),
+            (#"(?<![\p{L}])([Νν])ομικών(?=\s+υπερωρ)"#, "$1όμιμων"),
+            // "The minutes" of a vote or count (Law 5278/2026, Article 7) came back «λεπτού» (a
+            // minute of time) in its summary: «πρακτικά».
+            (#"(?<![\p{L}])(?:του|των)\s+λεπτ(?:ού|ών)(?=\s+(?:του|της|των)\s+(?:ψηφοδελτ|ψηφοφορ|διαλογ|καταμέτρησ|συνεδρίασ|εκλογ))"#, "των πρακτικών"),
+            (#"(?<![\p{L}])(?:Το|Τα)\s+λεπτ(?:ό|ά)(?=\s+(?:του|της|των)\s+(?:ψηφοδελτ|ψηφοφορ|διαλογ|καταμέτρησ|συνεδρίασ|εκλογ))"#, "Τα πρακτικά"),
+            (#"(?<![\p{L}])(?:το|τα)\s+λεπτ(?:ό|ά)(?=\s+(?:του|της|των)\s+(?:ψηφοδελτ|ψηφοφορ|διαλογ|καταμέτρησ|συνεδρίασ|εκλογ))"#, "τα πρακτικά"),
+            // "Election minutes" came back «εκλογικών λεπτών» in the rerun of the same summary.
+            (#"(?<![\p{L}])(εκλογικ(?:ών|ού))\s+λεπτ(?:ών|ού)(?![\p{L}])"#, "εκλογικών πρακτικών"),
+            (#"(?<![\p{L}])(εκλογικ(?:ά|ό))\s+λεπτ(?:ά|ό)(?![\p{L}])"#, "εκλογικά πρακτικά"),
+            // "Expiry or termination" (of a contract) came back «τη λήξη ή τη λήξη»: termination
+            // is «λύση».
+            (#"(?<![\p{L}])(τη|της)\s+λήξη(ς?)\s+ή\s+(τη|της)\s+λήξη(ς?)(?![\p{L}])"#, "$1 λήξη$2 ή $3 λύση$4"),
+            // "Normative (regulatory) terms" of a collective agreement are «κανονιστικοί όροι»; the
+            // translator wrote «ρυθμιστικών όρων».
+            (#"(?<![\p{L}])ρυθμιστικ(οί|ών|ούς)(?=\s+όρ)"#, "κανονιστικ$1"),
+            (#"(?<![\p{L}])Ρυθμιστικ(οί|ών|ούς)(?=\s+όρ)"#, "Κανονιστικ$1"),
+            // A phrase repeated around «και»: «τους εργαζόμενους και τους εργαζόμενους» (two English
+            // words for employees came back as one Greek word).
+            (#"(?<![\p{L}])((?:\p{L}+\s+){0,3}\p{L}+)\s+και\s+\1(?![\p{L}])"#, "$1"),
+            // A limit on overtime came back «προθεσμία», a deadline.
+            (#"Η\s+προθεσμία(?=\s+(?:για|των)\s+(?:τις\s+)?υπερωρ)"#, "Το όριο"),
+            (#"(?<![\p{L}])η\s+προθεσμία(?=\s+(?:για|των)\s+(?:τις\s+)?υπερωρ)"#, "το όριο"),
+        ]
+        for (pattern, template) in rules {
+            s = s.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        }
+        return capitalizingSentenceStarts(s)
+    }
+
+    /// A Greek sentence the translator started in lower case («… του Κώδικα. ισχύει ο …») gets its
+    /// capital. Only after a word of four letters or more, so abbreviations («επ. του», «παρ.»,
+    /// «π.χ.») are left alone.
+    static func capitalizingSentenceStarts(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"(?<=\p{Ll}{4}[.!]\s)(\p{Ll})"#) else { return text }
+        let ns = NSMutableString(string: text)
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let letter = ns.substring(with: match.range(at: 1))
+            guard letter.unicodeScalars.allSatisfy({ (0x0370...0x03FF).contains($0.value) || (0x1F00...0x1FFF).contains($0.value) }) else { continue }
+            ns.replaceCharacters(in: match.range(at: 1), with: letter.uppercased())
+        }
+        return ns as String
+    }
+
     // MARK: Model calls
 
-    /// The section call's instructions for one statute.
-    static func sectionInstructions(statute: String) -> String {
+    /// The section call's instructions for one statute. A document without articles (a ministerial
+    /// decision) is cited by its name alone.
+    static func sectionInstructions(statute: String, hasArticles: Bool = true) -> String {
+        let citation = hasArticles
+            ? "Cite each rule as (Article N of \(statute)), with N from the passage's \"Article N\" heading."
+            : "Cite each rule as (\(statute)); it has no articles, so do not write an article number."
+        return """
+        You help a Greek lawyer write a legal opinion. Use only the passages given, which come from \(statute). In two to four sentences, state what they provide on the question: the rules, their figures (amounts of money included) and time limits, and who they apply to. Do not refer to "the provisions in force" or "the applicable provisions" without naming them. \(citation) If the passages do not address the question, write only: Not addressed.
         """
-        You help a Greek lawyer write a legal opinion. Use only the passages given, which come from \(statute). In two to four sentences, state what they provide on the question: the rules, their figures and time limits, and who they apply to. Cite each rule as (Article N of \(statute)), with N from the passage's "Article N" heading. If the passages do not address the question, write only: Not addressed.
-        """
+    }
+
+    /// Whether a source's passages carry article headings (a decision's are cut into parts).
+    static func hasArticles(_ source: Source) -> Bool {
+        source.passages.contains { LegalCrossReferences.definedArticle(of: $0.chunk) != nil }
+    }
+
+    /// A section of a document without articles, without the article numbers the model gave it:
+    /// "(Article 1 of Ministerial Decision 8934)" → "(Ministerial Decision 8934)". The decision has
+    /// no Article 1, so the article check dropped both its sentences, the €920 minimum wage with
+    /// them (9 Nov 2026, the opinion over three documents).
+    static func withoutInventedArticles(_ text: String, statute: String) -> String {
+        let name = NSRegularExpression.escapedPattern(for: statute)
+        let withoutNumbers = text.replacingOccurrences(
+            of: #"\b(?:Article|Art\.)\s+\d{1,4}[A-Za-zΑ-Ω]?(?:\s*\([^)]*\))?\s*,?\s+of\s+(?:the\s+)?(?="# + name + ")",
+            with: "", options: .regularExpression)
+        // A sentence that starts with its citation, "(Ministerial Decision 8934) sets …", gets it
+        // as its subject: it came back «(Υπουργική Απόφαση 8934) ορίζει».
+        return withoutNumbers.replacingOccurrences(
+            of: #"(?m)(^|(?<=[.!?]\s))\((\#(name))\)\s+(?=\p{Ll})"#, with: "$1$2 ", options: .regularExpression)
     }
 
     /// A section without the sentences that say something is not addressed (the model wrote "Not
@@ -237,8 +409,31 @@ nonisolated enum GreekLegalOpinionWriter {
         return cleanedSection(LocalNeuralTranslator.segments(body).prefix(3).joined(separator: " "))
     }
 
+    /// The conclusion without its sentences that only restate a link ("The amended text of Article
+    /// 194 of the Labour Code, as in force"): "How they combine" states each link in the program's
+    /// own words, and the restatement came back from the translator without its verb (9 Nov 2026).
+    /// A sentence is a restatement when it speaks of an amendment and has no figure other than the
+    /// link's article and statute numbers. The conclusion is kept whole if nothing else would remain.
+    static func withoutRestatedLinks(_ conclusion: String, links: [CodeLink]) -> String {
+        guard !links.isEmpty else { return conclusion }
+        var allowed = Set<String>()
+        for link in links {
+            allowed.formUnion(link.codeArticle.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty })
+            allowed.formUnion((link.article ?? "").components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty })
+            allowed.formUnion(link.statuteKey.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty })
+        }
+        allowed.formUnion(["62", "2025"])  // the Labour Code, Presidential Decree 62/2025
+        let sentences = LocalNeuralTranslator.segments(conclusion)
+        let kept = sentences.filter { sentence in
+            guard sentence.lowercased().contains("amend") else { return true }
+            let numbers = sentence.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+            return !numbers.allSatisfy { allowed.contains($0) }
+        }
+        return kept.isEmpty ? conclusion : kept.joined(separator: " ")
+    }
+
     static let conclusionInstructions = """
-        You write the conclusion of a Greek legal opinion. Use only the sections given. In two or three sentences, answer the question directly, citing the articles the sections cite. Where a later law amended an article of the Labour Code, apply the amended rule. Do not add advice or anything the sections don't say.
+        You write the conclusion of a Greek legal opinion. Use only the sections given. In two or three complete sentences, answer the question directly, citing the articles the sections cite. Where a later law amended an article of the Labour Code, apply the amended rule. Do not add advice or anything the sections don't say.
         """
 
     static func sectionPrompt(question: String, source: Source) -> String {
@@ -269,8 +464,9 @@ nonisolated enum GreekLegalOpinionWriter {
         var dropped: [String] = []
         var sections: [(source: Source, text: String)] = []
         for source in sources {
-            let draft = try await respond(sectionInstructions(statute: source.name), sectionPrompt(question: questionEn, source: source))
-            let trimmed = cleanedSection(draft)
+            let articles = hasArticles(source)
+            let draft = try await respond(sectionInstructions(statute: source.name, hasArticles: articles), sectionPrompt(question: questionEn, source: source))
+            let trimmed = articles ? cleanedSection(draft) : withoutInventedArticles(cleanedSection(draft), statute: source.name)
             guard !trimmed.isEmpty else { continue }
             let result = checked(trimmed)
             dropped += result.dropped
@@ -290,7 +486,10 @@ nonisolated enum GreekLegalOpinionWriter {
         var conclusion = ""
         if !sections.isEmpty {
             let prompt = "Question: \(questionEn)\n\n" + sectionText + (usedCombination.isEmpty ? "" : "\n\nHow they combine:\n" + usedCombination.joined(separator: "\n"))
-            let result = checked(cleanedConclusion(try await respond(conclusionInstructions, prompt)))
+            let draft = sections.map(\.source).filter { !hasArticles($0) }.reduce(cleanedConclusion(try await respond(conclusionInstructions, prompt))) {
+                withoutInventedArticles($0, statute: $1.name)
+            }
+            let result = checked(withoutRestatedLinks(draft, links: usedLinks))
             dropped += result.dropped
             conclusion = result.text
         }
@@ -300,13 +499,8 @@ nonisolated enum GreekLegalOpinionWriter {
         }
 
         let applicable = sources.filter { source in sections.contains { $0.source.document == source.document } }
-        let lawSources = applicable.map { source -> String in
-            let articles = source.passages.compactMap { LegalCrossReferences.definedArticle(of: $0.chunk) }
-                .map { String($0.dropFirst("ART:".count)) }
-            let unique = articles.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
-            return source.name + (unique.isEmpty ? "" : ", Article " + unique.joined(separator: ", Article "))
-        }
-        let lawText = lawSources.joined(separator: "; ") + (lawSources.isEmpty ? "" : ".")
+        let law = applicableLaw(applicable, links: usedLinks)
+        let lawText = law.english
         let englishParts: [(title: String, text: String)] = [
             ("Applicable law", lawText),
             ("What each provides", sections.map(\.text).joined(separator: "\n\n")),
@@ -314,12 +508,25 @@ nonisolated enum GreekLegalOpinionWriter {
             ("Conclusion", conclusion),
         ].filter { !$0.text.isEmpty }
         let english = (["Question: " + questionEn] + englishParts.map { "\($0.title):\n\($0.text)" }).joined(separator: "\n\n")
+        // The English and the dropped sentences are logged so a figure missing from the Greek
+        // (the €920 minimum wage, 9 Nov 2026) can be traced to drafting, checking or translation.
+        Log.info("[LegalOpinion] English opinion (\(english.count) chars): \(english.prefix(2_500))", category: .llm)
+        if !dropped.isEmpty {
+            Log.info("[LegalOpinion] Dropped \(dropped.count) sentence(s): \(dropped.joined(separator: " | "))", category: .llm)
+        }
 
         let greekTitles = ["Applicable law": "Εφαρμοστέο δίκαιο", "What each provides": "Τι προβλέπει κάθε κείμενο",
                            "How they combine": "Πώς συνδυάζονται", "Conclusion": "Συμπέρασμα"]
         var greekParts = ["Ερώτημα\n" + question]
         for part in englishParts {
-            let text = (try? await translate(part.text)) ?? part.text
+            // The applicable law and the links are the program's own sentences, written in Greek;
+            // only the model's sections and conclusion go through the translator.
+            let text: String
+            switch part.title {
+            case "Applicable law": text = law.greek
+            case "How they combine": text = combinationGreek(usedLinks).joined(separator: " ")
+            default: text = repairedGreek((try? await translate(part.text)) ?? part.text)
+            }
             greekParts.append((greekTitles[part.title] ?? part.title) + "\n" + text)
         }
         greekParts.append("Σημείωση\n" + disclaimerGreek)
@@ -368,6 +575,11 @@ extension RAGService {
             }
         }
         Log.info("[LegalOpinion] Sources: \(sources.map { "\($0.document) \(String(format: "%.2f", $0.bestScore)) \($0.passages.compactMap { LegalCrossReferences.definedArticle(of: $0.chunk) })" }); links: \(Writer.combination(keptLinks))", category: .retrieval)
+        for source in sources {
+            for passage in source.passages {
+                Log.info("[LegalOpinion] Passage \(source.document) #\(passage.chunk.metadata.chunkIndex) \(String(format: "%.2f", passage.similarityScore)): \(passage.chunk.content.prefix(300).replacingOccurrences(of: "\n", with: " "))", category: .retrieval)
+            }
+        }
         return try await Writer.write(question: question, questionEn: questionEn, sources: sources, links: keptLinks)
     }
 }

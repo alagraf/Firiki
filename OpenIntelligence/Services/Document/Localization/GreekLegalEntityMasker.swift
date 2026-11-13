@@ -250,6 +250,9 @@ nonisolated enum GreekLegalEntityMasker {
         // "notice"; "σπουδαίος λόγος" became "good reason".
         ("προειδοποίησ(?:η|ης)", "(?:prior )?notice|warning", "notice", "προειδοποίηση"),
         ("σπουδαί(?:ος|ου|ο) λόγ(?:ος|ου|ο)", "(?:serious|good|important) (?:reason|cause)", "serious reason", "σπουδαίος λόγος"),
+        // Collective agreements (9 Nov 2026): «τρίμηνο» became "quarter", and "quarter" came back
+        // «τέταρτο» (a fourth) in the summary of Law 5278/2026.
+        ("τρίμην(?:ο|ου)|τριμήνου", "three-month period", "three-month period", "τρίμηνο"),
         // Answers that name "the passage" or "excerpt" of the context: the translator wrote
         // «δίοδος» and «πέρασμα» (a way through).
         ("απόσπασμ(?:α|ατος)", "passage|excerpt", "passage", "απόσπασμα"),

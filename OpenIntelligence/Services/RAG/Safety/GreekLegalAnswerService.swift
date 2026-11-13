@@ -204,8 +204,39 @@ nonisolated enum GreekLegalAnswerFinalizer {
             }
             if !named { return country.english }
         }
+        // A country's adjective before a word for law: "German labour law", "French Labour Code".
+        // «Πόσες εβδομάδες άδεια μητρότητας προβλέπει το γερμανικό εργατικό δίκαιο;» became "…
+        // does German labour law provide?" and was answered from the Greek Labour Code (9 Nov 2026).
+        for (adjective, country) in foreignAdjectives {
+            let asked = #"\b"# + adjective + #"\s+(?:[a-z]+\s+){0,2}(?:law|laws|legislation|code|statutes?|courts?|rules|legal\s+system|jurisdiction)\b"#
+            guard lower.range(of: asked, options: .regularExpression) != nil else { continue }
+            let named = chunks.contains { retrieved in
+                let content = retrieved.chunk.content.lowercased()
+                if content.range(of: #"\b(?:"# + adjective + "|" + NSRegularExpression.escapedPattern(for: country.lowercased()) + #")\b"#, options: .regularExpression) != nil {
+                    return true
+                }
+                guard let stem = foreignCountries.first(where: { $0.english == country })?.greekStem,
+                      let source = retrieved.chunk.sourceTextEl else { return false }
+                return SQLiteFullTextService.greekSearchFold(source).contains(stem)
+            }
+            if !named { return country }
+        }
         return nil
     }
+
+    /// Adjectives of the countries a labour-law question is likely to name, with the country's
+    /// English name as `foreignCountries` has it. Not "European" (EU law is not a foreign country)
+    /// and not "English" ("the English text of the Code").
+    private static let foreignAdjectives: [(String, String)] = [
+        ("german", "Germany"), ("french", "France"), ("italian", "Italy"), ("spanish", "Spain"),
+        ("portuguese", "Portugal"), ("british", "United Kingdom"),
+        ("irish", "Ireland"), ("dutch", "Netherlands"), ("belgian", "Belgium"), ("austrian", "Austria"),
+        ("swiss", "Switzerland"), ("swedish", "Sweden"), ("danish", "Denmark"), ("norwegian", "Norway"),
+        ("finnish", "Finland"), ("polish", "Poland"), ("czech", "Czechia"), ("hungarian", "Hungary"),
+        ("romanian", "Romania"), ("bulgarian", "Bulgaria"), ("albanian", "Albania"), ("turkish", "Turkey"),
+        ("cypriot", "Cyprus"), ("russian", "Russia"), ("ukrainian", "Ukraine"), ("american", "United States"),
+        ("canadian", "Canada"), ("australian", "Australia"), ("chinese", "China"), ("japanese", "Japan"),
+    ]
 
     private struct Country {
         let english: String

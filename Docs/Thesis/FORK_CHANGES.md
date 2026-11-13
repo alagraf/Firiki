@@ -12,7 +12,7 @@ updated with every further change.
   shared history) is kept as the backup branch `main-pre-sync`.
 - **Original repository:** https://github.com/Gunnarguy/OpenIntelligence (git remote `upstream`);
   the owner's GitHub fork is https://github.com/alagraf/OpenIntelligence
-- **Last updated:** 2026-10-23
+- **Last updated:** 2026-11-01
 
 ## 1. Baseline
 
@@ -1838,6 +1838,34 @@ tilted scans, table row preservation, statutory identity routing, and the final 
 - `GreekLegalOpinionTests`: 7 tests passed.
 - Full suite executed in iPhone 18 Pro simulator (`** TEST EXECUTE SUCCEEDED **`).
 
+#### 2.11.34: Native macOS Greek PDF verification and unarticled Gazette / PCC budget / Gate F fixes (2026-11-01)
+
+**Why:**
+1. Following the 31 October commits (`2af92e2e`–`f10190e1`), running a digital Greek Gazette PDF (`ya_8934_2026_fek_b1759.pdf`) and a scanned Greek PDF page (`scan_page_p04.pdf` from `Benchmarks/GreekOCR/scan_pages.pdf`) through the native macOS build (`OpenIntelligence.app`) uncovered three post-evaluation issues:
+   - Unarticled Gazette decisions (such as Ministerial Decision `Υ.Α. 8934/2026`, which has a Gazette header and a title-page statute key `MD:8934` but 0 `Άρθρο N` headings) were classified as `.statute` by `GreekLegalDocumentClassifier.classifyByRules`, causing `makeGreekLegalChunks` to return `[]` (`0` chunks) without falling back to `createStructureAwareChunks` / `SemanticChunker` in `DocumentProcessor.swift`.
+   - On native macOS, `QueryRuntimeCoordinator` only forced `.onDeviceOnly` under `#if targetEnvironment(simulator)`. Because `OpenIntelligence.entitlements` omits `com.apple.developer.private-cloud-compute` (`StrictLocalControlGuard.canUsePCC() == false`), native macOS left `cloudEligible = true` during retrieval and packed ~13.6 KB of context for a 32,768-token PCC budget before falling back to the 8,192-token on-device model at generation time.
+   - Gate F (`LegalVerificationPolicy.unsupportedLegalIdentifiers`) checked `chunk.legal?.legalEntities` by exact string equality and did not include `chunk.legal?.documentStatuteKey` or `chunk.legal?.primaryStatuteKey`, nor did it use `sameStatute(_:_:)` when comparing yearless title-page keys (`MD:8934`) against full citations (`MD:8934/2026`).
+
+**What:**
+1. `GreekLegalDocumentClassifier.swift`: requires `!headings.isEmpty` when classifying a document as `.statute` on Gazette header or statute title key alone, so unarticled Ministerial Decisions fall back to generic structure-aware chunking.
+2. `DocumentProcessor.swift`: if a specialized Greek legal chunker returns `processedChunks.isEmpty` (and `jsonRecordPassages == nil`), falls back to `createStructureAwareChunks` / `SemanticChunker` instead of returning 0 chunks.
+3. `QueryRuntimeCoordinator.swift`: checks `StrictLocalControlGuard.canUsePCC()` (`pccAvailableInBuild`) alongside `#if targetEnvironment(simulator)` and forces `.onDeviceOnly` whenever Private Cloud Compute is unavailable in the build, keeping retrieval context packing within the 8,192-token on-device window on native macOS.
+4. `LegalVerificationPolicy.swift`: includes `chunk.legal?.documentStatuteKey` and `chunk.legal?.primaryStatuteKey` in Gate F's `evidenceKeys(_:)` and matches `LAW:`/`PD:`/`MD:` identifiers via `sameStatute(_:_:)`.
+
+**Files:**
+- `OpenIntelligence/Services/Document/Localization/GreekLegalDocumentClassifier.swift`
+- `OpenIntelligence/Services/Document/Processing/DocumentProcessor.swift`
+- `OpenIntelligence/Services/RAG/Orchestration/QueryRuntimeCoordinator.swift`
+- `OpenIntelligence/Services/RAG/Safety/LegalVerificationPolicy.swift`
+- `OpenIntelligenceTests/Services/GreekLegal/GreekLegalContextChunkingTests.swift`
+- `OpenIntelligenceTests/Services/GreekLegal/GreekLegalPipelineTests.swift`
+
+**Verification:**
+- Native macOS (`platform=macOS`, `OpenIntelligence.app` via `--rag-validation`):
+  - Digital Gazette PDF (`ya_8934_2026_fek_b1759.pdf`): 37 chunks ingested and translated via `opus-mt-tc-big-el-en`, 15 chunks packed (`Context Chars: 9214/9458`, `Execution Context: On-Device Only`), Gate A–I passed, verified Greek answer returned (`920,00 ευρώ [S4]`).
+  - Scanned Greek PDF page (`scan_page_p04.pdf`): native macOS `GreekPaddleOCRService` (`PP-OCRv5` ONNX detector + Greek recognizer) extracted 22 chunks, translated via Opus-MT, retrieved 9 chunks (`Confidence: 0.93`, `Execution Context: On-Device Only`), verified Greek answer returned on Article 57.
+- Added unit tests in `GreekLegalContextChunkingTests` (`unarticledGazetteDecisionFallsBackToGenericChunking`) and `GreekLegalPipelineTests` (`testGateFHallucinatedArticleRejection` `documentStatuteKey` check).
+
 ## 3. How to inspect the changes
 
 Every fork commit since the fork point (`--first-parent` hides the original author's merged commits):
@@ -1885,3 +1913,121 @@ git diff upstream/main main -- OpenIntelligence
 
 The changes in sections 2.5 to 2.10 were implemented with the help of Claude Code (Anthropic). Each
 of those commits carries a `Co-Authored-By` trailer.
+
+## 9 Nov 2026: Greek wording of opinions and summaries (after the evaluation)
+
+Found while taking the thesis screenshots of the PoC capabilities. Presentation only: retrieval,
+drafting and the verification of sentences are unchanged, and the Chapter 6 figures were measured
+before this change.
+
+- `GreekLegalOpinionWriter`: "Applicable law" and "How they combine" are written in Greek by the
+  program (`applicableLaw`, `combinationGreek`, `greekStatuteName`) instead of being translated. The
+  translator left the English "modified" in «Πώς συνδυάζονται», and the Labour Code article an
+  amendment changes was missing from the applicable law, because its passages are replaced by the
+  amending article's. Now: «ν. 5239/2025, άρθρο 7· Κώδικας Εργατικού Δικαίου (π.δ. 62/2025),
+  άρθρο 194, όπως τροποποιήθηκε.»
+- `repairedGreek`: post-edits of the translated sections and conclusion: «της Ν. 5239/2025» →
+  «του ν. 5239/2025», «Άρθρο 7 (Άρθρο 7)» → «Άρθρο 7», a mid-sentence «Άρθρο» → «άρθρο», «του άρθρο
+  194» → «του άρθρου 194», «ωριαίο ποσοστό/επιτόκιο» → «καταβαλλόμενο ωρομίσθιο», «προθεσμία» for an
+  overtime limit → «όριο».
+- `withoutRestatedLinks`: the conclusion drops sentences that only restate an amendment link (its
+  translation lost the verb). `conclusionInstructions` asks for complete sentences.
+- `LocalNeuralTranslator.legalEnglishPreEdited`: "a quarter"/"quarter" (three months) becomes
+  "three months"/"three-month period" before en→el translation; it came back «τέταρτο» (a fourth) in
+  the summary of Law 5278/2026. Glossary: «τρίμηνο» ↔ "three-month period".
+- Tests: `GreekLegalOpinionTests` (Greek wording and repairs, restated links, quarter), and the
+  applicable-law expectation of `sectionsAreCheckedAndTheOpinionIsInGreekSections`.
+- Backups of the previous files: `Docs/Thesis/code_backup_2026-11-09/`.
+- Not changed: the opinion over all three PDFs (with the minimum-wage decision) still omits the
+  €920 amount and has wording errors («υπό Article 141Α», «νομικές υπερωρίες», «τους εργαζόμενους και
+  τους εργαζόμενους»). The summary still has «Το καταστατικό αυτό» for "this statute" and «λεπτού»
+  for "minutes" (πρακτικά).
+
+## 9 Nov 2026 (second entry): remaining Greek wording, the missing €920, the template answer, a foreign-law question
+
+Carries out `Docs/Thesis/plans/greek-wording-fixes-2026-11-09.md`. Every change was checked in the
+Mac app (rebuilt from this tree, Apple Intelligence on the owner's M3 MacBook Pro) with the plan's
+requests, and the app's log was read for the English behind each Greek error. Retrieval, drafting
+and the verification gates are unchanged except where stated; the Chapter 6 figures (Table 6.6)
+were measured before this change and were not re-run.
+
+**Step 0.** The tests of the first 9 Nov entry had never been run: `GreekLegalOpinionTests`,
+`GreekLegalSummaryTests`, `GreekLegalChatRouterTests` passed (22 tests) before anything changed.
+
+**Why the €920 was missing (a fault, not wording).** The decision's best passage, with «920,00 €»,
+was retrieved (score 0.48), and the model's section stated the figure, but cited it as "(Article 1
+of Ministerial Decision 8934)". The decision has no articles, so the article gate (F) dropped both
+of its sentences, and the conclusion then said no minimum-wage amount was given. Now a source
+without article headings is cited by name only (`sectionInstructions(statute:hasArticles:)`), and
+an article number the model adds to such a source is removed before the check
+(`withoutInventedArticles`, sections and conclusion). The gate itself is unchanged.
+
+**Opinion (`GreekLegalOpinionWriter`)**
+- `sectionInstructions`: asks for amounts of money, and not to refer to "the provisions in force"
+  without naming them (the loose «… ισχύουσες διατάξεις …» phrase of the two-document opinion).
+- `repairedGreek`, new post-edits, each from a Greek string the app produced: «υπό Article 141Α» →
+  «κατ’ εξουσιοδότηση του άρθρου 141Α» (and any other English "Article N" left in the Greek);
+  «νομικές υπερωρίες» → «νόμιμες»; a phrase repeated around «και» («τους εργαζόμενους και τους
+  εργαζόμενους») kept once; a participle before «καταβαλλόμενο ωρομίσθιο» absorbed («καταβεβλημένο
+  καταβαλλόμενο»), and the feminine variant «την πληρωμένη ωριαία τιμή»; «με ισοτιμία ίση με» →
+  «με αμοιβή ίση με»; «αυτό το αυξημένο τέλος» → «αυτή την αυξημένη αμοιβή»; «τροποποιεί / σύμφωνα
+  με / υπό άρθρο N» get «το»; «στο Ν. 5239/2025» → «στον ν.»; a sentence the translator began in
+  lower case gets its capital (not after abbreviations such as «επ.»).
+- The English opinion, its dropped sentences and each source's passages are logged
+  (`[LegalOpinion]`), so a missing figure can be traced.
+
+**Summary (`GreekLegalDocumentSummarizer`)**
+- The prompts say "law", not "statute" (the opening came back «Το καταστατικό αυτό»).
+- A note line is kept whole up to 320 characters, and a longer one is cut at a sentence end, or a
+  clause end closed with a full stop (`shortenedNoteLine`); at 230 characters Article 7 ended in
+  «… και φυλάσσονται στην …».
+- The Greek summary goes through `repairedGreek` too, with post-edits found in it: "minutes" of a
+  vote («λεπτού του ψηφοδελτίου», «εκλογικών λεπτών») → «πρακτικά»; «τη λήξη ή τη λήξη» ("expiry or
+  termination") → «τη λήξη ή τη λύση»; «ρυθμιστικοί όροι» → «κανονιστικοί όροι».
+- The English summary is logged (`[LegalSummary]`): a summary has no Response Details card.
+
+**Translator (`LocalNeuralTranslator.legalEnglishPreEdited`)**, before en→el translation:
+"statute(s)" → "law(s)" (not "statute of limitations"); an amount in words followed by its figure
+keeps only the figure ("forty-one euros and nine minutes (41.09 €)" came back «40-ένα ευρώ και 9
+λεπτά»); an em dash between words becomes a comma (the translator dropped it and glued the words:
+«υπερωρίαςέως»); a range's en dash ("130–134") stays.
+
+**Template answer (`LabourContractTemplateRouter`, `GreekLegalChatRouter`)**
+- A Greek answer's reason is written by the program from the chosen template («Το αίτημα ταιριάζει
+  στο υπόδειγμα «Σύμβαση τηλεργασίας»: …» with its Greek description); the model's English reason
+  is shown only in an English answer, and dropped from the Greek "no template" answer.
+- A placeholder glued to its preposition («Στ{{place_of_signing}}», «στ{{workplace}}») is shown as a
+  blank («Στ………»); the other fields keep their names.
+
+**Foreign law (`GreekLegalAnswerFinalizer.unsupportedForeignJurisdiction`)**
+- Reproduced first: «Πόσες εβδομάδες άδεια μητρότητας προβλέπει το γερμανικό εργατικό δίκαιο;»
+  became "… does German labour law provide?" and was answered from the Greek Code (17 weeks,
+  `abstained=false confidence=0.99`), because only "in/of/under Germany" was recognised. A
+  country's adjective before a word for law ("German labour law", "French Labour Code") is now
+  refused unless a passage names the country; not "European" or "English", nor a worker's
+  nationality ("a German worker in Athens"). After the change the same question is refused.
+
+**Files:** `Services/Legal/GreekLegalOpinionWriter.swift`, `GreekLegalDocumentSummarizer.swift`,
+`LabourContractTemplateRouter.swift`, `GreekLegalChatRouter.swift`,
+`Services/Document/Localization/LocalNeuralTranslator.swift`,
+`Services/RAG/Safety/GreekLegalAnswerService.swift`; tests in `GreekLegalOpinionTests`
+(`greekWordingOfTheThreeDocumentOpinionIsRepaired`, `aDecisionWithoutArticlesKeepsItsFigures`,
+`statuteIsLawBeforeTranslation`), `GreekLegalSummaryTests` (`longNoteLinesAreCutAtASentenceOrClauseEnd`,
+`notesKeepTheGroupsArticles` changed), `LabourContractTemplateRouterTests`
+(`greekAnswerHasAGreekReasonAndABlankPlace`), `GreekLegalPipelineTests`
+(`foreignJurisdictionIsRefusedUnlessAPassageNamesIt` extended). Backups of the files as they were
+before this entry: `Docs/Thesis/code_backup_2026-11-09b/`.
+
+**Verification:** the 20 Greek legal unit-test suites in the iOS Simulator (evaluation suites
+excluded): `Test run with 119 tests in 20 suites passed`, `** TEST SUCCEEDED **`; Mac build
+`** BUILD SUCCEEDED **`; the plan's four requests checked on screen in the Mac app.
+
+**Still open:**
+- The decision's «υπαλλήλους» and «εργατοτεχνίτες» both come back «εργαζόμενους» (the English has
+  "employees" and "workers"); a glossary entry would change translation at import, so it was left.
+- The summary's opening (written by the model) says the minutes are delivered after "the
+  appointment of a court secretary"; Article 7 says after the election of the court
+  representative. A content error of the model, not wording.
+- The two empty ya_8934 copies in the «Γνωμοδότηση» library were not deleted (the owner's data);
+  sources with no passages are never chosen, so they don't change the opinion.
+- The thesis screenshots (Figs. 6.5–6.7) were not retaken.

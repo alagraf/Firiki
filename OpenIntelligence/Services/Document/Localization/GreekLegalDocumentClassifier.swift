@@ -106,7 +106,7 @@ enum GreekLegalDocumentClassifier {
                     kind: .statute,
                     reason: "Statute structure verified with \(headings.count) sequential article headings"
                 )
-            } else if hasGazette || hasStatuteTitle {
+            } else if (hasGazette || hasStatuteTitle) && !headings.isEmpty {
                 return ClassificationResult(
                     kind: .statute,
                     reason: "Statute title or Gazette header identified"

@@ -262,7 +262,7 @@ enum GreekLegalChatRouter {
 
         guard let template = decision.template else {
             let msg = isGreek
-                ? "Δεν βρέθηκε κατάλληλο πρότυπο σύμβασης εργασίας για το αίτημά σας. \(decision.reason)"
+                ? "Δεν βρέθηκε κατάλληλο πρότυπο σύμβασης εργασίας για το αίτημά σας."
                 : "No matching labour contract template was found for your request. \(decision.reason)"
             return ChatCapabilityResult(content: msg)
         }
@@ -276,12 +276,12 @@ enum GreekLegalChatRouter {
             ### Προτεινόμενο Υπόδειγμα: \(template.titleEl)
             *Μέθοδος επιλογής: \(methodBadge)*
 
-            **Αιτιολόγηση:** \(decision.reason)
+            **Αιτιολόγηση:** \(LabourContractTemplateRouter.greekReason(for: template))
             \(articlesText)
 
             ---
 
-            \(template.body)
+            \(LabourContractTemplateRouter.displayedBody(template))
             """
         } else {
             content = """
@@ -293,7 +293,7 @@ enum GreekLegalChatRouter {
 
             ---
 
-            \(template.body)
+            \(LabourContractTemplateRouter.displayedBody(template))
             """
         }
 

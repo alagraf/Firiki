@@ -147,8 +147,15 @@ final class QueryRuntimeCoordinator {
 
         // -- PCC / Cloud Eligibility --
 
+        #if targetEnvironment(simulator)
+            let pccAvailableInBuild = false
+        #else
+            let pccAvailableInBuild = StrictLocalControlGuard.canUsePCC()
+        #endif
+
         let cloudEligible =
             isAppleFMService
+                && pccAvailableInBuild
                 && networkAvailable
                 && config.allowPrivateCloudCompute
                 && config.executionContext != .onDeviceOnly
@@ -167,7 +174,11 @@ final class QueryRuntimeCoordinator {
             }
         #else
             if isAppleFMService {
-                if !networkAvailable {
+                if !pccAvailableInBuild {
+                    config.executionContext = .onDeviceOnly
+                    config.allowPrivateCloudCompute = false
+                    Log.info("[QueryRuntime] PCC unavailable in build → onDeviceOnly", category: .pipeline)
+                } else if !networkAvailable {
                     config.executionContext = .onDeviceOnly
                     config.allowPrivateCloudCompute = false
                     Log.info("[QueryRuntime] Offline → onDeviceOnly (4096 tokens)", category: .pipeline)

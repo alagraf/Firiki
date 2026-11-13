@@ -72,6 +72,12 @@ fix that stage in a general way; run again and compare.
 - **Legal glossary.** A small glossary gives each recurring legal term one fixed English rendering
   in documents and questions alike, and puts the official Greek term back into the Greek answer
   when the translator chose a synonym.
+- **Known translator errors corrected.** Before translation, English the translator mishandles is
+  reworded: dashes between words (it dropped them and glued the words), amounts written in words
+  next to their figure, and "statute" (rendered as articles of association). After translation,
+  opinions and summaries are post-edited for errors seen in practice: legal terms («νόμιμες
+  υπερωρίες», «καταβαλλόμενο ωρομίσθιο», «πρακτικά» for minutes), article and statute forms, English
+  article references left untranslated, and repeated phrases.
 
 ## 4. Retrieval
 - **Hybrid search.** Semantic (embedding) search over the English text of each passage, combined
@@ -103,7 +109,8 @@ fix that stage in a general way; run again and compare.
   comes from or cites is refused before generation, rather than answered from another statute's
   article with the same number.
 - **Refusal instead of guessing.** A fixed Greek refusal is shown when the evidence is weak, when
-  the question is about another country's law that no passage covers, when the draft itself says
+  the question is about another country's law that no passage covers (named as a country or by
+  its adjective, "German labour law"), when the draft itself says
   the sources do not answer the question, or when a gate fails.
 - The answer's details show the verification outcome, the English draft and the models used, so
   every answer can be audited.
@@ -138,6 +145,11 @@ fix that stage in a general way; run again and compare.
   every sentence is checked as for summaries, and the opinion is refused when its conclusion has
   no supported sentence. The Greek opinion has the parts question, applicable law, what each text
   provides, how they combine, conclusion, and a note that it is not legal advice.
+- A document without articles, such as a ministerial decision, is cited by its name; an article
+  number the model gives it anyway is removed before the check. Before this, the invented number
+  made the check drop the decision's sentences, and with them the €920 minimum wage.
+- The applicable law and how the documents combine are written in Greek by the program; only the
+  model's sections and conclusion are translated.
 
 ## 7. Evaluation method
 - **Question sets** written from the official texts, each with a reference answer citing article
@@ -162,7 +174,7 @@ fix that stage in a general way; run again and compare.
   Changes are tuned on the development set; the test set is used for held-out measurement.
 
 ## 8. Results so far
-Measured in the iOS 27 Simulator with Apple's on-device model; not yet checked on a device.
+Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with Apple's on-device model (`AFM 3 Core Advanced`, 8,192-token window); not yet checked on a physical iPhone. All numbers below were recorded on 28–30 October 2026 (up to commit `e85ae0cc` / `ffff0241`), prior to the 31 October code commits (`2af92e2e`–`f10190e1`), which refined import/chunking, translation, and refusal rules after the evaluation runs.
 
 | Date | Question set | Result |
 |---|---|---|
@@ -252,6 +264,9 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-09: Greek wording of summaries, opinions and template answers repaired; a ministerial
+  decision's figures kept in opinions; foreign law named by adjective refused (checked in the Mac
+  app; Chapter 6 figures not re-measured).
 - 2026-10-31: context-aware chunking (statute, lawyer's notes, Q&A, generic) with `GreekLegalDocumentClassifier`, `GreekLegalQAChunker`, and `GreekLegalNotesChunker`.
 - 2026-10-31: direct in-chat capability execution (`GreekLegalChatRouter`), formatted legal text outputs without bullets, neutral contract template headers, and Opus-MT structured observability logging (`callStats`).
 - 2026-10-30: EU holdout rerun graded by hand (38 of 39 right, 9 of 9 refused; as before).

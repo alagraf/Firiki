@@ -157,12 +157,36 @@ nonisolated enum GreekLegalDocumentSummarizer {
             """
         }
         return """
-        You take notes on articles of a Greek statute for a lawyer. Use only the text given. Each article starts with a line like "=== Article 8 ===". Write at most \(lines) lines, the most important rules first, each under 35 words: "Article N: " with N from the === line, then the rule, with its figures, time limits and who it applies to. When an article amends or replaces an article of another law, still use N from the === line and say what the rule now provides. Leave out articles that only state the purpose or repeal provisions.
+        You take notes on articles of a Greek law for a lawyer. Use only the text given. Each article starts with a line like "=== Article 8 ===". Write at most \(lines) lines, the most important rules first, each under 35 words: "Article N: " with N from the === line, then the rule, with its figures, time limits and who it applies to. When an article amends or replaces an article of another law, still use N from the === line and say what the rule now provides. Leave out articles that only state the purpose or repeal provisions.
         """
     }
 
     /// A note line is about 35 words, some 230 characters.
     static let noteLineCharacters = 230
+    /// A line is kept whole up to this length; a longer one is cut at a sentence or clause end. Cut
+    /// at 230 characters, Article 7 of Law 5278/2026 ended mid-phrase in «… και φυλάσσονται στην …»
+    /// (9 Nov 2026).
+    static let maxNoteLineCharacters = 320
+
+    /// A note line of at most `maxNoteLineCharacters`: cut after its last sentence end, or else at
+    /// its last clause end (closed with a full stop), or else at a word with "…".
+    static func shortenedNoteLine(_ line: String) -> String {
+        guard line.count > maxNoteLineCharacters else { return line }
+        let head = line.prefix(maxNoteLineCharacters)
+        func offset(_ index: Substring.Index) -> Int { head.distance(from: head.startIndex, to: index) }
+        if let end = head.indices.last(where: { index in
+            head[index] == "." && offset(index) >= noteLineCharacters / 2
+                && head.index(after: index) < head.endIndex && head[head.index(after: index)] == " "
+                && !(offset(index) > 0 && head[head.index(before: index)].isNumber)
+        }) {
+            return String(head[...end])
+        }
+        if let cut = head.lastIndex(where: { ",;".contains($0) }), offset(cut) >= noteLineCharacters / 2 {
+            return String(head[..<cut]) + "."
+        }
+        let word = head.lastIndex(of: " ").map { head[..<$0] } ?? head
+        return String(word) + "…"
+    }
     /// "Main provisions" has at most this many bullets, one an article, each from at most
     /// `linesPerBullet` of the article's note lines.
     static let maxBullets = 12
@@ -203,11 +227,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
             }
             line = line.trimmingCharacters(in: .whitespaces)
             guard line.count >= 12 else { continue }
-            if line.count > noteLineCharacters {
-                let head = line.prefix(noteLineCharacters)
-                let cut = head.lastIndex(where: { ",;".contains($0) }).flatMap { head.distance(from: head.startIndex, to: $0) > noteLineCharacters / 2 ? $0 : nil }
-                line = String(cut.map { head[..<$0] } ?? head) + "…"
-            }
+            line = shortenedNoteLine(line)
             kept.append(Note(article: current, text: line))
             if kept.count == lines { break }
         }
@@ -248,8 +268,10 @@ nonisolated enum GreekLegalDocumentSummarizer {
         }
     }
 
+    /// "Law", not "statute": the opening began "This statute …", which the translator rendered
+    /// «Το καταστατικό αυτό» (articles of association) in the summary of Law 5278/2026 (9 Nov 2026).
     static let reduceInstructions = """
-        You write the opening of a summary of a Greek statute for a lawyer, from notes on its articles. Use only the notes. In one or two sentences, say what the statute is about and what it mainly changes. Do not list the articles, and do not add advice or anything the notes don't say.
+        You write the opening of a summary of a Greek law for a lawyer, from notes on its articles. Use only the notes. In one or two sentences, say what the law is about and what it mainly changes. Do not list the articles, and do not add advice or anything the notes don't say.
         """
 
     /// Characters of notes the opening is written from: the first note of each article.
@@ -357,7 +379,10 @@ nonisolated enum GreekLegalDocumentSummarizer {
         if !dropped.isEmpty {
             Log.info("[LegalSummary] Dropped \(dropped.count) sentence(s) with an unsupported figure or article", category: .llm)
         }
-        let greek = (try? await translate(english)) ?? english
+        // The English is logged so a wrong Greek word can be traced to its source sentence (the
+        // summary has no Response Details card).
+        Log.info("[LegalSummary] English summary (\(english.count) chars): \(english.prefix(1_500))", category: .llm)
+        let greek = (try? await translate(english)).map(GreekLegalOpinionWriter.repairedGreek) ?? english
         return Summary(greek: greek, english: english, dropped: dropped, groups: groups.count,
                        noteCharacters: noteCharacters)
     }

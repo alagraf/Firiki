@@ -144,12 +144,144 @@ struct GreekLegalOpinionTests {
         #expect(prompts[2].1.contains("How they combine:\nArticle 7 of Law 5239/2025 amended Article 194"))
         #expect(opinion.refusal == nil)
         #expect(opinion.dropped == ["Night work pays 75% more (Article 99 of Law 1234/2020)."], "\(opinion.dropped)")
-        #expect(opinion.english.contains("Applicable law:\nLaw 5239/2025, Article 7."))
+        #expect(opinion.english.contains(
+            "Applicable law:\nLaw 5239/2025, Article 7; the Labour Code (Presidential Decree 62/2025), Article 194 as amended."))
+        // The applicable law and the links are written in Greek by the program, not translated.
+        #expect(opinion.greek.contains(
+            "Εφαρμοστέο δίκαιο\nν. 5239/2025, άρθρο 7· Κώδικας Εργατικού Δικαίου (π.δ. 62/2025), άρθρο 194, όπως τροποποιήθηκε."))
+        #expect(opinion.greek.contains(
+            "Πώς συνδυάζονται\nΤο άρθρο 7 του ν. 5239/2025 τροποποίησε το άρθρο 194 του Κώδικα Εργατικού Δικαίου· εφαρμόζεται το τροποποιημένο κείμενο."))
+        #expect(!opinion.greek.contains("EL Article 7 of Law 5239/2025 amended"), "the links are not translated")
         #expect(!opinion.english.contains("Law 5316/2026"), "a document that doesn't address the question is not applicable law")
         for title in ["Ερώτημα", "Εφαρμοστέο δίκαιο", "Τι προβλέπει κάθε κείμενο", "Πώς συνδυάζονται", "Συμπέρασμα", "Σημείωση"] {
             #expect(opinion.greek.contains(title + "\n"), "\(title)")
         }
         #expect(opinion.greek.contains("EL Yes: up to four (4) hours"))
+    }
+
+    /// A decision has no articles: the model cited "(Article 1 of Ministerial Decision 8934)", the
+    /// article check dropped the sentence, and the €920 minimum wage was missing from the opinion
+    /// (9 Nov 2026). The number is now removed and the sentence is kept.
+    @Test func aDecisionWithoutArticlesKeepsItsFigures() async throws {
+        let decision = Self.passage(Self.decision, 23, greek: "α) Για τους υπαλλήλους ο κατώτατος μισθός ορίζεται σε εννιακόσια είκοσι ευρώ (920,00 €)",
+                                    english: "[Part 2] (a) For employees the minimum wage is set at nine hundred and twenty euros (920,00 €).",
+                                    score: 0.48, statute: "MD:8934")
+        let source = GreekLegalOpinionWriter.Source(document: "ya.pdf", statuteKey: "MD:8934", passages: [decision])
+        #expect(!GreekLegalOpinionWriter.hasArticles(source))
+        let instructions = GreekLegalOpinionWriter.sectionInstructions(statute: source.name, hasArticles: false)
+        #expect(instructions.contains("Cite each rule as (Ministerial Decision 8934)") && !instructions.contains("Article N"))
+        #expect(GreekLegalOpinionWriter.withoutInventedArticles(
+            "(Article 1 of Ministerial Decision 8934) sets the minimum wage at €920.", statute: "Ministerial Decision 8934")
+            == "Ministerial Decision 8934 sets the minimum wage at €920.")
+        #expect(GreekLegalOpinionWriter.withoutInventedArticles(
+            "The wage is €920 (Article 1 of Ministerial Decision 8934).", statute: "Ministerial Decision 8934")
+            == "The wage is €920 (Ministerial Decision 8934).")
+        // Amounts in words keep only their figure before translation.
+        let pre = LocalNeuralTranslator.legalEnglishPreEdited
+        #expect(pre("for employees at 9 hundred and twenty euros (920,00 €) and for workers at 40-one euros and 9 minutes (41.09 €), effective")
+            == "for employees at 920,00 € and for workers at 41.09 €, effective")
+        #expect(pre("and nine hundred euros (900 €)") == "and 900 €")
+        #expect(pre("every hour of legal overtime—up to four hours daily—is paid")
+            == "every hour of legal overtime, up to four hours daily, is paid")
+        #expect(pre("Articles 130–134 of the Code") == "Articles 130–134 of the Code")
+        let opinion = try await GreekLegalOpinionWriter.write(
+            question: "Πόσος είναι ο κατώτατος μισθός;", questionEn: "How much is the minimum wage?",
+            sources: [source], links: [],
+            respond: { instructions, _ in
+                if instructions == GreekLegalOpinionWriter.conclusionInstructions {
+                    return "The minimum wage for employees is nine hundred and twenty euros (920,00 €) (Article 1 of Ministerial Decision 8934)."
+                }
+                return "(Article 1 of Ministerial Decision 8934) sets the minimum wage for employees at nine hundred and twenty euros (920,00 €)."
+            },
+            translate: { $0 })
+        #expect(opinion.refusal == nil)
+        #expect(opinion.dropped.isEmpty, "\(opinion.dropped)")
+        #expect(opinion.english.contains("Ministerial Decision 8934 sets the minimum wage for employees at nine hundred and twenty euros (920,00 €)."))
+        #expect(opinion.english.contains("Conclusion:\nThe minimum wage for employees is nine hundred and twenty euros (920,00 €) (Ministerial Decision 8934)."))
+    }
+
+    @Test func greekWordingIsWrittenByTheProgramAndRepaired() {
+        let amends = GreekLegalOpinionWriter.CodeLink(statuteKey: "LAW:5239/2025", article: "7", kind: .amends, codeArticle: "194")
+        let adds = GreekLegalOpinionWriter.CodeLink(statuteKey: "LAW:5239/2025", article: "21", kind: .adds, codeArticle: "578Α")
+        let applies = GreekLegalOpinionWriter.CodeLink(statuteKey: "MD:8934", article: nil, kind: .appliesUnder, codeArticle: "141Α")
+        #expect(GreekLegalOpinionWriter.combinationGreek([amends, adds, applies]) == [
+            "Το άρθρο 7 του ν. 5239/2025 τροποποίησε το άρθρο 194 του Κώδικα Εργατικού Δικαίου· εφαρμόζεται το τροποποιημένο κείμενο.",
+            "Το άρθρο 21 του ν. 5239/2025 πρόσθεσε το άρθρο 578Α στον Κώδικα Εργατικού Δικαίου.",
+            "Η Υ.Α. 8934 εκδόθηκε κατ’ εξουσιοδότηση του άρθρου 141Α του Κώδικα Εργατικού Δικαίου και το εφαρμόζει.",
+        ])
+        #expect(GreekLegalOpinionWriter.greekStatuteName("PD:62/2025") == "Κώδικας Εργατικού Δικαίου (π.δ. 62/2025)")
+        #expect(GreekLegalOpinionWriter.greekStatuteName("LAW:5278/2026") == "ν. 5278/2026")
+        // The translator's Greek, as the 9 Nov 2026 opinion on overtime showed it.
+        #expect(GreekLegalOpinionWriter.repairedGreek(
+            "Σύμφωνα με το Άρθρο 7 της Ν. 5239/2025, ο εργοδότης. Το κείμενο του Άρθρο 194 ισχύει. Άρθρο 7 (Άρθρο 7) ορίζει.")
+            == "Σύμφωνα με το άρθρο 7 του ν. 5239/2025, ο εργοδότης. Το κείμενο του άρθρου 194 ισχύει. Άρθρο 7 ορίζει.")
+        #expect(GreekLegalOpinionWriter.repairedGreek(
+            "με αμοιβή ίση με το πληρωμένο ωριαίο επιτόκιο. Η προθεσμία για υπερωρίες είναι 4 ώρες.")
+            == "με αμοιβή ίση με το καταβαλλόμενο ωρομίσθιο. Το όριο για υπερωρίες είναι 4 ώρες.")
+    }
+
+    /// The opinion over three documents and the summary of Law 5278/2026, as the 9 Nov 2026 run
+    /// showed them.
+    @Test func greekWordingOfTheThreeDocumentOpinionIsRepaired() {
+        let repaired = GreekLegalOpinionWriter.repairedGreek
+        #expect(repaired("σύμφωνα με την Υπουργική Απόφαση 8934 υπό Article 141Α του Εργατικού Κώδικα.")
+            == "σύμφωνα με την Υπουργική Απόφαση 8934 κατ’ εξουσιοδότηση του άρθρου 141Α του Εργατικού Κώδικα.")
+        #expect(repaired("ισχύει για τους εργαζόμενους και τους εργαζόμενους ολόκληρης της χώρας")
+            == "ισχύει για τους εργαζόμενους ολόκληρης της χώρας")
+        #expect(repaired("Αυτοί οι κανόνες ισχύουν για τους εργαζόμενους που λαμβάνουν νομικές υπερωρίες.")
+            == "Αυτοί οι κανόνες ισχύουν για τους εργαζόμενους που λαμβάνουν νόμιμες υπερωρίες.")
+        #expect(repaired("αμοιβή ίση με το καταβεβλημένο καταβαλλόμενο ωρομίσθιο που αυξάνεται")
+            == "αμοιβή ίση με το καταβαλλόμενο ωρομίσθιο που αυξάνεται")
+        #expect(repaired("αμοιβή ίση με το καταβεβλημένο ωριαίο ποσοστό") == "αμοιβή ίση με το καταβαλλόμενο ωρομίσθιο")
+        #expect(repaired("του Article 7 του ν. 5239/2025") == "του άρθρου 7 του ν. 5239/2025")
+        #expect(repaired("Αλλάζει κυρίως τον χρόνο παράδοσης του λεπτού του ψηφοδελτίου.")
+            == "Αλλάζει κυρίως τον χρόνο παράδοσης των πρακτικών του ψηφοδελτίου.")
+        // The rerun of the summary on the Mac (9 Nov 2026).
+        #expect(repaired("ένα χρονοδιάγραμμα για την παράδοση των εκλογικών λεπτών μετά")
+            == "ένα χρονοδιάγραμμα για την παράδοση των εκλογικών πρακτικών μετά")
+        #expect(repaired("για τρεις μήνες μετά τη λήξη ή τη λήξη μιας σύμβασης")
+            == "για τρεις μήνες μετά τη λήξη ή τη λύση μιας σύμβασης")
+        #expect(repaired("Παρατείνει κυρίως την ισχύ των ρυθμιστικών όρων")
+            == "Παρατείνει κυρίως την ισχύ των κανονιστικών όρων")
+        #expect(repaired("Ο εργοδότης οφείλει να καταβάλει αυτό το αυξημένο τέλος, και")
+            == "Ο εργοδότης οφείλει να καταβάλει αυτή την αυξημένη αμοιβή, και")
+        // The rerun of the three-document opinion on the Mac (9 Nov 2026).
+        #expect(repaired("δεν προσδιορίζεται στο Ν. 5239/2025, καθώς") == "δεν προσδιορίζεται στον ν. 5239/2025, καθώς")
+        #expect(repaired("καταβάλλονται με ισοτιμία ίση με την πληρωμένη ωριαία τιμή που αυξάνεται")
+            == "καταβάλλονται με αμοιβή ίση με το καταβαλλόμενο ωρομίσθιο που αυξάνεται")
+        #expect(repaired("ο οποίος τροποποιεί άρθρο 194 του Εργατικού Κώδικα. ισχύει ο τροποποιημένος κανόνας.")
+            == "ο οποίος τροποποιεί το άρθρο 194 του Εργατικού Κώδικα. Ισχύει ο τροποποιημένος κανόνας.")
+        #expect(repaired("σύμφωνα με τα άρθρα 220 επ. του Κώδικα") == "σύμφωνα με τα άρθρα 220 επ. του Κώδικα")
+        #expect(repaired("η οποία ισχύει σύμφωνα με άρθρο 141Α του Εργατικού Κώδικα. Για υπερωρίες, υπό άρθρο 7 του ν. 5239/2025,")
+            == "η οποία ισχύει σύμφωνα με το άρθρο 141Α του Εργατικού Κώδικα. Για υπερωρίες, υπό το άρθρο 7 του ν. 5239/2025,")
+        // Untouched: minutes of time, and a phrase that only looks repeated.
+        #expect(repaired("μέσα σε 30 λεπτά από τη λήξη") == "μέσα σε 30 λεπτά από τη λήξη")
+        #expect(repaired("οι εργοδότες και οι εργαζόμενοι") == "οι εργοδότες και οι εργαζόμενοι")
+    }
+
+    @Test func statuteIsLawBeforeTranslation() {
+        #expect(LocalNeuralTranslator.legalEnglishPreEdited("This statute mainly changes the collective agreements.")
+            == "This law mainly changes the collective agreements.")
+        #expect(LocalNeuralTranslator.legalEnglishPreEdited("Statutes of 2025") == "Laws of 2025")
+        #expect(LocalNeuralTranslator.legalEnglishPreEdited("the statute of limitations") == "the statute of limitations")
+        #expect(!GreekLegalDocumentSummarizer.reduceInstructions.contains("statute"))
+    }
+
+    @Test func theConclusionDoesNotRestateTheLinks() {
+        let link = GreekLegalOpinionWriter.CodeLink(statuteKey: "LAW:5239/2025", article: "7", kind: .amends, codeArticle: "194")
+        let conclusion = "Under Article 7 of Law 5239/2025, overtime of 4 hours a day is allowed, paid at plus 40%. The employee may refuse. The amended text of Article 194 of the Labour Code, as in force for this matter."
+        #expect(GreekLegalOpinionWriter.withoutRestatedLinks(conclusion, links: [link])
+            == "Under Article 7 of Law 5239/2025, overtime of 4 hours a day is allowed, paid at plus 40%. The employee may refuse.")
+        // A sentence with figures of its own stays, amendment or not.
+        let figures = "As amended, Article 194 allows 4 hours a day."
+        #expect(GreekLegalOpinionWriter.withoutRestatedLinks(figures, links: [link]) == figures)
+    }
+
+    @Test func aQuarterIsThreeMonthsBeforeTranslation() {
+        #expect(LocalNeuralTranslator.legalEnglishPreEdited("Its terms apply for a quarter from the expiry.")
+            == "Its terms apply for three months from the expiry.")
+        #expect(LocalNeuralTranslator.legalEnglishPreEdited("in the quarter after expiry") == "in the three-month period after expiry")
+        #expect(LocalNeuralTranslator.legalEnglishPreEdited("a quarter of the employees") == "a quarter of the employees")
     }
 
     @Test func anOpinionWithNoSupportedConclusionIsRefused() async throws {
