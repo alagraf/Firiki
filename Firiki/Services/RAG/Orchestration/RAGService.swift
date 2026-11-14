@@ -6070,6 +6070,20 @@ class RAGService: ObservableObject {
         }
     }
 
+    /// Thesis fork: each document's own statute (`documentStatuteKey`, read from its title page at
+    /// import), taken from its first passage. Documents without one (imported before it was
+    /// recorded, or whose title page names none) are left out.
+    func documentStatuteKeys(containerId: UUID, documentIds: [UUID]) async -> [UUID: String] {
+        guard let database = try? await dbForContainer(containerId) else { return [:] }
+        var keys: [UUID: String] = [:]
+        for documentId in documentIds {
+            if let key = try? await database.chunks(forDocument: documentId, limit: 1).first?.legal?.documentStatuteKey {
+                keys[documentId] = key
+            }
+        }
+        return keys
+    }
+
     /// Thesis fork (2.11.27): the documents of the library a Greek question is searched in when it
     /// names a statute that is one of them (`GreekLegalAnswerFinalizer.statuteScope`), or nil. Each
     /// document's statute is read from its first passage, so only a question that names a statute
@@ -6080,13 +6094,8 @@ class RAGService: ObservableObject {
             let id = containerId ?? self.containerService.activeContainerId
             return (id, self.documentsForContainer(id).map(\.id))
         }
-        guard let database = try? await dbForContainer(targetId) else { return nil }
-        var keys: [UUID: String] = [:]
-        for documentId in documentIds {
-            if let key = try? await database.chunks(forDocument: documentId, limit: 1).first?.legal?.documentStatuteKey {
-                keys[documentId] = key
-            }
-        }
+        let keys = await documentStatuteKeys(containerId: targetId, documentIds: documentIds)
+        guard !keys.isEmpty else { return nil }
         let scopes = questions.compactMap { GreekLegalAnswerFinalizer.statuteScope(query: $0, documentKeys: keys) }
         guard !scopes.isEmpty else { return nil }
         return scopes.reduce(Set<UUID>()) { $0.union($1) }

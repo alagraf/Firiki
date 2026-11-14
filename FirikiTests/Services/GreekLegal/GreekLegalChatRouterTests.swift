@@ -258,24 +258,106 @@ struct GreekLegalChatRouterTests {
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Περίληψη του νόμου 4808/2021") == "4808/2021")
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Summarize law 5278/2026") == "5278/2026")
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Σύνοψε το έγγραφο") == nil)
+        #expect(GreekLegalChatRouter.extractDocumentTarget(from: "σύνοψη του ν. 62/2025") == "62/2025")
+        #expect(GreekLegalChatRouter.extractDocumentTarget(from: "σύνοψη του νόμου 5239") == "5239")
     }
 
     // MARK: - Document Matching
 
-    @Test func matchDocumentInLibrary() {
-        let url1 = URL(fileURLWithPath: "/tmp/law-5278-2026.pdf")
-        let url2 = URL(fileURLWithPath: "/tmp/pd-62-2025-labour-code.pdf")
-        let doc1 = Document(filename: "law-5278-2026.pdf", fileURL: url1, contentType: .pdf)
-        let doc2 = Document(filename: "pd-62-2025-labour-code.pdf", fileURL: url2, contentType: .pdf)
-        let library = [doc1, doc2]
+    /// A library of the demo documents: (filename, statute key read at import).
+    private static func library(_ files: [(String, String?)]) -> (documents: [Document], keys: [UUID: String]) {
+        let documents = files.map { Document(filename: $0.0, fileURL: URL(fileURLWithPath: "/tmp/" + $0.0), contentType: .pdf) }
+        var keys: [UUID: String] = [:]
+        for (document, file) in zip(documents, files) { keys[document.id] = file.1 }
+        return (documents, keys)
+    }
 
-        let matched5278 = GreekLegalChatRouter.matchDocument(target: "5278/2026", in: library)
-        #expect(matched5278?.filename == "law-5278-2026.pdf")
+    /// The five demo documents under their real filenames.
+    private static let demoFiles: [(String, String?)] = [
+        ("pd_62_2025_fek_a121.pdf", "PD:62/2025"),
+        ("n_5239_2025_fek_a178.pdf", "LAW:5239/2025"),
+        ("n_5278_2026_fek_a22.pdf", "LAW:5278/2026"),
+        ("n_5316_2026_fek_a105.pdf", "LAW:5316/2026"),
+        ("ya_8934_2026_fek_b1759.pdf", "MD:8934"),
+    ]
 
-        let matched62 = GreekLegalChatRouter.matchDocument(target: "62/2025", in: library)
-        #expect(matched62?.filename == "pd-62-2025-labour-code.pdf")
+    /// The same documents saved under names without their numbers.
+    private static let renamedFiles: [(String, String?)] = [
+        ("Κώδικας Εργατικού Δικαίου.pdf", "PD:62/2025"),
+        ("ΦΕΚ Α 178.pdf", "LAW:5239/2025"),
+        ("ΦΕΚ Α 22.pdf", "LAW:5278/2026"),
+        ("ΦΕΚ Α 105.pdf", "LAW:5316/2026"),
+        ("ΦΕΚ Β 1759.pdf", "MD:8934"),
+    ]
 
-        let matchedNone = GreekLegalChatRouter.matchDocument(target: "9999/2026", in: library)
-        #expect(matchedNone == nil)
+    private static func summaryTarget(_ request: String, _ files: [(String, String?)]) -> GreekLegalChatRouter.SummaryTarget {
+        let (documents, keys) = library(files)
+        return GreekLegalChatRouter.matchDocument(
+            query: request,
+            target: GreekLegalChatRouter.extractDocumentTarget(from: request),
+            in: documents,
+            statuteKeys: keys
+        )
+    }
+
+    private static func matchedFile(_ request: String, _ files: [(String, String?)]) -> String? {
+        if case .document(let document) = summaryTarget(request, files) { return document.filename }
+        return nil
+    }
+
+    @Test(arguments: [
+        ("σύνοψη του ν. 5278/2026", 2),
+        ("Σύνοψη του Π.Δ. 62/2025", 0),
+        ("περίληψη της Υ.Α. 8934/2026", 4),
+        ("σύνοψη του νόμου 5239", 1),
+        ("συνοψη του ν 5316/2026", 3),
+        ("Summarize Law 5278/2026", 2),
+        ("σύνοψη του ν. 62/2025", 0),
+    ])
+    func summaryFindsTheStatuteByItsKey(request: String, index: Int) {
+        #expect(Self.matchedFile(request, Self.demoFiles) == Self.demoFiles[index].0)
+        #expect(Self.matchedFile(request, Self.renamedFiles) == Self.renamedFiles[index].0)
+    }
+
+    @Test func theKindAskedForWinsOverTheSameNumber() {
+        let files: [(String, String?)] = [("law.pdf", "LAW:62/2025"), ("decree.pdf", "PD:62/2025")]
+        #expect(Self.matchedFile("Σύνοψη του Π.Δ. 62/2025", files) == "decree.pdf")
+        #expect(Self.matchedFile("Σύνοψη του ν. 62/2025", files) == "law.pdf")
+    }
+
+    @Test func filenamesWithoutAKeyMatchWholeNumbersOnly() {
+        let files: [(String, String?)] = [("ya_8934_2026_fek_b1762.pdf", nil), ("n_5316_2026_fek_a105.pdf", nil)]
+        #expect(Self.matchedFile("σύνοψη του ν. 5316/2026", files) == "n_5316_2026_fek_a105.pdf")
+        #expect(Self.matchedFile("σύνοψη του Π.Δ. 62", files) == nil)
+        #expect(Self.summaryTarget("σύνοψη του Π.Δ. 62", files) == .notInLibrary(key: nil, number: "62"))
+    }
+
+    @Test func aStatuteNotInTheLibraryIsNeverSwappedForAnother() {
+        let labourCodeOnly: [(String, String?)] = [("pd_62_2025_fek_a121.pdf", "PD:62/2025")]
+        #expect(Self.summaryTarget("σύνοψη του ν. 5278/2026", labourCodeOnly)
+            == .notInLibrary(key: "LAW:5278/2026", number: "5278/2026"))
+        #expect(Self.summaryTarget("σύνοψη του ν. 9999/2026", Self.demoFiles)
+            == .notInLibrary(key: "LAW:9999/2026", number: "9999/2026"))
+    }
+
+    @Test func theConstitutionIsFoundByItsKey() {
+        let files = Self.demoFiles + [("syntagma.pdf", "CONST")]
+        #expect(Self.matchedFile("Σύνοψη του Συντάγματος", files) == "syntagma.pdf")
+    }
+
+    @Test func aRequestNamingNoStatuteIsUnnamed() {
+        #expect(Self.summaryTarget("Σύνοψε το έγγραφο", Self.demoFiles) == .unnamed)
+    }
+
+    @Test func statutesAreNamedTheWayReadersWriteThem() {
+        #expect(GreekLegalChatRouter.greekStatuteName("LAW:5278/2026") == "ν. 5278/2026")
+        #expect(GreekLegalChatRouter.greekStatuteName("PD:62/2025") == "π.δ. 62/2025")
+        #expect(GreekLegalChatRouter.greekStatuteName("MD:8934") == "Υ.Α. 8934")
+        #expect(GreekLegalChatRouter.greekStatuteName("CONST") == "Σύνταγμα")
+        #expect(GreekLegalChatRouter.statuteName("LAW:5278/2026", greek: false) == "Law 5278/2026")
+
+        let (documents, keys) = Self.library([("n_5278_2026_fek_a22.pdf", "LAW:5278/2026"), ("old.pdf", nil)])
+        #expect(GreekLegalChatRouter.documentList(documents, statuteKeys: keys, greek: true)
+            == "- ν. 5278/2026 (n_5278_2026_fek_a22.pdf)\n- old.pdf")
     }
 }

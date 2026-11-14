@@ -144,7 +144,7 @@ enum GreekLegalChatRouter {
     static func extractDocumentTarget(from query: String) -> String? {
         let text = folded(query)
         let patterns = [
-            #"\b(?:ν\.|νομ(?:οσ|ου))\s*(\d{4}(?:/\d{4})?)\b"#,
+            #"\b(?:ν\.|νομ(?:οσ|ου))\s*(\d{1,5}(?:/\d{4})?)\b"#,
             #"(?:\bπ\.?\s*δ\.?|\bδιαταγμ(?:α|ατοσ))\s*(\d{1,4}(?:/\d{4})?)\b"#,
             #"(?:\bυ\.?\s*α\.?|\bαποφασ(?:η|ησ))\s*(\d{1,5}(?:/\d{4})?)\b"#,
             #"\b(?:law|decree|decision)\s*(\d{1,5}(?:/\d{4})?)\b"#,
@@ -161,24 +161,85 @@ enum GreekLegalChatRouter {
         return nil
     }
 
-    /// Matches a document in the library by a target query (e.g. "5278", "62/2025", or filename).
-    static func matchDocument(target: String?, in documents: [Document]) -> Document? {
-        guard let target = target?.lowercased().trimmingCharacters(in: .whitespaces), !target.isEmpty else {
-            return nil
+    /// The document a summary request asks for.
+    enum SummaryTarget: Equatable {
+        /// The library document the request names.
+        case document(Document)
+        /// The request names a statute that no library document is: its key ("LAW:5278/2026")
+        /// when the request names its kind, else the number as written ("5278/2026").
+        case notInLibrary(key: String?, number: String?)
+        /// The request names no statute ("summarise the document").
+        case unnamed
+    }
+
+    /// Finds the document a summary request names. `statuteKeys` holds each document's own statute
+    /// (`documentStatuteKey`, read from its title page at import). In order:
+    /// 1. a statute named with its kind (`requestedStatutes`) that is a document's statute;
+    /// 2. the number, and the year when given, against the documents' statutes, any kind
+    ///    («νόμου 5239», or «ν. 62/2025» for the Labour Code, which is a decree);
+    /// 3. for documents without a statute (imported before it was recorded), the number and year as
+    ///    whole numbers in the filename.
+    static func matchDocument(
+        query: String,
+        target: String?,
+        in documents: [Document],
+        statuteKeys: [UUID: String]
+    ) -> SummaryTarget {
+        let requested = GreekLegalAnswerFinalizer.requestedStatutes(query)
+        if let named = documents.first(where: { document in
+            guard let key = statuteKeys[document.id] else { return false }
+            return requested.contains { LegalVerificationPolicy.sameStatute(key, $0) }
+        }) {
+            return .document(named)
         }
-        // Match exact or substring in filename
-        if let direct = documents.first(where: { $0.filename.lowercased().contains(target) }) {
-            return direct
+
+        let parts = target?.split(separator: "/").map(String.init) ?? []
+        let number = parts.first.flatMap { Int($0) }.map(String.init)
+        let year = parts.count > 1 ? parts[1] : nil
+        if let number {
+            if let byKey = documents.first(where: { document in
+                guard let key = statuteKeys[document.id] else { return false }
+                let keyParts = key.split(separator: ":", maxSplits: 1).last?.split(separator: "/").map(String.init) ?? []
+                guard keyParts.first.flatMap({ Int($0) }).map(String.init) == number else { return false }
+                return year == nil || keyParts.count < 2 || keyParts[1] == year
+            }) {
+                return .document(byKey)
+            }
+            if let byName = documents.first(where: { document in
+                guard statuteKeys[document.id] == nil else { return false }
+                let numbers = document.filename.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.map(String.init)
+                return numbers.contains(number) && (year.map(numbers.contains) ?? true)
+            }) {
+                return .document(byName)
+            }
         }
-        let cleanTarget = target.replacingOccurrences(of: "/", with: "-")
-        if let directClean = documents.first(where: { $0.filename.lowercased().contains(cleanTarget) }) {
-            return directClean
+
+        if number != nil || !requested.isEmpty {
+            return .notInLibrary(key: requested.sorted().first, number: target)
         }
-        let numberOnly = target.components(separatedBy: CharacterSet.decimalDigits.inverted).first { !$0.isEmpty } ?? ""
-        if !numberOnly.isEmpty, let numMatch = documents.first(where: { $0.filename.contains(numberOnly) }) {
-            return numMatch
-        }
-        return nil
+        return .unnamed
+    }
+
+    /// A statute key as a Greek reader writes it: «ν. 5278/2026», «π.δ. 62/2025», «Υ.Α. 8934»,
+    /// «Σύνταγμα».
+    static func greekStatuteName(_ key: String) -> String {
+        if key == "CONST" { return "Σύνταγμα" }
+        let names = [("LAW:", "ν. "), ("PD:", "π.δ. "), ("MD:", "Υ.Α. ")]
+        for (prefix, name) in names where key.hasPrefix(prefix) { return name + key.dropFirst(prefix.count) }
+        return key
+    }
+
+    /// A statute key in the request's language.
+    static func statuteName(_ key: String, greek: Bool) -> String {
+        greek ? greekStatuteName(key) : GreekLegalAnswerFinalizer.statuteName(key)
+    }
+
+    /// One line per library document for "which document?": its statute when known, and its file.
+    static func documentList(_ documents: [Document], statuteKeys: [UUID: String], greek: Bool) -> String {
+        documents.map { document in
+            guard let key = statuteKeys[document.id] else { return "- \(document.filename)" }
+            return "- \(statuteName(key, greek: greek)) (\(document.filename))"
+        }.joined(separator: "\n")
     }
 
     // MARK: - User-facing messages
@@ -337,22 +398,29 @@ enum GreekLegalChatRouter {
             )
         }
 
-        let chosenDoc: Document?
-        if let matched = matchDocument(target: docTarget, in: documents) {
-            chosenDoc = matched
-        } else if documents.count == 1 {
-            chosenDoc = documents.first
-        } else {
-            chosenDoc = nil
-        }
+        let statuteKeys = await ragService.documentStatuteKeys(containerId: containerId, documentIds: documents.map(\.id))
+        let docList = documentList(documents, statuteKeys: statuteKeys, greek: isGreekQuery)
 
-        guard let doc = chosenDoc else {
-            let docList = documents.map { "- \($0.filename)" }.joined(separator: "\n")
+        let doc: Document
+        switch matchDocument(query: query, target: docTarget, in: documents, statuteKeys: statuteKeys) {
+        case .document(let matched):
+            doc = matched
+        case .notInLibrary(let key, let number):
+            let named = key.map { statuteName($0, greek: isGreekQuery) } ?? number ?? ""
             return ChatCapabilityResult(
                 content: isGreekQuery
-                    ? "Υπάρχουν περισσότερα από ένα νομοθετήματα στη βιβλιοθήκη. Ποιο έγγραφο θα θέλατε να συνοψίσω;\n\n\(docList)"
-                    : "The library holds more than one document. Which one should I summarize?\n\n\(docList)"
+                    ? "Δεν υπάρχει στη βιβλιοθήκη: \(named). Τα έγγραφα της βιβλιοθήκης είναι:\n\n\(docList)"
+                    : "Not in the library: \(named). The library holds:\n\n\(docList)"
             )
+        case .unnamed:
+            guard documents.count == 1, let only = documents.first else {
+                return ChatCapabilityResult(
+                    content: isGreekQuery
+                        ? "Υπάρχουν περισσότερα από ένα νομοθετήματα στη βιβλιοθήκη. Ποιο έγγραφο θα θέλατε να συνοψίσω;\n\n\(docList)"
+                        : "The library holds more than one document. Which one should I summarize?\n\n\(docList)"
+                )
+            }
+            doc = only
         }
 
         let database = try await ragService.dbForContainer(containerId)
@@ -367,6 +435,7 @@ enum GreekLegalChatRouter {
 
         let passages = chunks.map(\.content)
         let statuteKey = chunks.lazy.compactMap { $0.legal?.documentStatuteKey }.first
+        let heading = statuteKey.map { statuteName($0, greek: isGreekQuery) } ?? doc.filename
 
         let summary = try await GreekLegalDocumentSummarizer.summarize(
             passages: passages,
@@ -380,7 +449,7 @@ enum GreekLegalChatRouter {
         }
 
         return ChatCapabilityResult(
-            content: (isGreekQuery ? "### Σύνοψη: " : "### Summary: ") + "\(doc.filename)\n\n" + answerText,
+            content: (isGreekQuery ? "### Σύνοψη: " : "### Summary: ") + "\(heading)\n\n" + answerText,
             metadata: metadata(model: "AFM 3 Core (Map-Reduce Summarizer)", query: query, since: start),
             retrievedChunks: retrieved
         )

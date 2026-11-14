@@ -275,6 +275,9 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-14 (latest): a chat summary request finds its document by the statute each document's
+  title page names, not by its filename, and a statute the library doesn't hold is never replaced
+  by another document. No question set goes through this path; nothing re-measured.
 - 2026-11-14 (later): chat recognition of capability requests ignores accents and case; ordinary
   questions are no longer sent to a template, opinion or summary; a described hiring arrangement
   tries the templates and falls back to Q&A. Template requests recognised from the chat: 0 → 38 of

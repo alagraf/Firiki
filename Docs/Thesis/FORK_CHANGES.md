@@ -2277,3 +2277,44 @@ tokens.
 - **Not checked:** the stage indicator, messages and details view in the Mac app with Apple
   Intelligence (the simulator has no model); the template router's answer for a described
   arrangement that it judges "none" (falls back to Q&A by code, not yet seen in the app).
+
+## 14 Nov 2026 (third entry): a summary finds its document by the statute it is
+
+**Why:** deeper fix 2 of `POC_PROGRESS.md`; plan `Docs/Thesis/plans/summary-by-statute-key.md`,
+approved by the owner. A chat summary request found its document by filename only: a statute saved
+under a name without its number («ΦΕΚ Α 22.pdf») got "which document?"; the number was matched as a
+substring ("62" in "…b1762…") whatever its kind; and a library of one document had that document
+summarised whatever statute the request named («σύνοψη του ν. 5278/2026» over the Labour Code).
+Every document already records its own statute at import (`documentStatuteKey`, 2.11.27).
+
+**What:**
+- `GreekLegalChatRouter.swift`:
+  - `matchDocument(query:target:in:statuteKeys:)` returns a `SummaryTarget`: the document, a
+    statute not in the library, or none named. It tries a statute named with its kind
+    (`requestedStatutes`, `sameStatute`), then the number and year against the documents'
+    statutes of any kind («νόμου 5239»; «ν. 62/2025» finds the Labour Code, a decree), then
+    whole numbers in the filename for documents without a statute;
+  - the one-document shortcut applies only when the request names no statute; a statute not in
+    the library gets «Δεν υπάρχει στη βιβλιοθήκη: ν. 5278/2026.» and the list of documents;
+  - the list shows each document's statute and file («- ν. 5278/2026 (n_5278_2026_fek_a22.pdf)»),
+    and the summary heading shows the statute («### Σύνοψη: ν. 5278/2026») when it is known;
+  - `greekStatuteName(_:)`, `statuteName(_:greek:)`, `documentList(_:statuteKeys:greek:)`;
+  - `extractDocumentTarget` reads a law number of 1–5 digits after «ν.»/«νόμου» (was exactly 4).
+- `RAGService.swift`: `documentStatuteKeys(containerId:documentIds:)`, moved out of
+  `greekLegalStatuteScope`, which now calls it (Q&A unchanged).
+- `GreekLegalChatRouterTests`: `matchDocumentInLibrary` replaced by tests over the five demo
+  documents under their real names and renamed, the kind asked for winning over the same number,
+  whole-number filename matching, a statute not in the library never swapped for another, the
+  Constitution, an unnamed request, and the statute names and document list.
+- Deeper fix 6 (`try!` patterns in the masker and title-page reader): already covered, since the
+  existing masker and `documentStatuteKey` tests build every one of them; no change.
+
+**Verification:**
+- `thesis_run_tests.sh -only-testing:FirikiTests/GreekLegalChatRouterTests`:
+  `** TEST BUILD SUCCEEDED **`; "Test run with 20 tests in 1 suite passed"; each new test (and the
+  7 cases of `summaryFindsTheStatuteByItsKey`) logged as passed.
+- Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 142
+  tests in 28 suites passed" (136 before).
+- macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
+  `** BUILD SUCCEEDED **`.
+- **Not checked:** a summary in the Mac app with Apple Intelligence and the imported library.

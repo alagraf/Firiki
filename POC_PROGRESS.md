@@ -193,3 +193,12 @@ The plan is in `Docs/Thesis/plans/demo-quick-wins.md`. Tick items here as they l
 - [x] 6. Locale-independent `AnswerUsageTallyTests`
 - [ ] 7. Demo setup checklist done on the demo Mac
 - [ ] Check items 1–5 in the Mac app with Apple Intelligence (the simulator can't run the model)
+
+## Status of the deeper fixes
+
+- [ ] 1. Summary and opinion error handling (retry on context overflow, guardrail fallback)
+- [x] 2. Summary target by statute key (`Docs/Thesis/plans/summary-by-statute-key.md`)
+- [ ] 3. Cancellation between the summary's and opinion's passes
+- [ ] 4. Latency of a summary and an opinion measured on the Mac
+- [ ] 5. Optional demo mode
+- [x] 6. `try!` patterns: already built by the existing masker and title-page tests; no change
