@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var selectedTab: Tab = .chat
     @State private var previousScenePhase: ScenePhase = .inactive
     @State private var showVisualValidationDashboard = false
+    @AppStorage(DemoModePreference.key) private var demoMode = DemoModePreference.defaultValue
     private let screenshotMode: ScreenshotMode
 
     init() {
@@ -301,6 +302,11 @@ struct ContentView: View {
         .onChange(of: settingsStore.enableSpotlightIndexing) { _, isOn in
             SpotlightIndexService.shared.indexingSwitched(on: isOn)
         }
+        .onChange(of: demoMode) { _, isDemo in
+            if isDemo, selectedTab == .database {
+                selectedTab = .chat
+            }
+        }
     }
 
     /// The tabs, declared with SwiftUI's `Tab` (iOS 18, macOS 15) in place of `.tabItem` (5.7, roadmap row
@@ -326,11 +332,13 @@ struct ContentView: View {
                 }
             }
 
-            SwiftUI.Tab("Database", systemImage: "cylinder.split.1x2", value: Tab.database) {
-                NavigationStack {
-                    DatabaseDashboardView()
-                        .environmentObject(ragService)
-                        .environmentObject(containerService)
+            if !demoMode || screenshotMode.initialTab == .database {
+                SwiftUI.Tab("Database", systemImage: "cylinder.split.1x2", value: Tab.database) {
+                    NavigationStack {
+                        DatabaseDashboardView()
+                            .environmentObject(ragService)
+                            .environmentObject(containerService)
+                    }
                 }
             }
 

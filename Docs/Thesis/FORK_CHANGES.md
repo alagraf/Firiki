@@ -2474,3 +2474,48 @@ summary or opinion, and Stop took effect only after every pass. The OS 27 SDK al
 - Mac app: Stop during an opinion goes idle in about 0.3 s, and the log shows no pass after it.
 - Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 157
   tests in 29 suites passed" (149 in 28 before).
+
+---
+
+## 14 Nov 2026 (eighth entry): Demo Mode hides inherited upstream screens
+
+**Why (`POC_PROGRESS.md`, deeper fix 5):** An audit showed three inherited upstream areas
+reaching or risking exposure during the legal-assistant demo:
+
+1. `Features/Telemetry/Visualizations/` (`Embedding3DView`, `AdaptiveVisualizationsView`,
+   `VisualizationsView`): already unreachable anywhere in the live app (only `#Preview` blocks and
+   a comment in `DocumentLibraryView.swift`).
+2. `Features/Telemetry/Dashboard/TelemetryDashboardView.swift`: reachable under
+   `Settings -> Developer & Diagnostics -> Telemetry`.
+3. `Features/Database/DatabaseDashboardView.swift`: always shown as top-level `Tab.database`
+   ("Database") in `ContentView.swift`.
+4. `UnifiedMetricsBar`, `CompactChatHeader`'s chunk-count chip, and hardware HUD overlays: gated by
+   `showTechnicalDetails` / `showSiliconHUD`, where `SettingsStore` defaults `showTechnicalDetails`
+   to `true` on an existing install that has a saved `llmTemperature`.
+
+**What changed:**
+
+- Plan saved in `Docs/Thesis/plans/demo-mode.md`.
+- `Firiki/Services/Infrastructure/Configuration/SettingsStore.swift`: added `DemoModePreference`
+  (`key = "demoMode"`, `defaultValue = true`, plus `isEnabled(in:)`,
+  `effectiveShowTechnicalDetails(in:)` and `effectiveShowSiliconHUD(in:)`).
+- `Firiki/App/ContentView.swift`: hides `Tab.database` when `demoMode` is on (unless
+  `screenshotMode.initialTab == .database`), and returns `selectedTab` to `.chat` if `demoMode` is
+  turned on while viewing `.database`.
+- `Firiki/Features/Chat/Conversation/ChatScreen.swift` & `Firiki/Features/Database/DatabaseDashboardView.swift`:
+  gate `HardwareXRayOverlay`, `UnifiedMetricsBar`, `.showsTechnicalDetails` environment,
+  `CompactChatHeader` chunk count, and the iOS/macOS chat menu `"Technical Details"` toggles on
+  `!demoMode`.
+- `Firiki/Features/Settings/SettingsView.swift`: hides `.developer` (`Developer & Diagnostics`) when
+  `demoMode` is on, gates `HardwareXRayOverlay`, and adds a `"Demo Mode"` toggle (searchable by
+  `"demo"`) in `System`; keeps `Telemetry HUD` / `Technical Details` inside `Appearance` so UI
+  accessibility tests stay compatible.
+- `FirikiTests/Services/Infrastructure/SettingsPersistenceTests.swift`: added
+  `testDemoModeDefaultsOnAndGatesTechnicalTelemetry()`.
+
+**Verification:**
+
+- `SettingsPersistenceTests`: `./scripts/thesis_run_tests.sh /private/tmp/demo-mode-unit.log -only-testing:FirikiTests/SettingsPersistenceTests` → `** TEST BUILD SUCCEEDED **`, `Executed 5 tests, with 0 failures (0 unexpected) in 0.492 (0.500) seconds`, `** TEST EXECUTE SUCCEEDED **`.
+- macOS build: `xcodebuild build -scheme Firiki -destination 'platform=macOS' -derivedDataPath /private/tmp/oi-mac` → `** BUILD SUCCEEDED **`.
+- Full unit suite: `./scripts/thesis_run_tests.sh /private/tmp/demo-mode-full.log` → `** TEST BUILD SUCCEEDED **`, `Executed 1292 tests, with 8 tests skipped and 0 failures (0 unexpected)`, `Test run with 157 tests in 29 suites passed`.
+- UI tests: `xcodebuild test -scheme FirikiUITests -destination "platform=iOS Simulator,name=iPhone 18 Pro" -derivedDataPath /private/tmp/oi-build -only-testing:FirikiUITests/AccessibilityAuditTests` → `Executed 2 tests, with 0 failures (0 unexpected) in 89.741 (89.752) seconds`, `** TEST SUCCEEDED **`.

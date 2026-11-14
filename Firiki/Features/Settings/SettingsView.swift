@@ -36,6 +36,7 @@ struct SettingsView: View {
     @State private var isRefreshingSharedWorkspace = false
     @State private var sharedWorkspaceRefreshMessage: String?
     @State private var pccCapability: FoundationModelCapabilitySnapshot?
+    @AppStorage(DemoModePreference.key) private var demoMode = DemoModePreference.defaultValue
     #if os(macOS)
         /// Whether the menu bar item shows (`MenuBarAsk`); the app reads the same key.
         @AppStorage(MenuBarAsk.visibilityKey) private var showsMenuBarItem = true
@@ -70,7 +71,7 @@ struct SettingsView: View {
             // Motherboard HUD - Full-screen X-ray overlay
             // Shows glowing borders at the ACTUAL physical locations where
             // the Neural Engine, GPU, and CPU sit behind the screen
-            if settings.showSiliconHUD {
+            if DemoModePreference.effectiveShowSiliconHUD(stored: settings.showSiliconHUD, demoMode: demoMode) {
                 HardwareXRayOverlay()
                     .allowsHitTesting(false) // Don't block touches
                     .transition(.opacity)
@@ -284,9 +285,13 @@ struct SettingsView: View {
 
             ForEach(SettingsGroup.allCases) { group in
                 let entries = visibleEntries(in: group)
-                if !entries.isEmpty {
+                let showDemoToggle = group == .system && demoModeMatchesSearch
+                if !entries.isEmpty || showDemoToggle {
                     // A header in the readable gray (5.7): the List's own header "nearly passed" Apple's contrast audit.
                     Section {
+                        if showDemoToggle {
+                            demoModeToggleRow
+                        }
                         ForEach(entries) { entry in
                             if entry.id == .advanced {
                                 // Advanced opens the parameters directly. Pushing a screen
@@ -333,7 +338,10 @@ struct SettingsView: View {
             ModelConfigurationSheet()
         }
         .overlay {
-            if !trimmedSearch.isEmpty, SettingsGroup.allCases.allSatisfy({ visibleEntries(in: $0).isEmpty }) {
+            if !trimmedSearch.isEmpty,
+               !demoModeMatchesSearch,
+               SettingsGroup.allCases.allSatisfy({ visibleEntries(in: $0).isEmpty })
+            {
                 ContentUnavailableView.search(text: trimmedSearch)
             }
         }
@@ -499,6 +507,35 @@ struct SettingsView: View {
         settingsSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var demoModeMatchesSearch: Bool {
+        let query = trimmedSearch.lowercased()
+        guard !query.isEmpty else { return true }
+        let keywords = ["demo", "demo mode", "database", "telemetry", "diagnostics", "hud", "metrics"]
+        return "demo mode".contains(query) || keywords.contains { $0.contains(query) }
+    }
+
+    private var demoModeToggleRow: some View {
+        Toggle(isOn: $demoMode) {
+            Label {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text("Demo Mode")
+                    Text("Hides the Database tab, developer diagnostics and technical telemetry")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "sparkles.rectangle.stack")
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .tint(.accentColor)
+        .onChange(of: demoMode) { _, _ in
+            DSHaptics.toggle()
+        }
+        .accessibilityLabel("Demo Mode")
+        .accessibilityHint("Hides the Database tab, developer diagnostics and technical telemetry")
+    }
+
     /// Entries in `group` that match the current search.
     ///
     /// Matching includes each entry's `keywords`, so a knob can be found by the name it
@@ -506,7 +543,9 @@ struct SettingsView: View {
     /// screen it happens to live on. That is the difference between a deep settings tree
     /// and a hostile one.
     private func visibleEntries(in group: SettingsGroup) -> [SettingsEntry] {
-        let entries = SettingsEntry.all.filter { $0.group == group }
+        let entries = SettingsEntry.all.filter {
+            $0.group == group && !(demoMode && $0.id == .developer)
+        }
         let query = trimmedSearch.lowercased()
         guard !query.isEmpty else { return entries }
         return entries.filter { entry in

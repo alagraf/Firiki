@@ -22,6 +22,25 @@ struct PCCConsentPreferenceResolution: Equatable, Sendable {
     let setting: PCCSettings
 }
 
+/// Preference key and gating helpers for Demo Mode, which defaults to on and hides
+/// upstream developer/database/telemetry surfaces that do not fit the legal demo.
+enum DemoModePreference {
+    static let key = "demoMode"
+    static let defaultValue = true
+
+    static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? defaultValue
+    }
+
+    static func effectiveShowTechnicalDetails(stored: Bool, demoMode: Bool) -> Bool {
+        !demoMode && stored
+    }
+
+    static func effectiveShowSiliconHUD(stored: Bool, demoMode: Bool) -> Bool {
+        !demoMode && stored
+    }
+}
+
 /// Resolves the canonical consent key and the legacy picker without allowing a stale legacy
 /// `Ask` value to erase an explicit remembered decision.
 enum PCCConsentPreferenceMigration {

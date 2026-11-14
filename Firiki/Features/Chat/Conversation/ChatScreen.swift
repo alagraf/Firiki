@@ -225,6 +225,7 @@ struct ChatScreen: View {
     }
 
     @AppStorage("retrievalTopK") private var retrievalTopK: Int = 3
+    @AppStorage(DemoModePreference.key) private var demoMode = DemoModePreference.defaultValue
     @State private var showScrollToBottom: Bool = false
     @State private var showThreadSidebar: Bool = false
     @State private var messages: [ChatMessage] = []
@@ -621,7 +622,7 @@ struct ChatScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
 
             // Motherboard HUD - Full-screen X-ray overlay
-            if settings.showSiliconHUD {
+            if DemoModePreference.effectiveShowSiliconHUD(stored: settings.showSiliconHUD, demoMode: demoMode) {
                 HardwareXRayOverlay()
                     // Hit-testing intentionally enabled: the overlay is
                     // internally touch-transparent except the draggable legend.
@@ -892,9 +893,11 @@ struct ChatScreen: View {
 
                             // The chat's technical view (5.7), also in Settings, Appearance. The menu is open with an
                             // empty chat for it; the chat actions above stay off until there is a chat.
-                            Divider()
-                            Toggle(isOn: $settings.showTechnicalDetails) {
-                                Label("Technical Details", systemImage: "waveform.path.ecg")
+                            if !demoMode {
+                                Divider()
+                                Toggle(isOn: $settings.showTechnicalDetails) {
+                                    Label("Technical Details", systemImage: "waveform.path.ecg")
+                                }
                             }
 
                             Divider()
@@ -963,9 +966,11 @@ struct ChatScreen: View {
 
                             // The chat's technical view (5.7), also in Settings, Appearance. The menu is open with an
                             // empty chat for it; the chat actions above stay off until there is a chat.
-                            Divider()
-                            Toggle(isOn: $settings.showTechnicalDetails) {
-                                Label("Technical Details", systemImage: "waveform.path.ecg")
+                            if !demoMode {
+                                Divider()
+                                Toggle(isOn: $settings.showTechnicalDetails) {
+                                    Label("Technical Details", systemImage: "waveform.path.ecg")
+                                }
                             }
 
                             Divider()
@@ -2532,7 +2537,10 @@ struct ChatScreen: View {
         mainContentStack
             // How much machinery the chat shows (5.7): the step console, the badges under an answer and Fact Check's
             // numbers read it.
-            .environment(\.showsTechnicalDetails, settings.showTechnicalDetails)
+            .environment(
+                \.showsTechnicalDetails,
+                DemoModePreference.effectiveShowTechnicalDetails(stored: settings.showTechnicalDetails, demoMode: demoMode)
+            )
     }
 
     @ViewBuilder private var mainContentStack: some View {
@@ -2547,7 +2555,7 @@ struct ChatScreen: View {
 
             // The stats bar is part of the technical view (5.7); the plain chat says what it is doing in the answer's
             // own bubble instead.
-            if !settings.showTechnicalDetails {
+            if !DemoModePreference.effectiveShowTechnicalDetails(stored: settings.showTechnicalDetails, demoMode: demoMode) {
                 EmptyView()
             } else if let metricsData = consolidatedMetricsData {
                 primaryMetricsBar(metricsData: metricsData)
@@ -4068,6 +4076,7 @@ struct ContextStatusBarView: View {
 struct CompactChatHeader: View {
     @ObservedObject var containerService: ContainerService
     @EnvironmentObject private var settings: SettingsStore
+    @AppStorage(DemoModePreference.key) private var demoMode = DemoModePreference.defaultValue
     let docCount: Int
     let chunkCount: Int
     let ragService: RAGService
@@ -4101,7 +4110,7 @@ struct CompactChatHeader: View {
         HStack(spacing: DSSpacing.sm) {
             StatChip(icon: "doc.fill", value: "\(docCount)", color: .blue)
             // The passages are the search's units, not the person's: shown with the technical view (5.7).
-            if settings.showTechnicalDetails {
+            if DemoModePreference.effectiveShowTechnicalDetails(stored: settings.showTechnicalDetails, demoMode: demoMode) {
                 StatChip(icon: "square.grid.3x3.fill", value: "\(chunkCount)", color: .purple)
             }
         }

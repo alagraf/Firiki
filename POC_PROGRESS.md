@@ -200,7 +200,7 @@ The plan is in `Docs/Thesis/plans/demo-quick-wins.md`. Tick items here as they l
 - [x] 2. Summary target by statute key (`Docs/Thesis/plans/summary-by-statute-key.md`)
 - [x] 3. Cancellation between the summary's and opinion's passes — E16 (Stop idle in 0.3 s on the Mac)
 - [x] 4. Latency of a summary and an opinion measured on the Mac — Q&A 26 s, template 2.5–20 s, summary of the whole Law 5278 83 s, opinion about 40–90 s (14 Nov rehearsal); iPhone not measured
-- [ ] 5. Optional demo mode
+- [x] 5. Optional demo mode (`Docs/Thesis/plans/demo-mode.md`): audit done (`Visualizations/` has no live call sites; `TelemetryDashboardView` is inside Developer & Diagnostics; `Database` tab and `showTechnicalDetails` on installs with saved `llmTemperature` were visible); added `Demo Mode` defaulting to `true` (`Settings -> System`) hiding `Database`, `Developer & Diagnostics`, HUD overlays, and telemetry/metrics chips while keeping Settings -> Appearance switches intact for `AccessibilityAuditTests`
 - [x] 6. `try!` patterns: already built by the existing masker and title-page tests; no change
 
 ## Mac rehearsal, 14 Nov 2026 (driven by Claude Code, M3 MacBook Pro, Apple Intelligence)

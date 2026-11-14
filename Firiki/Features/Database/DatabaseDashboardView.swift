@@ -14,6 +14,7 @@ struct DatabaseDashboardView: View {
     @EnvironmentObject private var ragService: RAGService
     @EnvironmentObject private var containerService: ContainerService
     @EnvironmentObject private var settings: SettingsStore
+    @AppStorage(DemoModePreference.key) private var demoMode = DemoModePreference.defaultValue
 
     @State private var selectedSection: DatabaseSection = .overview
     /// Which library the per-library figures on this screen cover.
@@ -175,7 +176,7 @@ struct DatabaseDashboardView: View {
             // Motherboard HUD - Full-screen X-ray overlay
             // Shows glowing borders at the ACTUAL physical locations where
             // the Neural Engine, GPU, and CPU sit behind the screen
-            if settings.showSiliconHUD {
+            if DemoModePreference.effectiveShowSiliconHUD(stored: settings.showSiliconHUD, demoMode: demoMode) {
                 HardwareXRayOverlay()
                     .allowsHitTesting(false) // Don't block touches
                     .transition(.opacity)

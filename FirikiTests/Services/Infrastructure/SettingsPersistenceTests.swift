@@ -111,4 +111,19 @@ final class SettingsPersistenceTests: XCTestCase {
         ranBefore.set(false, forKey: "showTechnicalDetails")
         XCTAssertFalse(SettingsStore(defaults: ranBefore, ragService: RAGService()).showTechnicalDetails)
     }
+
+    func testDemoModeDefaultsOnAndGatesTechnicalTelemetry() throws {
+        let suite = "SettingsPersistenceTests.demo.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertTrue(DemoModePreference.isEnabled(in: defaults))
+        XCTAssertFalse(DemoModePreference.effectiveShowTechnicalDetails(stored: true, demoMode: true))
+        XCTAssertFalse(DemoModePreference.effectiveShowSiliconHUD(stored: true, demoMode: true))
+
+        defaults.set(false, forKey: DemoModePreference.key)
+        XCTAssertFalse(DemoModePreference.isEnabled(in: defaults))
+        XCTAssertTrue(DemoModePreference.effectiveShowTechnicalDetails(stored: true, demoMode: false))
+        XCTAssertTrue(DemoModePreference.effectiveShowSiliconHUD(stored: true, demoMode: false))
+    }
 }
