@@ -624,6 +624,19 @@ struct GreekTranslationRetrievalTests {
         }
     }
 
+    @Test func sixWorkingDaysPerWeekTranslatesIntoGreekWithoutEnglishLeak() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.englishToGreek))
+        let sentence = "For workers with a work system of six (6) working days per week, overtime work is considered work beyond forty-eight (48) hours per week, and the arrangements for the legal daytime working hours are maintained (Article 7)."
+        let rawGreek = try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations(sentence)
+        let greek = GreekLegalOpinionWriter.repairedGreek(rawGreek)
+        let lower = greek.lowercased()
+        #expect(!lower.contains("work"), "\(greek)")
+        #expect(!lower.contains("days"), "\(greek)")
+        #expect(!lower.contains("week"), "\(greek)")
+        #expect(!lower.contains("εργοδοτ"), "\(greek)")
+        #expect(greek.contains("6") && greek.contains("48"), "\(greek)")
+    }
+
     @Test func articleReferencesResolveToTheArticle() {
         let document = UUID()
         func chunk(_ index: Int, _ text: String) -> DocumentChunk {

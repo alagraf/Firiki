@@ -748,6 +748,11 @@ actor LocalNeuralTranslator {
             // A range ("Articles 130–134") keeps its en dash.
             (#"\s*—\s*"#, ", "),
             (#"(?<=\p{L})\s+–\s+(?=\p{L})"#, ", "),
+            // "a work system of 6 working days per week" (Law 5239/2025 Art. 7) makes en→el leave
+            // «6 work days per week» untranslated or emit «6 εργοδοτούμενων ημερών» (E23, 15 Nov 2026);
+            // "a 6-day work week" translates cleanly as «εβδομάδα εργασίας 6 ημερών».
+            (#"(?i)\b(an?|the)\s+work\s+system\s+of\s+(\d+)\s+work(?:ing)?\s+days?\s+(?:per|a)\s+week\b"#, "$1 $2-day work week"),
+            (#"(?i)\bwork\s+system\s+of\s+(\d+)\s+work(?:ing)?\s+days?\s+(?:per|a)\s+week\b"#, "$1-day work week"),
         ]
         var s = text
         for (pattern, template) in rules {

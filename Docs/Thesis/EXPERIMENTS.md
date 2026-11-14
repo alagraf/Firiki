@@ -561,3 +561,18 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
 | `GreekLabourLibrary` `dev` (24) | `14 of 24` (`1217 s`, `~8` cases flipped) (`firiki-library-dev10-e20-fix`) | `13 of 24` (`718 s`) (`firiki-library-dev-e22`) · `13 of 24` (`728 s`) (`firiki-library-dev-e22-rerun`) | **41% faster** (Q7 & Q11 no longer escalated into 230–265 s agentic chains); `retrieval hit 17 of 21` & `right documents 21 of 21` identical in both E22 runs; 4 cases (`1, 2, 7, 23`) still varied in downstream `LanguageModelSession` phrasing / Gate C numeric checks |
 
 - **Outcome:** kept. Greedy planning removes route and retrieval flips (`0/6` flips on Labour Code rerun, identical retrieval across consecutive 24-question library runs, `~41%` speedup on library `dev`), leaving only minor downstream on-device `LanguageModelSession` tie-breaking noise on a few borderline cases.
+
+---
+
+### E23 · 15 Nov 2026 · Untranslated «6 work days per week» in Greek opinions
+
+- **Hypothesis:** In overtime opinions (`opinion_qa_v1.jsonl` `Q1` and `Q11`), `opus-mt-tc-big-el-en` translates Law 5239/2025 Article 7's six-day regime as `"a work system of six (6) working days per week"`. After `SpelledNumber.digitsForEnglishNumberWords` collapses `"six (6)"` → `"6"`, `opus-mt-tc-big-en-el` stumbles on `"a work system of 6 working days per week"` and outputs `"6 work days per week"` verbatim (in `Q1` and `Q11`) or `"6 εργοδοτούμενων ημερών"` (in `Q1`), whereas `"a six-day work week"` (used in `Q11`'s Conclusion) translates cleanly as `"εβδομάδα εργασίας 6 ημερών"`.
+- **What changed:** Pre-edit `"a/the work system of <N> work(ing) days per/a week"` → `"$1 $2-day work week"` in `LocalNeuralTranslator.legalEnglishPreEdited(_:)`, plus defense-in-depth fallback rules in `GreekLegalOpinionWriter.repairedGreek(_:)`.
+- **Runs (`dev` split, iOS 27 Simulator):**
+
+| Run | Citations | Key facts | Refused | English phrases in Greek text |
+|---|---|---|---|---|
+| Before (`firiki-opinion-dev-baseline`) | `12 of 14` | `15 of 22` | `0 of 7` | `Q1` & `Q11` leaked `"6 work days per week"` (plus `"6 εργοδοτούμενων ημερών"` in `Q1`) |
+| After (`firiki-opinion-dev-e23`) | `12 of 14` | `15 of 22` | `0 of 7` | **`0` across all 7 dev opinions** (`Q1` & `Q11` render `"6ήμερη εβδομάδα εργασίας"`); live `Opus-MT` unit test passes (`29 tests in 3 suites`, `0 failures`, `235.7 s`) |
+
+- **Outcome:** kept. All 7 dev opinions render pure Greek with zero `"work days per week"` leaks and unchanged citation/key-fact accuracy.

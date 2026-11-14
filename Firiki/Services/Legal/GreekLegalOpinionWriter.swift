@@ -410,6 +410,10 @@ nonisolated enum GreekLegalOpinionWriter {
             // A limit on overtime came back «προθεσμία», a deadline.
             (#"Η\s+προθεσμία(?=\s+(?:για|των)\s+(?:τις\s+)?υπερωρ)"#, "Το όριο"),
             (#"(?<![\p{L}])η\s+προθεσμία(?=\s+(?:για|των)\s+(?:τις\s+)?υπερωρ)"#, "το όριο"),
+            // Residual English "6 work days per week" / mistranslated «εργοδοτούμενων ημερών» (E23).
+            (#"(?i)(σύστημα\s+εργασίας\s+)(\d+)\s+work(?:ing)?\s+days?\s+(?:per|a)\s+week(?![\p{L}])"#, "$1$2 εργάσιμων ημερών την εβδομάδα"),
+            (#"(?i)\b(\d+)\s+work(?:ing)?\s+days?\s+(?:per|a)\s+week\b"#, "$1 εργάσιμες ημέρες την εβδομάδα"),
+            (#"(?<![\p{L}])(\d+)\s+εργοδοτούμενων\s+ημερών(?![\p{L}])"#, "$1 εργάσιμων ημερών"),
         ]
         for (pattern, template) in rules {
             s = s.replacingOccurrences(of: pattern, with: template, options: .regularExpression)

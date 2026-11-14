@@ -2751,3 +2751,20 @@ The owner asked to fix them without approvals. Plan: `Docs/Thesis/plans/antigrav
 - Evaluations (`dev` splits, E22):
   - `GreekLabourCode` `dev` (`firiki-labour-dev-e22`, `1655.568 s`): `36 of 46` (`answer pass 32 of 41; retrieval hit 39 of 41; false abstentions 0; abstention correct 4 of 5`, vs `37 of 46`, `3` false abstentions in E20); 6-question rerun (`firiki-labour-rerun6-e22`, `127.982 s`): `3 of 6`, matching 6 of 6 rows identically (`0` flips, vs `2 of 6` flipping in E20).
   - `GreekLabourLibrary` `dev` (`firiki-library-dev-e22` `718.467 s`, `firiki-library-dev-e22-rerun` `727.973 s`): `13 of 24` in both runs (`retrieval hit 17 of 21`, `right documents retrieved 21 of 21` identical; ~41% faster than E20's `1216.765 s` because Q7/Q11 no longer escalated into agentic routes; `4 of 24` cases still varied from downstream on-device draft wording / Gate C numeric checks).
+
+### 15 Nov 2026 (third entry): fix untranslated «6 work days per week» in Greek opinions (E23)
+
+**Why:** On the daily overtime opinions (`opinion_qa_v1.jsonl` Q1 and Q11), the English draft's phrase `"a work system of six (6) working days per week"` (from `opus-mt-tc-big-el-en` translating Law 5239/2025 Article 7) became `"a work system of 6 working days per week"` after `SpelledNumber.digitsForEnglishNumberWords`, and `opus-mt-tc-big-en-el` emitted the English phrase `"6 work days per week"` verbatim in both Q1 and Q11 (or mistranslated it as `"6 εργοδοτούμενων ημερών"` in Q1 sentence 3).
+
+**What changed:**
+- `Firiki/Services/Document/Localization/LocalNeuralTranslator.swift`:
+  - Added pre-editing rules in `legalEnglishPreEdited(_:)` rewriting `"a/the work system of <N> work(ing) day(s) per/a week"` → `"$1 $2-day work week"` (and without article → `"$1-day work week"`), which `opus-mt-tc-big-en-el` translates cleanly as `6ήμερη εβδομάδα εργασίας`.
+- `Firiki/Services/Legal/GreekLegalOpinionWriter.swift`:
+  - Added defense-in-depth fallback rules in `repairedGreek(_:)` for any residual `<N> work(ing) day(s) per/a week` and `<N> εργοδοτούμενων ημερών`.
+- `FirikiTests/Services/GreekLegal/GreekLegalPipelineTests.swift` & `FirikiTests/Services/GreekLegal/GreekLegalOpinionTests.swift`:
+  - Added live `Opus-MT` test `sixWorkingDaysPerWeekTranslatesIntoGreekWithoutEnglishLeak` and `repairedGreek` regression assertions.
+- Plan: `Docs/Thesis/plans/translate-work-days-per-week.md`; runs and measurement: `Docs/Thesis/EXPERIMENTS.md` (`E23`).
+
+**Verification:**
+- `thesis_run_tests.sh` (`GreekTranslationRetrievalTests` + `GreekLegalOpinionTests` + `GreekLegalOpinionEvaluation`, `split=dev`, `firiki-opinion-dev-e23`): `** TEST BUILD SUCCEEDED **`; `✔ Test run with 29 tests in 3 suites passed after 235.704 seconds.`
+- `GreekLegalOpinionEvaluation` `dev`: `[GreekOpinion] summary split=dev: citations 12 of 14, key facts 15 of 22, refused 0 of 7` (matching `firiki-opinion-dev-baseline`), with both Q1 and Q11 rendering `"6ήμερη εβδομάδα εργασίας"` and 0 untranslated English words across all 7 dev opinions.
