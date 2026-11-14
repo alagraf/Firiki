@@ -2393,3 +2393,7 @@ prompt, and the check dropped it; the owner approved removing the numbers.
   (the Code's sixth-day Article 191 is retrieved).
 - Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 146
   tests in 28 suites passed" (144 before).
+- Follow-up (owner's request): the README's opinion example is now the evaluation's wording of the
+  overtime question («Ο εργοδότης ζητά από υπάλληλο πενθήμερης εργασίας … Θέλω γνωμοδότηση.»), which
+  gets the right conclusion in the Mac app; the short form («Θέλω γνωμοδότηση: … Επιτρέπεται;») still
+  does not. Documentation only.

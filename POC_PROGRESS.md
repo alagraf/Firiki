@@ -298,3 +298,4 @@ nothing dropped. In the Mac app the evaluation's wording of the overtime questio
 short README prompt still concludes "not allowed" (the Code's sixth-day Article 191 is retrieved).
 For the demo, use the longer wording. Its Greek still has a leftover placeholder («__ΕΧΝ.») and one
 wrong figure ("186 hours", from "Articles 169 to 186").
+README's opinion example changed to the longer wording (same day).
