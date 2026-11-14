@@ -478,3 +478,70 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
     retrieval rose (`6 → 9 of 11`) while the total pass count (`5 vs 6 of 12`) is within the
     run-to-run variation.
 - **Outcome:** measured once and recorded in `README.md`, `METHODS_SUMMARY.md`, and `FORK_CHANGES.md`.
+
+## E20. Review of Antigravity's work: Labour Code effect, run variation, case 34 (2026-11-15)
+
+- **Question:** did Antigravity's shared search changes (E17: scoped Greek keyword search, new
+  stop words, the «Επιτρέπεται;» rewrite) change ordinary Q&A? The library dev set fell 15 → 14 of
+  24 in E17, with case 34 (out of scope: «Τι ορίζει το άρθρο 16 του Συντάγματος για την παιδεία;»)
+  passing → failing, and the Labour Code dev set wasn't rerun.
+- **Labour Code dev, both builds, same Simulator library:**
+  - `firiki-labour-dev-e20-pre-antigravity` (`74718ac2`, from a worktree): 38 of 46, 5 of 5
+    refusals right, 0 false refusals;
+  - `firiki-labour-dev-e20-head` (`de7dc76e`): 37 of 46, 4 of 5 right, 3 false refusals;
+  - six cases differed (1, 10, 26, 50, 59, 68).
+- **Rerun of those six on both builds** (`firiki-labour-rerun6-e20-*`): on each build, 2 of the 6
+  changed result against its own first run (head: 1, 50; pre: 10, 50). Cases 59 (false refusal on
+  head) and 68 (out of scope, answered on head) kept their results on each build.
+- **Why they differ:** for case 59 the old build's log shows `[QueryRuntime] Planner escalated
+  Standard query to agentic` (20 sources) and the new one the standard path (9 sources).
+  - `QueryExecutionPlannerService.buildPlan` asks the model for the route with guided generation
+    and no greedy option, so the route is sampled.
+  - E17's shared changes can't reach these questions: the stop-word refactor is equivalent, none of
+    them contains the new stop words or «Επιτρέπεται», and the scoped search runs only for a
+    question naming a library statute.
+  - **Conclusion:** the Labour Code difference is run variation from the sampled planner, not an
+    E17 regression (59 and 68 were consistent in two runs each, which does not rule chance out).
+- **Case 34** failed on *both* builds (`firiki-library-case34-e20-*`), with the same passages.
+  - The refusal for a named statute counted the Constitution as present when any retrieved
+    passage merely mentioned it.
+  - **Change:** when a question names the Constitution as its only statute and exactly one article
+    ("What does the Constitution on Education define Article 16 [Άρθρο 16]?"), a passage counts
+    only if it is from the Constitution or cites that article of it, in English or Greek
+    (`constitutionArticle`, `citesConstitutionArticle`). A Constitution question without an article
+    still accepts any passage citing the Constitution.
+  - Library dev with the fix (`firiki-library-dev10-e20-fix`): **14 of 24**, case 34 passes.
+    Eight other questions changed against `firiki-library-dev9` (7, 8, 11, 13, 16, 23, 30, 32) in
+    both directions. None names the Constitution, so this is the same run variation.
+  - Constitution set (`firiki-constitution-e20-fix`): 8 of 10, as in the README.
+- **Mac app** (7 documents, this build):
+  - Q&A (paternity leave): 14 working days, Verified;
+  - «Συνόψισε το ν. 5278/2026»: Articles 2–14 of the whole law within 165 s, no list badges;
+  - the short overtime question: correct conclusion (4 hours a day, 150 a year, 40%);
+  - demo mode hides the Database tab.
+
+  The lecture notes' name showed as «( )»: the model cited «(ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ)» without
+  ".pdf", and a name without its extension was protected only if it had a digit. A Greek name is
+  now protected without its extension too, and the rerun showed the name whole. One English phrase
+  («6 work days per week») stays untranslated.
+- **Opinion dev after both fixes** (`firiki-opinion-dev10-e20`): identical to E17 (12 of 14
+  citations, 15 of 22 key facts, per case).
+- **Outcome:** case-34 fix kept. The sampled route planner is a source of run-to-run variation in
+  Q&A worth fixing (greedy planning) as its own measured change.
+
+## E21. Summary grouping: articles per model call (2026-11-15)
+
+- **Question:** E18 capped each summary map call at 2 articles, and the Law 5278/2026 summary went
+  from 78 s to 134 s. Is the cap the cause, and is it needed?
+- **Runs** (summary dev, same build otherwise, greedy; `firiki-summary-dev-e21-apg-*`):
+
+| Articles per call | Groups | Time | Provisions | Articles cited |
+|---|---|---|---|---|
+| 2 (E18) | 15 | 149 s | 5 of 6 (missing the 40% extension threshold, art. 9) | 3 of 3 |
+| 3 | 14 | 140 s | 6 of 6 | 3 of 3 |
+| no cap | 14 | 142 s | 6 of 6 | 3 of 3 |
+
+- **Finding:** the time grew because E18's heading fix reads 19 body passages that were skipped
+  before (notes 10,187 → 25,011 characters), not because of the cap.
+- **Outcome:** the count cap is removed (`articlesPerGroup = nil`); the summary dev set is 6 of 6
+  provisions and 3 of 3 articles, in about 2.3 minutes.

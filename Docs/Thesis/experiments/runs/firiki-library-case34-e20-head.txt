@@ -1,0 +1,11 @@
+# firiki-library-case34-e20-head: result lines of firiki-library-case34-e20-head.log (log last written 2026-11-14 20:40)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.003) seconds
+[GreekEval] set=GreekLabourLibrary corpus=library (pd_62_2025_fek_a121.pdf, n_5239_2025_fek_a178.pdf, n_5278_2026_fek_a22.pdf, n_5316_2026_fek_a105.pdf, ya_8934_2026_fek_b1759.pdf) split=all
+[GreekEval] model availability: available
+[GreekEval] cleared 45 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 34 | medium | dev | FAIL | must abstain | abstained: no | named: no | missing: [] | 27 s |
+[GreekEval] answer pass 0 of 0; retrieval hit 0 of 0; false abstentions 0; abstention correct 0 of 1
+[GreekEval] summary set=GreekLabourLibrary corpus=library split=all: passed 0 of 1
+✔ Test run with 1 test in 1 suite passed after 28.249 seconds.

@@ -39,6 +39,11 @@ nonisolated enum GreekLegalDocumentSummarizer {
     /// English characters of passages a map call reads: about 45% of the window at 4 characters a
     /// token, leaving room for the instructions and the notes.
     static var groupCharacters: Int { windowTokens * 4 * 45 / 100 }
+    /// Articles a map call reads at most (nil: as many as fit in `groupCharacters`). E18 set 2; on
+    /// the summary dev set 2 gave 5 of 6 provisions in 149 s, 3 and nil 6 of 6 in 140–142 s
+    /// (EXPERIMENTS E21), so there is no count limit. The time grew from 78 s because E18's
+    /// heading fix reads 19 body passages that were skipped before, not because of the grouping.
+    static let articlesPerGroup: Int? = nil
 
     // MARK: Articles
 
@@ -69,8 +74,10 @@ nonisolated enum GreekLegalDocumentSummarizer {
             }
         }
         // Drop table-of-contents stubs (e.g. a lone "Article 5" heading line with >= 12 title words)
-        // that precede the body's Article 1 when Article 1 is present.
-        if let firstBody = result.lastIndex(where: { $0.heading == "Article 1" }), firstBody > 0 {
+        // that precede the body's Article 1 when Article 1 is present. The first "Article 1", not
+        // the last: an amending law that quotes another law's Article 1 further on would otherwise
+        // lose every real article before the quote (review of E18, 15 Nov 2026).
+        if let firstBody = result.firstIndex(where: { $0.heading == "Article 1" }), firstBody > 0 {
             result.removeFirst(firstBody)
         }
         return result
@@ -124,7 +131,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
     /// Consecutive articles grouped so each group's text stays within `limit` characters and at
     /// most `maxArticles` articles (nil for unlimited, used by part-chunked decisions); an article
     /// longer than `limit` is cut at a line or sentence end, each piece under its heading.
-    static func groups(of articles: [ArticleText], limit: Int = groupCharacters, maxArticles: Int? = 2) -> [String] {
+    static func groups(of articles: [ArticleText], limit: Int = groupCharacters, maxArticles: Int? = articlesPerGroup) -> [String] {
         var groups: [String] = []
         var current = ""
         var currentArticles = 0
@@ -370,7 +377,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
         let articles = articles(from: passages)
         // A document without articles is summarized by parts; its own articles are then none.
         let byParts = articles.isEmpty
-        let groups = groups(of: byParts ? parts(from: passages) : articles, maxArticles: byParts ? nil : 2)
+        let groups = groups(of: byParts ? parts(from: passages) : articles, maxArticles: byParts ? nil : articlesPerGroup)
         var notes: [Note] = []
         var noteCharacters = 0
         for (index, group) in groups.enumerated() {

@@ -196,6 +196,11 @@ struct GreekLegalEntityMaskerTests {
         #expect(names.map(\.verbatimEl) == ["passage 3-2.txt", "passage 1-2", "report_2024.pdf"])
         #expect(masked == "Article 5 of __LEX_ENT_900__ and __LEX_ENT_901__ [C1]; see also __LEX_ENT_902__.")
         #expect(GreekLegalEntityMasker.unmaskEntities(in: masked, entities: names, mode: .verbatim) == text)
+        // A Greek file name is kept without its extension too; an English one isn't ("notes").
+        let greekName = GreekLegalEntityMasker.maskDocumentNames(
+            in: "Overtime is paid hourly (ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ); see the notes.", names: ["ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf", "notes.pdf"])
+        #expect(greekName.entities.map(\.verbatimEl) == ["ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ"])
+        #expect(greekName.maskedText.hasSuffix("see the notes."))
         #expect(GreekLegalEntityMasker.canonicalKeys(in: "the passage and the passages") == ["TERM:passage", "TERM:passages"])
         #expect(GreekLegalEntityMasker.canonicalKeys(in: "the excerpts") == ["TERM:passages"])
     }
@@ -824,8 +829,8 @@ struct GreekLegalVerificationTests {
         #expect(tagged[1]?.sourceLanguage == "el")
     }
 
-    static func retrieved(_ text: String, document statute: String?) -> RetrievedChunk {
-        let base = retrieved(text, score: 0.9)
+    static func retrieved(_ text: String, document statute: String?, greek: String? = nil) -> RetrievedChunk {
+        let base = retrieved(text, score: 0.9, greek: greek)
         var legal = base.chunk.legal ?? LegalChunkMetadata()
         legal.documentStatuteKey = statute
         let chunk = DocumentChunk(
@@ -876,8 +881,21 @@ struct GreekLegalVerificationTests {
         // A passage of the Constitution, or one that cites it, answers.
         let article16 = Self.retrieved("Article 16: education is a basic mission of the State.", document: "CONST")
         #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: constitution, chunks: [leave, article16]) == nil)
+        // A passage citing the same article of the Constitution answers; one citing another
+        // article does not (library dev case 34, 15 Nov 2026: answered from a labour law's
+        // Article 16 because a passage mentioned the Constitution).
+        let citing16 = Self.retrieved("Under Article 16 of the Constitution, education is free at every level.", document: "PD:62/2025")
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: constitution, chunks: [citing16]) == nil)
         let citing = Self.retrieved("Under Article 22 of the Constitution, work is a right.", document: "PD:62/2025")
-        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: constitution, chunks: [citing]) == nil)
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: constitution, chunks: [citing]) == "the Constitution")
+        let citingGreek = Self.retrieved("Work is a right.", document: "PD:62/2025", greek: "Κατά το άρθρο 16 παρ. 2 του Συντάγματος η παιδεία είναι αποστολή του Κράτους.")
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: constitution, chunks: [citingGreek]) == nil)
+        // The case-34 question as translated, against a labour law's Article 16 that only mentions the Constitution.
+        let case34 = "What does the Constitution on Education define Article 16 [Άρθρο 16]?"
+        let lawArticle16 = Self.retrieved("Article 16 [Άρθρο 16]\nAdministrative sanctions apply, as the Constitution requires due process.", document: "LAW:5316/2026")
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: case34, chunks: [lawArticle16]) == "the Constitution")
+        // A question about the Constitution without an article still accepts any passage citing it.
+        #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(query: "Is work a right under the Constitution?", chunks: [citing]) == nil)
         // "Constitutional" is not the Constitution; imports without document keys are not judged.
         #expect(GreekLegalAnswerFinalizer.unsupportedNamedStatute(
             query: "Is a dismissal for union membership constitutional?", chunks: [leave]) == nil)

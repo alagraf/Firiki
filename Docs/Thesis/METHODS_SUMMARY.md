@@ -213,6 +213,7 @@ Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with
 | 2026-10-30 | Labour Code, test (23), full 260-page Code, once | 15 of 23 (12 before); 3 of 3 refused, including the question about the Constitution's Article 16; 1 wrong refusal |
 | 2026-11-13 | Re-measured after the rename to Firiki, billing removal and the Greek text-layer check: contract templates dev / test | 44 of 44 / 20 of 22 (43 of 44 / 20 of 22 before) |
 | 2026-11-13 | Same build: OCR, share of words found, clean / scan / photo; whole scanned PDF | 95% / 95% / 95%; 97% (same OCR text as 29 Oct; the word scoring rejoins hyphenated line ends since 31 Oct) |
+| 2026-11-15 | Library dev / Labour Code dev / Constitution / summary dev (provisions, articles, time) | 14 of 24 / 37 of 46 / 8 of 10 / 6 of 6, 3 of 3, 142 s |
 | 2026-11-14 | Summary dev after the placeholder repair and model-error handling (provisions, articles cited) | 5 of 6, 2 of 3 (3 of 3 before; 12 groups instead of 13) |
 | 2026-11-14 | After repairing translation placeholders: opinion dev / test (citations, key facts, refused); library Q&A dev | 10 of 12, 13 of 20, 0 / 4 of 8, 8 of 10, 0; 15 of 24 (13 before) |
 | 2026-11-14 | Opinion dev after the whole amending article and unnumbered passages (citations, key facts, refused) | 10 of 12, 15 of 20, 0 (11 of 20 before; test split not run) |
@@ -286,6 +287,10 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-15: a question about one article of the Constitution needs that article (or the
+  Constitution) among the passages; summaries have no cap of articles per model call. Library dev
+  14 of 24, Labour Code dev 37 of 46 (38 on the build before 14 Nov evening; Q&A varies between
+  runs because the route planner samples), Constitution 8 of 10, summary dev 6 of 6 in 142 s.
 - 2026-11-14 (library test re-run & README table, E19): re-measured the held-out five-document library test split once (`5 of 12`; right documents retrieved `9 of 11` vs `6 of 11` on 30 Oct) and updated the public results table with 13–14 Nov figures (E14–E19).
 - 2026-11-14 (summary article extraction and group cap, E18): statute summarization filters TOC blocks by line-start headings, drops leading TOC stubs ahead of Article 1, caps article map groups at two articles (while keeping part groups uncapped), strips echoed titled marker lines, and asks for exact scope words per distinct rule/stage. Summary dev restores `3 of 3` cited articles (Article 3 restored) and Article 8's rule that all normative terms continue after the three-month period (`5 of 6` provisions, `0` dropped).
 - 2026-11-14 (short overtime, E17): scoped opinion search uses both English and Greek query stems, strips opinion-request framing, normalizes standalone «Επιτρέπεται;» (`"Is that allowed?"`), prunes weak third documents (`relativeScore = 0.68`), places later statutes ahead of `PD:62/2025`, expands only the highest-scoring amending article per source, and guides the conclusion not to override general limits with special-case arrangements. Opinion dev (with Q11) holds `12 of 14` citations and `15 of 22` key facts while flipping Q11's conclusion from "not allowed" (Art. 192) to permitted (up to 4 h/day under Law 5239 Art. 7); library Q&A dev holds `14 of 24`.

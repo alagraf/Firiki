@@ -312,3 +312,18 @@ README's opinion example changed to the longer wording (same day).
 **Five-document library `test` split & `README.md` results table (`Docs/Thesis/plans/readme-results-update.md`, E19):** Re-measured `GreekLabourLibrary` `split=test` once (`5 of 12`; `right documents retrieved 9 of 11` vs `6 of 11` on 30 Oct; 1 question within run variation) and updated `README.md` Results table with dated E14–E19 measurements.
 
 **Standalone «Επιτρέπεται;» translation (`Docs/Thesis/plans/epitrepetai-translation.md`):** Verified that all Greek query paths route through `RAGService.greekQueryTranslation(_:)` (`normalizedGreekQuery(_:)`), widened delimiter handling to include `,` / `—` / `–` / `-` (`", επιτρέπεται;"`), and added live Opus-MT `standaloneEpitrepetaiTranslatesAsAllowedNotMayI()` in `GreekTranslationRetrievalTests` (`"Is that allowed?"`, no `"May I?"`; 39 Swift Testing tests + 19 XCTests passed).
+
+## Review of Antigravity's work and fixes (15 Nov 2026)
+
+Antigravity did all seven handoff tasks (commits `fc4e4675`…`de7dc76e`), recorded and pushed each,
+and touched no protected file. Claude Code's review found and fixed:
+- case 34, a Constitution question answered from a labour law;
+- the summary cap that made summaries slower (the real cause of the slowdown is reading 19 more
+  passages; summaries now take about 2.3 minutes for Law 5278);
+- an unsafe "Article 1" cut;
+- misleading README rows;
+- an 11-minute unit suite.
+
+See FORK_CHANGES 15 Nov 2026, EXPERIMENTS E20–E21, and `Docs/Thesis/plans/antigravity-review-fixes.md`.
+Open: the route planner samples, so Q&A results vary between runs (2 of 6 Labour Code questions,
+about 8 of 24 library questions); making it greedy is a separate, measured change.

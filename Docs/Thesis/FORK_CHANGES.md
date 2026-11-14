@@ -2679,3 +2679,58 @@ command.
   - `MarkdownRendererHorizontalRuleTests`: `Executed 15 tests, with 0 failures`
   - `MarkdownRendererNumberedListTests`: `Executed 4 tests, with 0 failures`
   - `GreekTranslationRetrievalTests` + `GreekKeywordArmTests` + `GreekLegalOpinionTests` + `GreekLegalSummaryTests`: `✔ Test run with 39 tests in 4 suites passed after 4.199 seconds.` (`standaloneEpitrepetaiTranslatesAsAllowedNotMayI()` translated to `'The employer requests four hours of overtime per day. Is that allowed?'` and `'The employer requests four hours of overtime per day, is that allowed?'` in `3.059 s`).
+
+## 15 Nov 2026: fixes from the review of Antigravity's work
+
+**Why:** Claude Code reviewed the seven commits Antigravity made from `Docs/Thesis/plans/HANDOFF.md`
+on 14 Nov. All tasks were done, recorded and pushed, and no protected file was touched. The review
+found:
+- library dev case 34 failing, and no Labour Code rerun after E17's shared search changes;
+- summaries 70% slower (E18);
+- a contents-page cut in E18 that could drop real articles;
+- README rows that misled;
+- a unit suite that grew from about 30 s to 11 min;
+- no check in the Mac app.
+
+The owner asked to fix them without approvals. Plan: `Docs/Thesis/plans/antigravity-review-fixes.md`.
+
+**What:**
+- `GreekLegalAnswerService.swift`: a question that names the Constitution as its only statute and
+  exactly one article needs a passage from the Constitution or one citing that article of it, in
+  English or Greek (`constitutionArticle`, `citesConstitutionArticle`). Any mention of the
+  Constitution used to count, and «Τι ορίζει το άρθρο 16 του Συντάγματος;» was answered from a
+  labour law's Article 16 (EXPERIMENTS E20).
+- `GreekLegalDocumentSummarizer.swift`:
+  - contents entries are dropped before the *first* "Article 1", not the last, so a law quoting
+    another law's Article 1 keeps its own articles;
+  - the cap of 2 articles per map call is removed (`articlesPerGroup = nil`; E21: 6 of 6
+    provisions instead of 5 of 6, 142 s instead of 149 s).
+- `GreekLegalEntityMasker.maskDocumentNames`: a Greek file name is also protected without its
+  extension. In the Mac app the opinion cited «(ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ)» without ".pdf", and the
+  translator left «( )». An English name without its extension still isn't protected, so "notes"
+  stays a word. Test in `documentNamesAreMaskedAsWritten`.
+- `GreekDemoPDFImportTests.swift`: the five-PDF extraction and compact-import tests are opt-in
+  (`TEST_RUNNER_OI_DEMO_PDFS=1`); `scripts/demo_check.sh` sets it.
+- `README.md`: the results table is dated per figure, and the opinion test figure is marked as
+  measured before E17 and E18; the variation note says Q&A varies (sampled route planner) while
+  greedy summaries and opinions rerun identically; the summary time is given.
+- Tests:
+  - `namedStatuteIsRefusedUnlessAPassageComesFromOrCitesIt`: a passage citing Article 22 of the
+    Constitution no longer supports a question about its Article 16; the same article in English
+    or Greek («άρθρο 16 παρ. 2 του Συντάγματος») does; the translated case-34 question with a labour
+    law's Article 16 is refused; a Constitution question without an article accepts any citation;
+  - the summary test of a law quoting another law's Article 1.
+
+**Verification:**
+- `thesis_run_tests.sh` with GreekLegalVerificationTests, GreekLegalSummaryTests,
+  GreekDemoPDFImportTests: `** TEST BUILD SUCCEEDED **`; "Test run with 29 tests in 3 suites
+  passed"; the two PDF tests "skipped" by default.
+- Full unit suite: "Executed 1296 tests, with 8 tests skipped and 0 failures"; "Test run with 167
+  tests in 31 suites passed after 60.036 seconds" (658 s before).
+- Evaluations (EXPERIMENTS E20, E21):
+  - library dev 14 of 24 with case 34 passing;
+  - Constitution 8 of 10;
+  - Labour Code dev 37 of 46 (38 on the pre-Antigravity build, the difference being run variation);
+  - summary dev 6 of 6, 3 of 3 articles, 142 s.
+- macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
+  `** BUILD SUCCEEDED **`.

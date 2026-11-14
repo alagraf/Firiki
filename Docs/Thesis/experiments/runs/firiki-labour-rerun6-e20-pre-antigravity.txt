@@ -1,0 +1,16 @@
+# firiki-labour-rerun6-e20-pre-antigravity: result lines of firiki-labour-rerun6-e20-pre-antigravity.log (log last written 2026-11-14 20:40)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekEval] set=GreekLabourCode corpus=excerpt (pd_62_2025_excerpt.pdf) split=all
+[GreekEval] model availability: available
+[GreekEval] cleared 5 cached searches
+[GreekEval] | # | level | split | result | retrieval | abstained | article named | missing facts | time |
+[GreekEval] | 1 | easy | dev | PASS | article 221 retrieved: yes | abstained: no | named: no | missing: [] | 14 s |
+[GreekEval] | 10 | easy | dev | PASS | article 187 retrieved: no | abstained: no | named: no | missing: [] | 13 s |
+[GreekEval] | 26 | medium | dev | FAIL | article 113 retrieved: yes | abstained: no | named: no | missing: ["ακυρ"] | 17 s |
+[GreekEval] | 50 | hard | dev | PASS | article 336 retrieved: yes | abstained: no | named: no | missing: [] | 12 s |
+[GreekEval] | 59 | hard | dev | PASS | article 226 retrieved: yes | abstained: no | named: yes | missing: [] | 57 s |
+[GreekEval] | 68 | abstain | dev | PASS | must abstain | abstained: yes | named: no | missing: [] | 14 s |
+[GreekEval] answer pass 4 of 5; retrieval hit 4 of 5; false abstentions 0; abstention correct 1 of 1
+[GreekEval] summary set=GreekLabourCode corpus=excerpt split=all: passed 5 of 6
+✔ Test run with 1 test in 1 suite passed after 130.606 seconds.

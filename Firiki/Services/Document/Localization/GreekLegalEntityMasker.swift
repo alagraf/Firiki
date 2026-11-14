@@ -442,7 +442,10 @@ nonisolated enum GreekLegalEntityMasker {
             guard trimmed.count >= 3 else { continue }
             known.insert(trimmed)
             let stem = (trimmed as NSString).deletingPathExtension
-            if stem != trimmed, stem.rangeOfCharacter(from: .decimalDigits) != nil { known.insert(stem) }
+            // Without its extension only when that can't be an ordinary English word: it has a
+            // number ("passage 3-2"), or it is Greek in the English draft (the opinion cited
+            // «(ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ)» without ".pdf" and the translator left «( )», 15 Nov 2026).
+            if stem != trimmed, stem.rangeOfCharacter(from: .decimalDigits) != nil || containsGreek(stem) { known.insert(stem) }
         }
         let alternatives = known.sorted { $0.count > $1.count }.map(NSRegularExpression.escapedPattern(for:)) + [fileNamePattern]
         let regex = NSRegularExpression.unsafe(start + "(?:" + alternatives.joined(separator: "|") + ")" + end)

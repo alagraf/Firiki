@@ -45,6 +45,14 @@ struct GreekLegalSummaryTests {
         ]
         let parsed = GreekLegalDocumentSummarizer.articles(from: withStubAndRefs)
         #expect(parsed.map(\.heading) == ["Article 1", "Article 9"])
+
+        // A law that quotes another law's Article 1 later keeps its own articles before the quote.
+        let quoting = [
+            "Article 1 [Άρθρο 1]\nThe purpose of this law is to strengthen collective labour agreements and industrial relations across all sectors.",
+            "Article 2 [Άρθρο 2]\nEmployers shall register every collective agreement in the information system within fifteen days of its signature.",
+            "Article 1 [Άρθρο 1]\nThe quoted article of the amended law now reads: the minimum wage is set by decision of the Minister every year.",
+        ]
+        #expect(GreekLegalDocumentSummarizer.articles(from: quoting).map(\.heading) == ["Article 1", "Article 2", "Article 1"])
     }
 
     @Test func groupsFitTheLimitAndKeepTheOrder() {

@@ -9,8 +9,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 UNIT_LOG="${DEMO_CHECK_UNIT_LOG:-/private/tmp/firiki-demo-check-unit.log}"
-echo "== Running FirikiTests unit suite =="
-./scripts/thesis_run_tests.sh "$UNIT_LOG"
+echo "== Running FirikiTests unit suite, with the demo PDF imports (about 15 minutes) =="
+TEST_RUNNER_OI_DEMO_PDFS=1 ./scripts/thesis_run_tests.sh "$UNIT_LOG"
 
 if grep -qE "with [1-9][0-9]* failure" "$UNIT_LOG" || grep -q "✘ Test" "$UNIT_LOG"; then
   echo "Unit suite reported failures (see $UNIT_LOG)"

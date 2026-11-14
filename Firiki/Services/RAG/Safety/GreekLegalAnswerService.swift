@@ -124,17 +124,45 @@ nonisolated enum GreekLegalAnswerFinalizer {
         guard chunks.contains(where: { $0.chunk.legal?.documentStatuteKey != nil }) else { return nil }
         let requested = requestedStatutes(query)
         guard !requested.isEmpty else { return nil }
+        let article = constitutionArticle(query: query, requested: requested)
         let supported = chunks.contains { retrieved in
             let chunk = retrieved.chunk
-            if requested.contains("CONST"),
-               chunk.legal?.documentStatuteKey == "CONST" || namesConstitution(chunk.content + " " + (chunk.sourceTextEl ?? "")) {
-                return true
+            if requested.contains("CONST") {
+                let text = chunk.content + " " + (chunk.sourceTextEl ?? "")
+                if chunk.legal?.documentStatuteKey == "CONST" { return true }
+                // A question about one article of the Constitution needs that article: a labour
+                // law's passage that mentions the Constitution elsewhere doesn't answer «Τι ορίζει το
+                // άρθρο 16 του Συντάγματος;» (library dev case 34 was answered from Article 16 of
+                // Law 5316/2026, 15 Nov 2026).
+                if let article { if citesConstitutionArticle(text, article: article) { return true } }
+                else if namesConstitution(text) { return true }
             }
             let cited = LegalVerificationPolicy.statuteKeys(of: chunk)
                 .union(LegalVerificationPolicy.evidenceKeys([retrieved]).filter { $0.hasPrefix("MD:") })
             return cited.contains { key in requested.contains { LegalVerificationPolicy.sameStatute(key, $0) } }
         }
         return supported ? nil : requested.sorted().first.map(statuteName)
+    }
+
+    /// The article of the Constitution a question asks about: the one article it names when the
+    /// Constitution is the only statute it names ("What does the Constitution on Education define
+    /// Article 16 [Άρθρο 16]?", the translation of «Τι ορίζει το άρθρο 16 του Συντάγματος…»), or nil.
+    static func constitutionArticle(query: String, requested: Set<String>) -> String? {
+        guard requested == ["CONST"] else { return nil }
+        let articles = Set(GreekLegalEntityMasker.canonicalKeys(in: query).filter { $0.hasPrefix("ART:") })
+        guard articles.count == 1, let key = articles.first else { return nil }
+        return String(key.dropFirst("ART:".count))
+    }
+
+    /// Whether a text cites that article of the Constitution ("Article 16 of the Constitution",
+    /// «άρθρο 16 του Συντάγματος», "Constitution (Article 16)").
+    static func citesConstitutionArticle(_ text: String, article: String) -> Bool {
+        let number = NSRegularExpression.escapedPattern(for: article.lowercased())
+        // Within a short span on one line; "para. 2" / «παρ. 2» may stand between.
+        let english = #"\barticle\s+\#(number)\b[^\n]{0,40}?\bconstitution\b|\bconstitution\b[^\n]{0,20}?\barticle\s+\#(number)\b"#
+        if text.range(of: english, options: [.regularExpression, .caseInsensitive]) != nil { return true }
+        let greek = #"\bαρθρ\w*\s+\#(number)\b[^\n]{0,40}?συνταγματ|συνταγματ\w*[^\n]{0,20}?\bαρθρ\w*\s+\#(number)\b"#
+        return SQLiteFullTextService.greekSearchFold(text).range(of: greek, options: .regularExpression) != nil
     }
 
     /// The statutes a question names: laws, decrees and decisions by number, and the Constitution.

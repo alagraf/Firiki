@@ -5,6 +5,8 @@
 //  Phase 2b (POC_PROGRESS.md, flow 4): checks the bundled OCR and translation ONNX assets and
 //  verifies import behaviour (statute key, article counts, Greek source + real Opus-MT English
 //  text) across the five Greek labour-law demo PDFs without requiring Apple Intelligence.
+//  The PDF tests take about 10 minutes, so they are opt-in (`TEST_RUNNER_OI_DEMO_PDFS=1`, set by
+//  `scripts/demo_check.sh`); the bundled-assets check always runs.
 //
 
 import Foundation
@@ -39,7 +41,10 @@ struct GreekDemoPDFImportTests {
         #expect(GreekPaddleOCRService.resourceURL(GreekPaddleOCRService.dictionaryName, "txt") != nil)
     }
 
-    @Test(arguments: demoPDFs)
+    /// The PDF tests run only when asked for: they took the unit suite from about 30 s to 11 min.
+    static var demoPDFsEnabled: Bool { ProcessInfo.processInfo.environment["OI_DEMO_PDFS"] == "1" }
+
+    @Test(.enabled(if: demoPDFsEnabled), arguments: demoPDFs)
     func demoPDFExtractsStatuteArticlesAndBilingualText(_ spec: DemoPDFSpec) async throws {
         try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
         let repo = GreekEvalCase.repository
@@ -95,7 +100,7 @@ struct GreekDemoPDFImportTests {
     }
 
     @MainActor
-    @Test(.timeLimit(.minutes(5)))
+    @Test(.enabled(if: demoPDFsEnabled), .timeLimit(.minutes(5)))
     func ragServiceIngestsCompactDemoPDFsWithBilingualPersistence() async throws {
         try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
         let repo = GreekEvalCase.repository

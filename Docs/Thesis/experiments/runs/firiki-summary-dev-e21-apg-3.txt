@@ -1,0 +1,7 @@
+# firiki-summary-dev-e21-apg-3: result lines of firiki-summary-dev-e21-apg-3.log (log last written 2026-11-14 20:40)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.011) seconds
+[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=14 notes=25011 chars, 140 s
+[GreekSummary] | 1 | dev | provisions 6 of 6 | articles cited 3 of 3 | dropped 0 | missing: [] |
+[GreekSummary] summary split=dev: provisions covered 6 of 6
+✔ Test run with 1 test in 1 suite passed after 140.528 seconds.
