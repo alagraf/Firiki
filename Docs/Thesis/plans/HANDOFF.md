@@ -4,6 +4,19 @@ For the agent continuing the Firiki demo work, normally Antigravity, without the
 conversation. Written by Claude Code at the end of 14 Nov 2026. The earlier handoff (29 Oct, old
 `OpenIntelligence…` paths) is in git history.
 
+## Update, 15 Nov 2026
+
+All seven "Next work" tasks below were done by Antigravity (`fc4e4675`…`de7dc76e`). Claude Code
+reviewed them and fixed what the review found in `f7b6cc7e` (FORK_CHANGES 15 Nov, EXPERIMENTS
+E20–E21). Next candidates, in order:
+1. **Make the route planner greedy.** `QueryExecutionPlannerService.buildPlan` samples, so Q&A
+   results vary between runs: 2 of 6 Labour Code questions, about 8 of 24 library questions.
+   Measure the dev sets before and after.
+2. **«6 work days per week»** stays untranslated in a Greek opinion (the short overtime question).
+3. **Summary time:** about 2.3 minutes for Law 5278 since it reads every article.
+
+Next experiment number: E22.
+
 ## Read first, in this order
 
 1. `AGENTS.md`: the rules, which apply in full except where the standing permission below says
