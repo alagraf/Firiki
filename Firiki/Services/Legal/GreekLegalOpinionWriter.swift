@@ -76,15 +76,30 @@ nonisolated enum GreekLegalOpinionWriter {
     static let maxSources = 3
     static let passagesPerSource = 3
     /// A document is kept when its best passage scores at least this share of the best document's.
-    static let relativeScore: Float = 0.6
+    static let relativeScore: Float = 0.68
 
     static let disclaimerGreek = "Η γνωμοδότηση αυτή συντάχθηκε αυτόματα από εφαρμογή επίδειξης (proof of concept) με βάση μόνο τα έγγραφα της βιβλιοθήκης. Δεν αποτελεί νομική συμβουλή και πρέπει να ελεγχθεί από δικηγόρο."
 
     // MARK: Sources
 
+    /// Strips conversational opinion-request framing ("Θέλω γνωμοδότηση:", "Γνωμοδότηση παρακαλώ.")
+    /// before translation and retrieval so embeddings and prompts stay focused on the legal issue.
+    static func strippedOpinionFraming(_ question: String) -> String {
+        var s = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        let patterns = [
+            #"(?i)^\s*(?:(?:θέλω|θελω|χρειάζομαι|χρειαζομαι)\s+)?γνωμοδ[όο]τηση(?:\s+παρακαλ[ώω])?\s*[:;,.!?\-–—]*\s*"#,
+            #"(?i)\s*(?:(?:θέλω|θελω|χρειάζομαι|χρειαζομαι)\s+)?γνωμοδ[όο]τηση(?:\s+παρακαλ[ώω])?\s*[.!?;]*\s*$"#,
+        ]
+        for pattern in patterns {
+            s = s.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+        let cleaned = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? question : cleaned
+    }
+
     /// The documents an opinion draws on: those whose best passage scores at least `relativeScore`
     /// of the best one's, at most `maxSources`; the Labour Code joins when a kept document amends
-    /// or applies it. Each keeps its `passagesPerSource` best passages.
+    /// or applies it. Later amending or implementing statutes come before the codified Labour Code.
     static func selectSources(_ candidates: [Source], links: [CodeLink]) -> [Source] {
         let ranked = candidates.filter { !$0.passages.isEmpty }.sorted { $0.bestScore > $1.bestScore }
         guard let top = ranked.first?.bestScore else { return [] }
@@ -96,7 +111,8 @@ nonisolated enum GreekLegalOpinionWriter {
             if kept.count == maxSources { kept.removeLast() }
             kept.append(code)
         }
-        return kept.map { Source(document: $0.document, statuteKey: $0.statuteKey, passages: Array($0.passages.prefix(passagesPerSource))) }
+        let ordered = kept.sorted { ($0.statuteKey == labourCodeKey ? 1 : 0) < ($1.statuteKey == labourCodeKey ? 1 : 0) }
+        return ordered.map { Source(document: $0.document, statuteKey: $0.statuteKey, passages: Array($0.passages.prefix(passagesPerSource))) }
     }
 
     // MARK: Links to the Labour Code
@@ -222,23 +238,23 @@ nonisolated enum GreekLegalOpinionWriter {
         return sources.map { source in
             guard let chunks = documents[source.document] else { return source }
             let articleOf = enclosingArticles(chunks)
-            let amending = changes.compactMap { link -> String? in
-                guard link.statuteKey == source.statuteKey, let article = link.article,
-                      source.passages.contains(where: { articleOf[$0.chunk.id].map { sameArticle($0, article) } ?? false })
+            // Expand the top-scoring amending article found in the retrieved passages first, so a
+            // secondary snippet of a large neighbouring article does not crowd out the primary hit.
+            let orderedPassages = source.passages.sorted { $0.similarityScore > $1.similarityScore }
+            guard let primary = orderedPassages.compactMap({ passage -> String? in
+                guard let enclosed = articleOf[passage.chunk.id],
+                      let link = changes.first(where: { $0.statuteKey == source.statuteKey && ($0.article.map { sameArticle(enclosed, $0) } ?? false) })
                 else { return nil }
-                return article
-            }
-            guard !amending.isEmpty else { return source }
+                return link.article
+            }).first else { return source }
             let score = source.bestScore
             let ordered = chunks.sorted { $0.metadata.chunkIndex < $1.metadata.chunkIndex }
             var passages: [RetrievedChunk] = []
-            for article in amending {
-                for chunk in ordered where (articleOf[chunk.id].map { sameArticle($0, article) } ?? false)
-                    && !passages.contains(where: { $0.chunk.id == chunk.id }) {
-                    passages.append(RetrievedChunk(
-                        chunk: chunk, similarityScore: score, rank: passages.count + 1,
-                        sourceDocument: source.document, pageNumber: chunk.metadata.pageNumber))
-                }
+            for chunk in ordered where (articleOf[chunk.id].map { sameArticle($0, primary) } ?? false)
+                && !passages.contains(where: { $0.chunk.id == chunk.id }) {
+                passages.append(RetrievedChunk(
+                    chunk: chunk, similarityScore: score, rank: passages.count + 1,
+                    sourceDocument: source.document, pageNumber: chunk.metadata.pageNumber))
             }
             passages += source.passages.filter { passage in !passages.contains { $0.chunk.id == passage.chunk.id } }
             var kept: [RetrievedChunk] = []
@@ -424,7 +440,7 @@ nonisolated enum GreekLegalOpinionWriter {
             ? "Cite each rule as (Article N of \(statute)), with N from the passage's \"Article N\" heading."
             : "Cite each rule as (\(statute)); it has no articles, so do not write an article number."
         return """
-        You help a Greek lawyer write a legal opinion. Use only the passages given, which come from \(statute). In two to four sentences, state what they provide on the question: the rules, their figures (amounts of money included) and time limits, and who they apply to. Do not refer to "the provisions in force" or "the applicable provisions" without naming them. \(citation) If the passages do not address the question, write only: Not addressed.
+        You help a Greek lawyer write a legal opinion. Use only the passages given, which come from \(statute). In two to four sentences, state what they provide on the question: the rules, any permitted limit or prohibition, their figures (amounts of money included) and time limits, and who and what situation they apply to. Do not extrapolate rules to people or situations the passages do not mention, and if a passage concerns a specific arrangement (such as work without Saturdays, the sixth day of the week, or minors), state that condition without extending it to general overtime. Do not refer to "the provisions in force" or "the applicable provisions" without naming them. \(citation) If the passages do not address the question, write only: Not addressed.
         """
     }
 
@@ -496,7 +512,7 @@ nonisolated enum GreekLegalOpinionWriter {
     }
 
     static let conclusionInstructions = """
-        You write the conclusion of a Greek legal opinion. Use only the sections given. In two or three complete sentences, answer the question directly, citing the articles the sections cite. Where a later law amended an article of the Labour Code, apply the amended rule. Do not add advice or anything the sections don't say.
+        You write the conclusion of a Greek legal opinion. Use only the sections given. In two or three complete sentences, answer the question directly, citing the articles the sections cite. Where a later law amended an article of the Labour Code, apply the amended rule. When a statute provides for legal overtime or another act "up to" a stated daily limit and the question's amount does not exceed that limit, conclude that it is permitted up to that limit (and its stated annual limit); do not treat a ceiling for a different arrangement or special case (such as daily-hour shifting without Saturdays, the sixth day of the week, or minors) as overriding or prohibiting that general limit unless the question asks about that special case. Do not add advice or anything the sections don't say.
         """
 
     /// The passages are separated by a line, not numbered: numbered "[6]", the sixth passage of
@@ -628,7 +644,8 @@ extension RAGService {
     /// translation of the question.
     func greekLegalOpinion(question: String, containerId: UUID) async throws -> GreekLegalOpinionWriter.Opinion {
         typealias Writer = GreekLegalOpinionWriter
-        let questionEn = await Self.greekQueryTranslation(question) ?? question
+        let searchQuestion = Writer.strippedOpinionFraming(question)
+        let questionEn = await Self.greekQueryTranslation(searchQuestion) ?? searchQuestion
         let documents = await MainActor.run { self.documentsForContainer(containerId) }
         let database = try await dbForContainer(containerId)
         // Every document's passages, for its statute and the Code articles it amends (from all its
@@ -643,7 +660,7 @@ extension RAGService {
             allPassages[document.filename] = chunks
             links += Writer.codeLinks(statuteKey: statuteKey, passages: chunks)
             let passages = try await RAGQueryScope.$documentIds.withValue([document.id]) {
-                try await self.searchDocumentsRaw(query: questionEn, topK: 8, containerId: containerId)
+                try await self.searchDocumentsRaw(query: questionEn, originalQuery: searchQuestion, topK: 8, containerId: containerId)
             }
             // Ranked by score; the title page and contents state no rule (`droppingFrontMatter`).
             let ranked = LegalCrossReferences.droppingFrontMatter(passages, pool: chunks).sorted { $0.similarityScore > $1.similarityScore }

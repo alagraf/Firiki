@@ -6103,13 +6103,25 @@ class RAGService: ObservableObject {
 
     /// The English translation of a Greek query (at least 30% Greek letters), or nil when the query
     /// isn't Greek, the translator isn't bundled, or translation failed.
+    nonisolated static func normalizedGreekQuery(_ query: String) -> String {
+        // Standalone impersonal "Επιτρέπεται;" has no grammatical subject in Greek, so Opus-MT
+        // guesses 1st-person "May I?". Supplying "αυτό" preserves the impersonal meaning ("Is
+        // this allowed?") without distorting clauses like "Επιτρέπεται η ...;".
+        query.replacingOccurrences(
+            of: #"(^|(?<=[.!?;:\n]\s))[Εε]πιτρέπεται\s*([?;]|$)"#,
+            with: "$1Επιτρέπεται αυτό$2",
+            options: .regularExpression
+        )
+    }
+
     nonisolated static func greekQueryTranslation(_ query: String) async -> String? {
-        guard GreekLegalEntityMasker.greekLetterRatio(query) >= 0.3,
+        let normalized = normalizedGreekQuery(query)
+        guard GreekLegalEntityMasker.greekLetterRatio(normalized) >= 0.3,
               LocalNeuralTranslator.isAvailable(.greekToEnglish)
         else { return nil }
         do {
             let translated = try await LocalNeuralTranslator.shared
-                .translateGreekToEnglishPreservingLegalEntities(query).textEn
+                .translateGreekToEnglishPreservingLegalEntities(normalized).textEn
             Log.info("[Translation] Greek query → English (Opus-MT): '\(translated.prefix(80))'", category: .retrieval)
             return translated.isEmpty ? nil : translated
         } catch {
@@ -22480,7 +22492,7 @@ extension RAGService: RAGToolHandler {
     /// Search and return raw chunks for agentic orchestrator (not just formatted string)
     /// Uses hybrid search (vector + BM25) for better retrieval quality on technical documents.
     /// Used internally by AgenticOrchestrator to collect chunks for UnifiedMetricsBar
-    func searchDocumentsRaw(query: String, topK: Int = 10, minSimilarity: Float? = nil, containerId: UUID? = nil) async throws -> [RetrievedChunk]
+    func searchDocumentsRaw(query: String, originalQuery: String? = nil, topK: Int = 10, minSimilarity: Float? = nil, containerId: UUID? = nil) async throws -> [RetrievedChunk]
     {
         // Thesis fork: `containerId` searches that library instead of the active one (the legal opinion, 2.11.29).
         let embeddingContext = await resolveEmbeddingContext(preferredContainerId: containerId)
@@ -22532,7 +22544,7 @@ extension RAGService: RAGToolHandler {
         let effectiveTopK = max(topK, 15)
         var retrievedChunks = try await hybridSearch.search(
             query: translatedQuery.text,
-            originalQuery: translatedQuery.wasTranslated ? query : translatedQuery.text,
+            originalQuery: originalQuery ?? (translatedQuery.wasTranslated ? query : translatedQuery.text),
             embedding: queryEmbedding,
             topK: effectiveTopK,
             cachedChunks: effectiveChunks,

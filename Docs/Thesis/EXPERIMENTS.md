@@ -400,3 +400,38 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   `[ChatRouter] opinion failed: CancellationError()` and no English opinion: the remaining passes
   did not run.
 - **Outcome:** kept.
+
+## E17. Short daily overtime question in legal opinions (2026-11-14)
+
+- **Hypothesis:** adding the short daily overtime request (case 11, dev: «Θέλω γνωμοδότηση: ο
+  εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;») failed in the conclusion ("not
+  allowed", citing sixth-day Article 192) because scoped opinion retrieval dropped the Greek query,
+  `PD:62/2025` (sixth-day Articles 191–192, `0.58`) was ordered before later amending `Law
+  5239/2025` Article 7 (`0.57`), `relativeScore = 0.6` let in noisy third document `Law 5278/2026`
+  (`0.37`), standalone «Επιτρέπεται;» translated `"May I?"`, and the prompts did not distinguish
+  general `"up to"` limits from special-case arrangements. Plan: `Docs/Thesis/plans/short-overtime-opinion.md`.
+- **Baseline** (`firiki-opinion-dev8-short-baseline`): dev opinion set with Q11 appended scored
+  `citations 12 of 14, key facts 15 of 22, refused 0 of 7`; Q11 itself matched the automated regexes
+  (`citations 2 of 2`, `facts 2 of 2`, `other articles cited [9, 12, 191, 192, 404]`), **but its
+  actual conclusion stated the opposite ("not allowed" under Article 192)**.
+- **Change & dev measurement** (`firiki-opinion-dev9-short-overtime`, plus `firiki-library-dev9-short-overtime`
+  and `GreekKeywordArmTests` / `GreekTranslationRetrievalTests` / `GreekLegalOpinionTests`):
+  - Passed stripped Greek query as `originalQuery` in scoped opinion search (`searchDocumentsRaw` +
+    `HybridSearchService.searchInsideScope` using Greek FTS5 and `SQLiteFullTextService.greekQueryStems`),
+    filtered permissive modal stop words (`επιτρεπεται`), normalized standalone «Επιτρέπεται;» →
+    «Επιτρέπεται αυτό;» (`"Is that allowed?"`), raised `relativeScore` (`0.6 → 0.68`), placed later
+    statutes ahead of `PD:62/2025`, expanded only the top-scoring amending article per source in
+    `withWholeAmendingArticles`, and added general-limit vs special-case guidance to the section and
+    conclusion instructions.
+  - **Opinion dev** (`firiki-opinion-dev9-short-overtime`): `16 tests in 2 suites passed` (`218.982 s`),
+    `citations 12 of 14, key facts 15 of 22, refused 0 of 7`, Q11 (`2 of 2 citations`, `2 of 2 facts`,
+    `other articles cited [12, 188, 191, 192]` with `n_5278` noise gone), and Q11 `Συμπέρασμα`
+    now explicitly concludes that **4 hours daily overtime is permitted** (`επιτρέπονται 4 ώρες νόμιμης
+    υπερωρίας ανά ημέρα, μέχρι συνολικά 150 ώρες ετησίως... καμία ειδική εξαίρεση για μια εβδομάδα
+    εργασίας 6 ημερών δεν υπερισχύει`) under Law 5239/2025 Article 7 amending Labour Code Article 194.
+  - **Library dev** (`firiki-library-dev9-short-overtime`, checking shared `searchDocumentsRaw` /
+    `searchInsideScope` / `greekQueryTranslation` / `greekQueryStopWords`): `passed 14 of 24`
+    (`answer pass 13 of 21`, `retrieval hit 18 of 21`, `right documents retrieved 21 of 21`).
+  - **Translation & keyword unit suites**: `GreekKeywordArmTests` + `GreekTranslationRetrievalTests`
+    (`15 tests in 2 suites passed in 3.169 s`).
+- **Outcome:** kept.

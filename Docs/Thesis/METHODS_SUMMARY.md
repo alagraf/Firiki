@@ -143,8 +143,9 @@ fix that stage in a general way; run again and compare.
   dropped if unsupported, then translated to Greek.
 
 ## 6c. Legal opinion from several documents (PoC capability)
-- Passages are retrieved from each document separately, and the documents closest to the
-  question are kept (up to three).
+- Passages are retrieved from each document separately (using both the English translation and the
+  original Greek question), and the documents closest to the question are kept (up to three, with
+  later amending or implementing laws placed before the codified Labour Code).
 - Which later law amends or adds which Labour Code article is read from the amending articles'
   headings, not asked of the model; an amended article is read from the amending law, since the
   Code's own text is the old version.
@@ -216,6 +217,7 @@ Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with
 | 2026-11-14 | After repairing translation placeholders: opinion dev / test (citations, key facts, refused); library Q&A dev | 10 of 12, 13 of 20, 0 / 4 of 8, 8 of 10, 0; 15 of 24 (13 before) |
 | 2026-11-14 | Opinion dev after the whole amending article and unnumbered passages (citations, key facts, refused) | 10 of 12, 15 of 20, 0 (11 of 20 before; test split not run) |
 | 2026-11-14 | Same build: summary dev / test; opinion dev / test (citations, key facts, refused) | 5 of 6 / 4 of 5; 10 of 12, 11 of 20, 0 / 5 of 8, 7 of 10, 0 (test citations 3 of 8 before) |
+| 2026-11-14 | Short daily overtime opinion (E17): opinion dev (7 cases incl. Q11) / library dev (shared retrieval & query normalization) | 12 of 14 citations, 15 of 22 key facts, Q11 conclusion now permits 4 h/day under Law 5239 art. 7 (was "not allowed" under art. 192); library dev 14 of 24 |
 | 2026-11-13 | Lecture notes with a wrong-letter Greek font, before / after the PaddleOCR text-layer check: passages about overtime | 0 / 38 of 713; a correct Labour Code excerpt kept its text layer |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
@@ -282,6 +284,7 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-14 (short overtime, E17): scoped opinion search uses both English and Greek query stems, strips opinion-request framing, normalizes standalone «Επιτρέπεται;» (`"Is that allowed?"`), prunes weak third documents (`relativeScore = 0.68`), places later statutes ahead of `PD:62/2025`, expands only the highest-scoring amending article per source, and guides the conclusion not to override general limits with special-case arrangements. Opinion dev (with Q11) holds `12 of 14` citations and `15 of 22` key facts while flipping Q11's conclusion from "not allowed" (Art. 192) to permitted (up to 4 h/day under Law 5239 Art. 7); library Q&A dev holds `14 of 24`.
 - 2026-11-14 (late night): each model call of a summary or opinion is retried shorter when too long,
   retried once when the model is busy, and skipped when declined; Stop ends the request before the
   next call. Results unchanged when nothing fails.

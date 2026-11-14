@@ -303,5 +303,4 @@ README's opinion example changed to the longer wording (same day).
 **Placeholders repaired (E15, same day):** stored passages are repaired when read (450 of 8,022 →
 0 in the Simulator), no re-import needed. The overtime opinion in the Mac app has no «__ΕΧΝ.» or
 "186 hours" any more. Library Q&A dev 15 of 24; opinion dev 13 of 20 key facts; opinion test
-(once) 4 of 8 citations, 8 of 10 key facts. Still open: the short overtime question (sixth-day
-Articles 191–192); the demo uses the longer wording.
+(once) 4 of 8 citations, 8 of 10 key facts. The short overtime question (sixth-day Articles 191–192) was fixed in E17 (`Docs/Thesis/plans/short-overtime-opinion.md`): scoped bilingual retrieval + `relativeScore = 0.68` + later statutes before `PD:62/2025` + standalone «Επιτρέπεται;» query normalization + general vs special-case prompting flipped Q11 (`opinion_qa_v1.jsonl` `dev`) from `"not allowed"` (Art. 192) to `"permitted"` (up to 4 h/day, 150 h/yr, Law 5239/2025 Art. 7), with `12 of 14` citations and `15 of 22` key facts across `dev`.

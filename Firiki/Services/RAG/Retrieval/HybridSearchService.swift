@@ -915,10 +915,17 @@ class HybridSearchService {
             for position in closest { storeSimilarity[ids[position]] = similarities[position] ?? 0 }
 
             // The keyword index's best hits, narrowed to the scope.
+            let greekScopeQuestion = Self.greekQuestion(originalQuery: boostQuery)
             var keywordHits = 0
             if let containerId, await isFTS5Available(containerId: containerId) {
-                let hits = await SQLiteFullTextService.shared.searchChunks(
-                    query: boostQuery, containerId: containerId, limit: Self.scopedKeywordCandidates)
+                let englishQuery = greekScopeQuestion != nil ? query : boostQuery
+                var hits = await SQLiteFullTextService.shared.searchChunks(
+                    query: englishQuery, containerId: containerId, limit: Self.scopedKeywordCandidates)
+                if let greekScopeQuestion {
+                    let greekHits = await SQLiteFullTextService.shared.searchGreekChunks(
+                        question: greekScopeQuestion, containerId: containerId, limit: Self.scopedKeywordCandidates)
+                    hits = Self.interleaving(greekHits, hits, limit: Self.scopedKeywordCandidates * 2)
+                }
                 let keys = Set(hits.filter { scope.contains($0.documentId) }.map(\.chunkId))
                 if let handedIn {
                     for chunk in Self.buildNeededChunkLookup(from: handedIn, neededChunkIds: keys).values {
@@ -959,7 +966,13 @@ class HybridSearchService {
             }
         }
 
-        let terms = Set((tokenize(query) + tokenize(boostQuery)).filter { $0.count > 2 })
+        let greekScopeQuestion = Self.greekQuestion(originalQuery: boostQuery)
+        let englishTerms = Set(
+            (greekScopeQuestion != nil ? tokenize(query) : tokenize(query) + tokenize(boostQuery))
+                .filter { $0.count > 2 }
+        )
+        let greekStems = greekScopeQuestion.map(SQLiteFullTextService.greekQueryStems) ?? []
+        let totalTerms = englishTerms.count + greekStems.count
         var comparedByVector = 0
         var scored: [RetrievedChunk] = []
         scored.reserveCapacity(candidates.count)
@@ -973,9 +986,14 @@ class HybridSearchService {
                 comparedByVector += 1
             }
             var keyword: Float = 0
-            if !terms.isEmpty {
+            if totalTerms > 0 {
                 let content = chunk.content.lowercased()
-                keyword = Float(terms.reduce(0) { $0 + (content.contains($1) ? 1 : 0) }) / Float(terms.count)
+                var matched = englishTerms.reduce(0) { $0 + (content.contains($1) ? 1 : 0) }
+                if !greekStems.isEmpty, let sourceEl = chunk.sourceTextEl, !sourceEl.isEmpty {
+                    let foldedEl = SQLiteFullTextService.greekSearchFold(sourceEl)
+                    matched += greekStems.reduce(0) { $0 + (foldedEl.contains($1) ? 1 : 0) }
+                }
+                keyword = Float(matched) / Float(totalTerms)
             }
             scored.append(
                 RetrievedChunk(

@@ -361,6 +361,35 @@ struct GreekLegalOpinionTests {
         #expect(masked.entities.map(\.verbatimEl) == ["ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf"])
         #expect(!masked.maskedText.contains("ΑΤΟΜΙΚΟ"))
     }
+
+    @Test func opinionFramingIsStrippedAndLaterLawsPrecedeTheCode() {
+        #expect(GreekLegalOpinionWriter.strippedOpinionFraming(
+            "Θέλω γνωμοδότηση: ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;")
+            == "ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;")
+        #expect(GreekLegalOpinionWriter.strippedOpinionFraming(
+            "Ο εργοδότης ζητά υπερωρία. Γνωμοδότηση παρακαλώ.")
+            == "Ο εργοδότης ζητά υπερωρία.")
+        #expect(RAGService.normalizedGreekQuery(
+            "ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;")
+            == "ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται αυτό;")
+        #expect(RAGService.normalizedGreekQuery("Επιτρέπεται η υπερωρία;") == "Επιτρέπεται η υπερωρία;")
+
+        let codeHigher = GreekLegalOpinionWriter.Source(
+            document: "code.pdf", statuteKey: "PD:62/2025",
+            passages: [RetrievedChunk(chunk: Self.codeArticle.chunk, similarityScore: 0.58, rank: 1)])
+        let lawSlightlyLower = GreekLegalOpinionWriter.Source(
+            document: "law.pdf", statuteKey: "LAW:5239/2025",
+            passages: [RetrievedChunk(chunk: Self.overtime.chunk, similarityScore: 0.57, rank: 1)])
+        let weakNoise = GreekLegalOpinionWriter.Source(
+            document: "other.pdf", statuteKey: "LAW:5278/2026",
+            passages: [RetrievedChunk(chunk: Self.unrelated.chunk, similarityScore: 0.37, rank: 1)])
+        let selected = GreekLegalOpinionWriter.selectSources([codeHigher, lawSlightlyLower, weakNoise], links: [])
+        // 0.37 / 0.58 = 0.64 < 0.65 noise stays out; Law 5239 precedes PD:62/2025 despite 0.57 vs 0.58.
+        #expect(selected.map(\.document) == ["law.pdf", "code.pdf"])
+        #expect(GreekLegalOpinionWriter.conclusionInstructions.contains("special case"))
+        #expect(GreekLegalOpinionWriter.sectionInstructions(statute: "Presidential Decree 62/2025").contains("Do not extrapolate"))
+        #expect(SQLiteFullTextService.greekQueryStems("τέσσερις ώρες υπερωρία την ημέρα").contains("υπερωρ"))
+    }
 }
 
 /// The document names each translation call received.

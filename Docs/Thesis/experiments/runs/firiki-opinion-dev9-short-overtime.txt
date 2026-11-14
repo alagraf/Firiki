@@ -1,0 +1,12 @@
+# firiki-opinion-dev9-short-overtime: result lines of firiki-opinion-dev9-short-overtime.log (log last written 2026-11-14 17:41)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+[GreekOpinion] | 1 | dev | written | citations 2 of 2 | other articles cited [11, 12, 191, 192, 411] | facts 4 of 4 | dropped 0 | 38 s |
+[GreekOpinion] | 2 | dev | written | citations 2 of 2 | other articles cited [11, 175, 233, 411] | facts 3 of 4 | dropped 0 | 33 s |
+[GreekOpinion] | 3 | dev | written | citations 2 of 2 | other articles cited [2, 258] | facts 2 of 3 | dropped 0 | 25 s |
+[GreekOpinion] | 4 | dev | written | citations 2 of 2 | other articles cited [35, 46, 50, 238] | facts 2 of 3 | dropped 0 | 35 s |
+[GreekOpinion] | 5 | dev | written | citations 0 of 2 | other articles cited [6, 113, 209, 210, 211] | facts 0 of 4 | dropped 0 | 29 s |
+[GreekOpinion] | 6 | dev | written | citations 2 of 2 | other articles cited [92] | facts 2 of 2 | dropped 1 | 28 s |
+[GreekOpinion] | 11 | dev | written | citations 2 of 2 | other articles cited [12, 188, 191, 192] | facts 2 of 2 | dropped 0 | 27 s |
+[GreekOpinion] summary split=dev: citations 12 of 14, key facts 15 of 22, refused 0 of 7
+✔ Test run with 16 tests in 2 suites passed after 218.982 seconds.

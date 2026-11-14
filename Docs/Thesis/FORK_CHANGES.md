@@ -2570,3 +2570,36 @@ command.
   - `✔ Test run with 165 tests in 31 suites passed after 623.051 seconds.`
 - macOS UI test compile check: `xcodebuild build-for-testing -scheme FirikiUITests -destination 'platform=macOS' -derivedDataPath /private/tmp/oi-mac-build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""` → `** TEST BUILD SUCCEEDED **` (`DEMO_SMOKE=1` live run on `"My Mac"` deferred to owner with pre-imported library and provisioning profile).
 - UI tests (iPhone 18 Pro Simulator): `xcodebuild test -scheme FirikiUITests -destination "platform=iOS Simulator,name=iPhone 18 Pro" -derivedDataPath /private/tmp/oi-build -only-testing:FirikiUITests/AccessibilityAuditTests -only-testing:FirikiUITests/DemoSmokeUITests` → `Executed 3 tests, with 1 test skipped and 0 failures (0 unexpected) in 83.779 (83.787) seconds`, `** TEST SUCCEEDED **` (`AccessibilityAuditTests`: `2` passed; `DemoSmokeUITests`: `1` skipped without `TEST_RUNNER_OI_DEMO_SMOKE=1`).
+
+## 14 Nov 2026 (tenth entry)
+
+**Why:** The short daily overtime question («Θέλω γνωμοδότηση: ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;», dev case 11 in `Benchmarks/GreekLabourLibrary/opinion_qa_v1.jsonl`) previously concluded *"not allowed"* under sixth-day Labour Code Article 192: opinion search dropped the Greek query in scoped retrieval, `PD:62/2025` (Articles 191–192 at `0.58`) appeared before later amending `Law 5239/2025` Article 7 (`0.57`), `relativeScore = 0.6` kept noisy `Law 5278/2026` (`0.37`), standalone «Επιτρέπεται;» translated as `"May I?"`, and prompts did not separate special-case limits from general `"up to"` limits (`Docs/Thesis/plans/short-overtime-opinion.md`, `EXPERIMENTS.md` E17).
+
+**What:**
+
+- `Benchmarks/GreekLabourLibrary/opinion_qa_v1.jsonl`: added Q11 (`split: "dev"`, short daily overtime question expecting `n_5239_2025_fek_a178.pdf` art. 7, `pd_62_2025_fek_a121.pdf` art. 194, 4 hours and 150 hours).
+- `Firiki/Services/RAG/Orchestration/RAGService.swift`:
+  - Added `normalizedGreekQuery(_:)` in `greekQueryTranslation` turning standalone impersonal `"Επιτρέπεται;"` into `"Επιτρέπεται αυτό;"` (`"Is that allowed?"` instead of `"May I?"`).
+  - Added defaulted `originalQuery: String? = nil` parameter to `searchDocumentsRaw` forwarding to `hybridSearch.search`.
+- `Firiki/Services/Storage/SQLiteFullTextService.swift`:
+  - Extracted shared `greekQueryStems(_:)` helper used by both `greekFTSQuery(_:)` and scoped retrieval, and added `"επιτρεπεται"`, `"επιτρεπονται"`, `"επιτρεπτο"` to `greekQueryStopWords`.
+- `Firiki/Services/RAG/Retrieval/HybridSearchService.swift`:
+  - Updated `searchInsideScope` to query both English FTS5 (`searchChunks(query: query, ...)`) and `SQLiteFullTextService.shared.searchGreekChunks` for Greek scoped queries, and score `greekQueryStems` against `sourceTextEl` alongside English tokens against `content`.
+- `Firiki/Services/Legal/GreekLegalOpinionWriter.swift`:
+  - Added `strippedOpinionFraming(_:)` so opinion-request prefixes/suffixes do not pollute retrieval/prompts while `Ερώτημα` preserves the verbatim question; passed `originalQuery: searchQuestion` to `searchDocumentsRaw`.
+  - Raised `relativeScore` (`0.6 → 0.68`) and ordered later statutes ahead of codified `PD:62/2025` in `selectSources`.
+  - Updated `withWholeAmendingArticles` to expand only the top-scoring amending article in `source.passages` so neighbouring multi-chunk articles (`ART:8`) do not flood `ART:7`.
+  - Updated `sectionInstructions` and `conclusionInstructions` so general `"up to"` limits govern over special-case arrangements unless the question asks about those special cases.
+- `FirikiTests/Services/GreekLegal/GreekLegalOpinionTests.swift`: added `opinionFramingIsStrippedAndLaterLawsPrecedeTheCode()`.
+
+**Verification:**
+
+- `TEST_RUNNER_OI_GREEK_OPINION=1 TEST_RUNNER_OI_GREEK_OPINION_SPLIT=dev ./scripts/thesis_run_tests.sh /private/tmp/opinion-dev-e17-after5.log -only-testing:FirikiTests/GreekLegalOpinionTests -only-testing:FirikiTests/GreekLegalOpinionEvaluation`:
+  - `** TEST BUILD SUCCEEDED **`
+  - `✔ Test run with 16 tests in 2 suites passed after 218.982 seconds.`
+  - `[GreekOpinion] | 11 | dev | written | citations 2 of 2 | other articles cited [12, 188, 191, 192] | facts 2 of 2 | dropped 0 | 27 s |` (`Συμπέρασμα`: permits 4 hours/day, up to 150 h/yr under `n. 5239/2025` art. 7 amending art. 194, replacing baseline `"not allowed"` under art. 192)
+  - `[GreekOpinion] summary split=dev: citations 12 of 14, key facts 15 of 22, refused 0 of 7`
+- `TEST_RUNNER_OI_GREEK_EVAL=1 TEST_RUNNER_OI_GREEK_EVAL_SET=GreekLabourLibrary TEST_RUNNER_OI_GREEK_EVAL_SPLIT=dev ./scripts/thesis_run_tests.sh /private/tmp/library-dev-e17.log -only-testing:FirikiTests/GreekConstitutionEvaluationTests`:
+  - `✔ Test run with 1 test in 1 suite passed after 1155.432 seconds.`, `[GreekEval] summary set=GreekLabourLibrary corpus=library split=dev: passed 14 of 24` (`right documents retrieved 21 of 21`)
+- `./scripts/thesis_run_tests.sh /private/tmp/task3-pipeline.log -only-testing:FirikiTests/GreekKeywordArmTests -only-testing:FirikiTests/GreekTranslationRetrievalTests`:
+  - `✔ Test run with 15 tests in 2 suites passed after 3.169 seconds.`

@@ -1124,25 +1124,31 @@ actor SQLiteFullTextService {
     /// Greek words that say nothing about the topic of a question.
     nonisolated static let greekQueryStopWords: Set<String> = [
         "ποιο", "ποιος", "ποια", "ποιες", "ποιοι", "ποιον", "ποιου", "ποιας", "τι", "πως", "ποτε", "που",
-        "υπαρχει", "υπαρχουν", "ειναι", "μπορει", "μπορουν", "πρεπει", "συμφωνα", "οσον", "αφορα",
+        "υπαρχει", "υπαρχουν", "ειναι", "μπορει", "μπορουν", "πρεπει", "επιτρεπεται", "επιτρεπονται",
+        "επιτρεπτο", "συμφωνα", "οσον", "αφορα",
         "ακριβως", "σχετικα", "σχετικη", "σχετικο", "οποια", "οποιο", "οποιος", "αυτος", "αυτη",
         "αυτο", "οταν", "μετα", "προς", "μεσα", "αναφερει", "οριζει", "λεει", "ναι", "οχι", "αποκλειστικα",
     ]
 
-    /// An FTS5 query for a Greek question: its content words without accents, each as a prefix of
-    /// its stem (the last two letters dropped from a word of six or more) so that inflected forms
-    /// match ("προφυλακισης" → "προφυλακισ*" finds "προφυλάκιση"), joined with OR.
-    nonisolated static func greekFTSQuery(_ question: String) -> String? {
+    /// Folded Greek content-word stems for a question (prefix-truncated to match inflections).
+    nonisolated static func greekQueryStems(_ question: String) -> [String] {
         let folded = greekSearchFold(question)
-        var terms: [String] = []
+        var stems: [String] = []
         for word in folded.components(separatedBy: CharacterSet.alphanumerics.inverted) {
             guard word.count >= 4, !foldedGreekStopWords.contains(word),
                   GreekLegalEntityMasker.containsGreek(word) || word.allSatisfy(\.isNumber)
             else { continue }
             let stem = word.count >= 6 ? String(word.prefix(max(5, word.count - 2))) : word
-            let term = "\"\(stem)\"*"
-            if !terms.contains(term) { terms.append(term) }
+            if !stems.contains(stem) { stems.append(stem) }
         }
+        return stems
+    }
+
+    /// An FTS5 query for a Greek question: its content words without accents, each as a prefix of
+    /// its stem (the last two letters dropped from a word of six or more) so that inflected forms
+    /// match ("προφυλακισης" → "προφυλακισ*" finds "προφυλάκιση"), joined with OR.
+    nonisolated static func greekFTSQuery(_ question: String) -> String? {
+        let terms = greekQueryStems(question).map { "\"\($0)\"*" }
         return terms.isEmpty ? nil : terms.joined(separator: " OR ")
     }
 
