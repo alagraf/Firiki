@@ -125,40 +125,36 @@ reason and how it was verified, is in [`Docs/Thesis/FORK_CHANGES.md`](Docs/Thesi
 ## Results
 
 Measured on official Greek texts in the iOS 27 Simulator on an M3 Pro Mac with Apple's on-device
-model (AFM 3 Core Advanced, 8,192-token window). The question sets were measured on 28–30 October
-2026; the Nov column is the build of 13–15 November 2026 (after the rename to Firiki), each figure
-dated.
+model (AFM 3 Core Advanced, 8,192-token window). Each row compares the latest measured run
+(30 October – 15 November 2026) against the state before these changes.
 
-| Task | Result | Nov re-run | Starting point |
-|---|---|---|---|
-| Greek OCR, share of words read (10 pages: clean / scanned / photographed) | **96% / 96% / 96%** | 95% / 95% / 95%, same OCR text (word scoring changed 31 Oct) | Apple Vision 5%; scans 48% before tilt-aware line boxes |
-| Greek OCR, whole scanned PDF | **98%** of words | 97% | 62% |
-| Greek Constitution, 10 questions | **9 of 10** (right article found 10 of 10); 8 of 10 in later runs | 8 of 10 (15 Nov) | 6 of 10 |
-| Labour Code, development set (46 questions) | **38 of 46**; 5 of 5 out-of-scope questions refused | 37 of 46, 4 of 5 refused (15 Nov; the 14 Nov build 38 of 46, 5 of 5) | 24 of 46 |
-| Labour Code, test set (23 questions, full 260-page Code) | **15 of 23**; 3 of 3 refused | — | 11 of 23 |
-| Five-document library (development 24 / test 12) | **14 of 24 / 6 of 12** | 14 of 24 (15 Nov) / 5 of 12 (14 Nov; right documents 9 of 11) | 13 of 24 |
-| Contract template choice (development 44 / test 22, half in Greek) | **43 of 44 / 20 of 22** | 44 of 44 / 20 of 22 (13 Nov) | keywords alone: 26 of 44 / 8 of 22 |
-| Statute summary, Law 5278/2026 (development) / Decision 8934/2026 (test; no longer held out, it shaped the reading by parts) | **5 of 6** key provisions, 3 of 3 articles cited / 4 of 5 | 6 of 6, 3 of 3 articles, 142 s (15 Nov; 78 s before the whole law was read) / 4 of 5 (13 Nov) | 2 of 6, 0 of 3 / 0 of 5 held out |
-| Legal opinion (development 6, 7 since 14 Nov / test 4) | citations **10 of 12 / 3 of 8**; key facts **11 of 20 / 7 of 10** | dev (7 cases, with the short overtime question): citations 12 of 14, key facts 15 of 22 (14 Nov, after E17); test: citations 4 of 8, key facts 8 of 10 (14 Nov, measured before E17 and E18) | — |
-| Independent EU labour-law set, never tuned on (16 questions × 3 language conditions, graded by hand, two runs) | **38 of 39** answerable right and **9 of 9** unanswerable refused, in each run | — | Original app, all-Greek condition: 0 of 13 answered in Greek, 0 of 3 refused |
+| Task | Latest result | Before changes |
+|---|---|---|
+| Greek OCR, share of words read (10 pages: clean / scanned / photographed) | **95% / 95% / 95%** (13 Nov; word scoring rejoins hyphenated line ends) | Apple Vision 5%; scans 48% before tilt-aware line boxes |
+| Greek OCR, whole scanned PDF | **97%** of words (13 Nov) | 62% |
+| Greek Constitution, 10 questions | **8 of 10** (15 Nov) | 6 of 10 |
+| Labour Code, development set (46 questions) | **36 of 46**; 4 of 5 refused, 0 false abstentions (15 Nov, E22) | 24 of 46 |
+| Labour Code, test set (23 questions, full 260-page Code) | **15 of 23**; 3 of 3 refused (30 Oct) | 11 of 23 |
+| Five-document library (development 24 / test 12) | **13 of 24** (718–728 s, 15 Nov, E22) / **5 of 12** (right documents 9 of 11; 14 Nov, E19) | 13 of 24 (2,482 s) / 6 of 12 (right documents 6 of 11) |
+| Contract template choice (development 44 / test 22, half in Greek) | **44 of 44 / 20 of 22** (13 Nov) | keywords alone: 26 of 44 / 8 of 22 |
+| Statute summary, Law 5278/2026 (dev) / Decision 8934/2026 (test; shaped reading by parts) | **6 of 6** provisions, **3 of 3** articles cited, **93 s** (15 Nov, E24) / **4 of 5** (13 Nov) | 2 of 6, 0 of 3 / 0 of 5 held out |
+| Legal opinion (development 7 cases since E17 / test 4 cases) | dev: citations **12 of 14**, key facts **15 of 22**, 0 leaked English phrases (15 Nov, E23) / test: citations **4 of 8**, key facts **8 of 10** (14 Nov, E15) | — (new capability; dev started at 10 of 12, 11 of 20 over 6 cases / test 3 of 8, 7 of 10) |
+| Independent EU labour-law set, never tuned on (16 questions × 3 language conditions, graded by hand, two runs) | **38 of 39** answerable right and **9 of 9** unanswerable refused, in each run (30 Oct) | Original app, all-Greek condition: 0 of 13 answered in Greek, 0 of 3 refused |
 
 How to read these numbers:
-- Each figure is a single run. Questions vary between runs: the step that decides whether a
-  question needs the longer, agentic search asks the model with sampling. In reruns on 15 Nov, 2 of
-  6 Labour Code questions changed result on the same build, and 8 library questions changed
-  between two runs whose code differed only for a ninth question. A difference of a few questions
-  isn't meaningful. Summaries and opinions use greedy
-  decoding and rerun identically, so their differences come from changes to the app.
-- "Starting point" is the first measurement of this fork, except where it names Apple Vision or the
-  original app.
+- Each figure is a single run (two consecutive `dev` runs for the five-document library in E22). The
+  route planner, answer generator, summarizer and opinion writer all use greedy decoding (`0 of 6`
+  flipped on the 15 Nov Labour Code rerun and retrieval stayed identical across both library `dev`
+  runs), though on-device answer wording can still shift a few borderline Q&A cases (`4 of 24` in
+  the library `dev` rerun). Summaries and opinions rerun deterministically.
+- "Before changes" is the first measurement of this fork before each change, except where it names
+  Apple Vision or the original app.
 - A few Labour Code test questions shaped refusal rules during development, so it's a test split
   rather than a clean held-out set. [`Docs/Thesis/EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md)
   lists which.
-- Later refinements (31 October, 9–15 November 2026: chunking, whole-article opinion reading,
-  placeholder repair, model-error retries and Stop, the short overtime opinion, summary heading and
-  contents fixes, translation wording, refusals) were checked with unit tests and in the Mac app.
-  Records: [`EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md) E12–E21. The EU holdout wasn't
-  re-measured.
+- Full per-experiment history (`E1–E24`, including greedy routing, translation fixes, and the
+  statute summary speedup) is recorded in [`EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md). The EU
+  holdout wasn't re-measured after 30 October.
 - Nothing has been measured on a physical iPhone yet (speed, memory, answer quality).
 
 Full records: [`EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md),
