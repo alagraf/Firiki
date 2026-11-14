@@ -2734,3 +2734,20 @@ The owner asked to fix them without approvals. Plan: `Docs/Thesis/plans/antigrav
   - summary dev 6 of 6, 3 of 3 articles, 142 s.
 - macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
   `** BUILD SUCCEEDED **`.
+
+### 15 Nov 2026 (second entry): greedy route planner (E22)
+
+**Why:** `QueryExecutionPlannerService.buildFoundationModelPlan` called `session.respond(to: prompt, generating: GuidedQueryExecutionPlan.self)` without `GenerationOptions(samplingMode: .greedy)`. Because route selection (`standard_retrieval`, `decomposed_retrieval`, `agentic_retrieval`) and rewritten `searchQueries` sampled randomly, Q&A evaluation runs varied substantially (2 of 6 Labour Code rerun questions and ~8 of 24 library questions flipped in E20, with occasional questions escalating into 230–280 s agentic chains).
+
+**What changed:**
+- `Firiki/Services/Query/Analysis/QueryExecutionPlannerService.swift`:
+  - Exposed `static let foundationModelGenerationOptions = GenerationOptions(samplingMode: .greedy)` on `QueryExecutionPlannerService` and passed `options: Self.foundationModelGenerationOptions` to `session.respond` in `buildFoundationModelPlan`.
+- `FirikiTests/Services/Query/QueryExecutionPlannerDeterminismTests.swift`:
+  - Added unit tests confirming greedy `GenerationOptions` configuration and identical repeated `buildPlan` outputs when Apple Foundation Models are available.
+- Plan: `Docs/Thesis/plans/greedy-route-planner.md`; runs and measurement: `Docs/Thesis/EXPERIMENTS.md` (`E22`).
+
+**Verification:**
+- `thesis_run_tests.sh` (`QueryExecutionPlannerDeterminismTests`): `** TEST BUILD SUCCEEDED **`; `✔ Test run with 2 tests in 1 suite passed after 11.886 seconds.`
+- Evaluations (`dev` splits, E22):
+  - `GreekLabourCode` `dev` (`firiki-labour-dev-e22`, `1655.568 s`): `36 of 46` (`answer pass 32 of 41; retrieval hit 39 of 41; false abstentions 0; abstention correct 4 of 5`, vs `37 of 46`, `3` false abstentions in E20); 6-question rerun (`firiki-labour-rerun6-e22`, `127.982 s`): `3 of 6`, matching 6 of 6 rows identically (`0` flips, vs `2 of 6` flipping in E20).
+  - `GreekLabourLibrary` `dev` (`firiki-library-dev-e22` `718.467 s`, `firiki-library-dev-e22-rerun` `727.973 s`): `13 of 24` in both runs (`retrieval hit 17 of 21`, `right documents retrieved 21 of 21` identical; ~41% faster than E20's `1216.765 s` because Q7/Q11 no longer escalated into agentic routes; `4 of 24` cases still varied from downstream on-device draft wording / Gate C numeric checks).

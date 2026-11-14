@@ -324,6 +324,5 @@ and touched no protected file. Claude Code's review found and fixed:
 - misleading README rows;
 - an 11-minute unit suite.
 
-See FORK_CHANGES 15 Nov 2026, EXPERIMENTS E20–E21, and `Docs/Thesis/plans/antigravity-review-fixes.md`.
-Open: the route planner samples, so Q&A results vary between runs (2 of 6 Labour Code questions,
-about 8 of 24 library questions); making it greedy is a separate, measured change.
+See FORK_CHANGES 15 Nov 2026, EXPERIMENTS E20–E22, and `Docs/Thesis/plans/antigravity-review-fixes.md`.
+**Greedy route planner (`Docs/Thesis/plans/greedy-route-planner.md`, E22):** `QueryExecutionPlannerService.buildFoundationModelPlan` now passes `GenerationOptions(samplingMode: .greedy)` (`QueryExecutionPlannerDeterminismTests` 2/2 passed). Labour Code `dev` scored `36 of 46` (`0` false abstentions vs `3` before) with `6/6` matching rows (`3/6`) on the 6-question repeatability rerun (`0` flips); `GreekLabourLibrary` `dev` scored `13 of 24` in two consecutive runs (`718 s` and `728 s`, 41% faster than E20's `1217 s`, identical `17/21` retrieval; `4/24` cases still varied from downstream on-device drafting/Gate C phrasing).

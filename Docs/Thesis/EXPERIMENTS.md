@@ -545,3 +545,19 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   before (notes 10,187 → 25,011 characters), not because of the cap.
 - **Outcome:** the count cap is removed (`articlesPerGroup = nil`); the summary dev set is 6 of 6
   provisions and 3 of 3 articles, in about 2.3 minutes.
+
+---
+
+### E22 · 15 Nov 2026 · Greedy route planner (`QueryExecutionPlannerService.buildPlan`)
+
+- **Hypothesis:** `QueryExecutionPlannerService.buildFoundationModelPlan` calls
+  `session.respond(to: prompt, generating: GuidedQueryExecutionPlan.self)` without `GenerationOptions(samplingMode: .greedy)`, causing route choices (`standard_retrieval`, `decomposed_retrieval`, `agentic_retrieval`) and search queries to sample across runs (E20 saw 2 of 6 Labour Code rerun questions and ~8 of 24 library questions vary, plus occasional 230–280 s agentic runs). Passing `GenerationOptions(samplingMode: .greedy)` will eliminate route and retrieval variance across runs.
+- **What changed:** `QueryExecutionPlannerService.buildFoundationModelPlan` now passes `options: Self.foundationModelGenerationOptions` (`GenerationOptions(samplingMode: .greedy)`), verified by `QueryExecutionPlannerDeterminismTests` (`2 tests passed in 11.886 s`).
+- **Runs (`dev` splits, iOS 27 Simulator):**
+
+| Set | Before (E20) | After (E22) | Repeatability / notes |
+|---|---|---|---|
+| `GreekLabourCode` `dev` (46) | `37 of 46` (`1381 s`, `3` false abstentions) (`firiki-labour-dev-e20-head`) | `36 of 46` (`1656 s`, `0` false abstentions) (`firiki-labour-dev-e22`) | 6-question rerun (`firiki-labour-rerun6-e22`, `128 s`): `3 of 6`, **6 of 6 rows identical** to full `dev` (vs `2 of 6` / 2 flips in E20) |
+| `GreekLabourLibrary` `dev` (24) | `14 of 24` (`1217 s`, `~8` cases flipped) (`firiki-library-dev10-e20-fix`) | `13 of 24` (`718 s`) (`firiki-library-dev-e22`) · `13 of 24` (`728 s`) (`firiki-library-dev-e22-rerun`) | **41% faster** (Q7 & Q11 no longer escalated into 230–265 s agentic chains); `retrieval hit 17 of 21` & `right documents 21 of 21` identical in both E22 runs; 4 cases (`1, 2, 7, 23`) still varied in downstream `LanguageModelSession` phrasing / Gate C numeric checks |
+
+- **Outcome:** kept. Greedy planning removes route and retrieval flips (`0/6` flips on Labour Code rerun, identical retrieval across consecutive 24-question library runs, `~41%` speedup on library `dev`), leaving only minor downstream on-device `LanguageModelSession` tie-breaking noise on a few borderline cases.

@@ -314,6 +314,12 @@ final class QueryExecutionPlannerService {
 
 #if canImport(FoundationModels)
 @available(iOS 26.0, *)
+extension QueryExecutionPlannerService {
+    /// Greedy decoding keeps route selection and search queries repeatable across runs.
+    static let foundationModelGenerationOptions = GenerationOptions(samplingMode: .greedy)
+}
+
+@available(iOS 26.0, *)
 private extension QueryExecutionPlannerService {
     @Generable
     struct GuidedQueryExecutionPlan {
@@ -381,7 +387,8 @@ private extension QueryExecutionPlannerService {
         do {
             let planned = try await session.respond(
                 to: prompt,
-                generating: GuidedQueryExecutionPlan.self
+                generating: GuidedQueryExecutionPlan.self,
+                options: Self.foundationModelGenerationOptions
             )
             let content = planned.content
 
