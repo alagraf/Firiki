@@ -198,6 +198,31 @@ struct GreekLegalSummaryTests {
             **Article 9:** extension above 40%.
             """, "\(summary.english)")
     }
+
+    @Test func responseTokenBudgetsAndClosingBoilerplateFilterAreApplied() {
+        #expect(GreekLegalDocumentSummarizer.mapMaximumResponseTokens(lines: 3) == 270)
+        #expect(GreekLegalDocumentSummarizer.mapMaximumResponseTokens(lines: 4) == 345)
+        #expect(GreekLegalDocumentSummarizer.mapMaximumResponseTokens(lines: 8) == 480)
+        #expect(GreekLegalDocumentSummarizer.reduceMaximumResponseTokens == 140)
+
+        let entry = GreekLegalDocumentSummarizer.ArticleText(
+            heading: "Article 16",
+            text: "Entry into force\nThe validity of this law begins upon publication in the Government Gazette.")
+        let repeal = GreekLegalDocumentSummarizer.ArticleText(
+            heading: "Article 15",
+            text: "Repealed provisions\nFrom the entry into force of this law, paragraph 2 of Article 10 is repealed.")
+        let substantive = GreekLegalDocumentSummarizer.ArticleText(
+            heading: "Article 8",
+            text: "After-effect of collective agreements\nThe normative terms continue to apply for three (3) months.")
+        let article1 = GreekLegalDocumentSummarizer.ArticleText(
+            heading: "Article 1",
+            text: "Entry into force of the framework\nDefines scope.")
+
+        #expect(GreekLegalDocumentSummarizer.isBoilerplateClosingArticle(entry))
+        #expect(GreekLegalDocumentSummarizer.isBoilerplateClosingArticle(repeal))
+        #expect(!GreekLegalDocumentSummarizer.isBoilerplateClosingArticle(substantive))
+        #expect(!GreekLegalDocumentSummarizer.isBoilerplateClosingArticle(article1))
+    }
 }
 
 /// One document of the summary set.

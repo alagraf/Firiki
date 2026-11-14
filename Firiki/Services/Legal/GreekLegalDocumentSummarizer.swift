@@ -304,11 +304,45 @@ nonisolated enum GreekLegalDocumentSummarizer {
         do { return try await call() } catch is GreekLegalModelCall.Declined { return nil }
     }
 
+    /// Tokens budgeted for a map note call: enough for `lines` lines of ~35 words (up to 320 chars)
+    /// without letting single-article groups emit 3,000+ chars of discarded trailing lines (E24).
+    static func mapMaximumResponseTokens(lines: Int) -> Int {
+        min(480, max(160, lines * 75 + 45))
+    }
+
+    /// Tokens budgeted for the 1–2 sentence opening (`reduceInstructions`).
+    static let reduceMaximumResponseTokens = 140
+
+    /// Short standalone closing boilerplate articles ("Entry into force", "Repealed provisions")
+    /// after Article 1, which `mapInstructions` already tells the model to omit.
+    static func isBoilerplateClosingArticle(_ article: ArticleText) -> Bool {
+        guard article.heading != "Article 1", article.text.count <= 900 else { return false }
+        let firstLine = article.text.components(separatedBy: "\n").first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let boilerplatePrefixes = [
+            "entry into force",
+            "commencement",
+            "repealed provisions",
+            "repeal of provisions",
+            "εναρξη ισχυος",
+            "έναρξη ισχύος",
+            "καταργουμενες διαταξεις",
+            "καταργούμενες διατάξεις",
+        ]
+        return boilerplatePrefixes.contains { firstLine.hasPrefix($0) }
+    }
+
     /// The permissive guardrails: a summary transforms the user's own document (Article 120 of the
     /// Constitution, "by force", was refused under the default ones; see `greekLegalAwareOnDeviceModel`).
-    static func onDeviceResponse(instructions: String, prompt: String) async throws -> String {
+    static func onDeviceResponse(
+        instructions: String,
+        prompt: String,
+        maximumResponseTokens: Int? = nil
+    ) async throws -> String {
         let session = LanguageModelSession(model: SystemLanguageModel(guardrails: .permissiveContentTransformations), instructions: instructions)
-        return try await session.respond(to: prompt, options: GenerationOptions(samplingMode: .greedy)).content
+        let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: maximumResponseTokens)
+        return try await session.respond(to: prompt, options: options).content
     }
 
     // MARK: Checking the summary
@@ -370,25 +404,32 @@ nonisolated enum GreekLegalDocumentSummarizer {
     static func summarize(
         passages: [String],
         statuteKey: String?,
-        respond: (_ instructions: String, _ prompt: String) async throws -> String = { try await onDeviceResponse(instructions: $0, prompt: $1) },
+        respond: ((_ instructions: String, _ prompt: String) async throws -> String)? = nil,
         translate: (String) async throws -> String = { try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations($0) }
     ) async throws -> Summary {
         let statute = statuteKey.map(GreekLegalAnswerFinalizer.statuteName) ?? "the document"
         let articles = articles(from: passages)
+        let summarizableArticles = articles.filter { !isBoilerplateClosingArticle($0) }
+        let noteSources = summarizableArticles.isEmpty ? articles : summarizableArticles
         // A document without articles is summarized by parts; its own articles are then none.
-        let byParts = articles.isEmpty
-        let groups = groups(of: byParts ? parts(from: passages) : articles, maxArticles: byParts ? nil : articlesPerGroup)
+        let byParts = noteSources.isEmpty
+        let groups = groups(of: byParts ? parts(from: passages) : noteSources, maxArticles: byParts ? nil : articlesPerGroup)
         var notes: [Note] = []
         var noteCharacters = 0
         for (index, group) in groups.enumerated() {
             let headings = headings(inGroup: group)
             let lines = linesPerGroup(articles: headings.count)
+            let maxTokens = mapMaximumResponseTokens(lines: lines)
+            let mapRespond: (_ instructions: String, _ prompt: String) async throws -> String = { instructions, prompt in
+                if let respond { return try await respond(instructions, prompt) }
+                return try await onDeviceResponse(instructions: instructions, prompt: prompt, maximumResponseTokens: maxTokens)
+            }
             // A group the model declines is skipped; the summary keeps the others (deeper fix 1).
             let note: String
             do {
                 note = try await GreekLegalModelCall.respond(
                     instructions: mapInstructions(lines: lines, parts: byParts), prompt: "Statute: \(statute)\n\n\(group)",
-                    label: "summary group \(index + 1) of \(groups.count)", respond: respond)
+                    label: "summary group \(index + 1) of \(groups.count)", respond: mapRespond)
             } catch is GreekLegalModelCall.Declined {
                 continue
             }
@@ -404,11 +445,15 @@ nonisolated enum GreekLegalDocumentSummarizer {
         for line in firstNotes where openingNotes.count + line.count + 1 <= openingNotesCharacters {
             openingNotes += line + "\n"
         }
+        let reduceRespond: (_ instructions: String, _ prompt: String) async throws -> String = { instructions, prompt in
+            if let respond { return try await respond(instructions, prompt) }
+            return try await onDeviceResponse(instructions: instructions, prompt: prompt, maximumResponseTokens: reduceMaximumResponseTokens)
+        }
         // A declined opening leaves the list of provisions; nothing at all is a refusal.
         let opening = try await declinedAsNil {
             try await GreekLegalModelCall.respond(
                 instructions: reduceInstructions, prompt: "Statute: \(statute)\n\nNotes:\n\(openingNotes)",
-                label: "summary opening", respond: respond)
+                label: "summary opening", respond: reduceRespond)
         } ?? ""
         if opening.isEmpty && bullets.isEmpty { throw GreekLegalModelCall.Declined() }
         // The opening's first two sentences, without any list the model added.

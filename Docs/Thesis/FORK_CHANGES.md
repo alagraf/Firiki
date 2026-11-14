@@ -2768,3 +2768,18 @@ The owner asked to fix them without approvals. Plan: `Docs/Thesis/plans/antigrav
 **Verification:**
 - `thesis_run_tests.sh` (`GreekTranslationRetrievalTests` + `GreekLegalOpinionTests` + `GreekLegalOpinionEvaluation`, `split=dev`, `firiki-opinion-dev-e23`): `** TEST BUILD SUCCEEDED **`; `✔ Test run with 29 tests in 3 suites passed after 235.704 seconds.`
 - `GreekLegalOpinionEvaluation` `dev`: `[GreekOpinion] summary split=dev: citations 12 of 14, key facts 15 of 22, refused 0 of 7` (matching `firiki-opinion-dev-baseline`), with both Q1 and Q11 rendering `"6ήμερη εβδομάδα εργασίας"` and 0 untranslated English words across all 7 dev opinions.
+
+### 15 Nov 2026 (fourth entry): speed up statute summaries via output token budgets and closing boilerplate skip (E24)
+
+**Why:** On `n_5278_2026_fek_a22.pdf` (`dev`), profiling showed Opus-MT translation took only `3.1 s` out of `139.7 s` (`97.8%` went into the 14 map + 1 reduce LLM calls). Because `onDeviceResponse` had no `maximumResponseTokens`, groups 4, 9, 10, 11, and 12 emitted `2,284–3,814` chars of notes (`25,011` total across 14 groups) before `cleanedNotes(..., lines: lines)` discarded everything past line 3, and groups still included short closing `"Entry into force"` / `"Repealed provisions"` articles.
+
+**What changed:**
+- `Firiki/Services/Legal/GreekLegalDocumentSummarizer.swift`:
+  - Added `maximumResponseTokens: Int? = nil` to `onDeviceResponse`, passing `mapMaximumResponseTokens(lines:)` (`min(480, max(160, lines * 75 + 45))`) on map calls and `reduceMaximumResponseTokens = 140` on the opening (`reduce`) call (preserving `nil` for opinions).
+  - Added `isBoilerplateClosingArticle(_:)` to omit standalone closing `"Entry into force"` (`Έναρξη ισχύος`) and `"Repealed provisions"` (`Καταργούμενες διατάξεις`) articles after `Article 1` from `groups(of:)`, while still passing the full `articles` list to `droppingUnsupported(...)`.
+- `FirikiTests/Services/GreekLegal/GreekLegalSummaryTests.swift`:
+  - Added `responseTokenBudgetsAndClosingBoilerplateFilterAreApplied()`.
+- Plan: `Docs/Thesis/plans/faster-statute-summary.md`; runs and measurement: `Docs/Thesis/EXPERIMENTS.md` (`E24`).
+
+**Verification:**
+- `thesis_run_tests.sh` (`GreekLegalSummaryTests` + `GreekLegalSummaryEvaluation`, `split=dev`, `firiki-summary-dev-e24`): `** TEST BUILD SUCCEEDED **`; `✔ Test run with 10 tests in 2 suites passed after 94.046 seconds.` (`[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=14 notes=16148 chars, 93 s`; `provisions 6 of 6`, `articles cited 3 of 3`, `dropped 0`, `missing: []`, down from `139.736 s` / `25,011` note chars in `firiki-summary-dev-baseline`).

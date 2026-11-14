@@ -576,3 +576,18 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
 | After (`firiki-opinion-dev-e23`) | `12 of 14` | `15 of 22` | `0 of 7` | **`0` across all 7 dev opinions** (`Q1` & `Q11` render `"6ήμερη εβδομάδα εργασίας"`); live `Opus-MT` unit test passes (`29 tests in 3 suites`, `0 failures`, `235.7 s`) |
 
 - **Outcome:** kept. All 7 dev opinions render pure Greek with zero `"work days per week"` leaks and unchanged citation/key-fact accuracy.
+
+---
+
+### E24 · 15 Nov 2026 · Statute summary speed optimization
+
+- **Hypothesis:** In `firiki-summary-dev-baseline` (`139.7 s`), Opus-MT translation took only `3.1 s`, while the 14 map + 1 reduce LLM calls took `136.6 s` (`97.8%`). Without `maximumResponseTokens`, groups 4, 9, 10, 11, and 12 each generated `2,284–3,814` characters (`25,011` total) before `cleanedNotes(..., lines: lines)` discarded everything past line 3. Capping map/reduce output tokens (`min(480, max(160, lines * 75 + 45))` for map, `140` for opening) and filtering closing `"Entry into force"` / `"Repealed provisions"` boilerplate articles after `Article 1` will cut summary runtime substantially without losing any provision or citation.
+- **What changed:** `GreekLegalDocumentSummarizer` now passes per-call `maximumResponseTokens` through `onDeviceResponse` and excludes closing boilerplate articles (`isBoilerplateClosingArticle`) from `groups(of:)` while keeping all `articles` for `droppingUnsupported`.
+- **Runs (`dev` split, iOS 27 Simulator):**
+
+| Run | Groups | Note chars | Summary time (suite) | Provisions | Articles cited | Dropped |
+|---|---|---|---|---|---|---|
+| Before (`firiki-summary-dev-baseline`) | `14` | `25,011` | `139 s` (`139.736 s`) | `6 of 6` | `3 of 3` | `0` |
+| After (`firiki-summary-dev-e24`) | `14` | `16,148` (`-35%`) | **`93 s`** (`94.046 s`, **`-33%`**) | **`6 of 6`** | **`3 of 3`** | **`0`** |
+
+- **Outcome:** kept. Summary time drops by a third (`139 s → 93 s`) while keeping all 6 provisions, all 3 cited articles, and 0 dropped sentences (`10 tests in 2 suites passed`).

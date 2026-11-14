@@ -1,0 +1,7 @@
+# firiki-summary-dev-e24: result lines of firiki-summary-dev-e24.log (log last written 2026-11-14 23:06)
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=14 notes=16148 chars, 93 s
+[GreekSummary] | 1 | dev | provisions 6 of 6 | articles cited 3 of 3 | dropped 0 | missing: [] |
+[GreekSummary] summary split=dev: provisions covered 6 of 6
+✔ Test run with 10 tests in 2 suites passed after 94.046 seconds.
