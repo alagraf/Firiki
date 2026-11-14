@@ -2644,3 +2644,21 @@ command.
   - `✔ Test run with 24 tests in 3 suites passed after 134.919 seconds.`
   - `[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=15 notes=25717 chars, 134 s`
   - `[GreekSummary] | 1 | dev | provisions 5 of 6 | articles cited 3 of 3 | dropped 0 | missing: ["extension threshold 40% of the sector's employees (art. 9)"] |` (`Άρθρο 3` and both parts of `Άρθρο 8` restored cleanly).
+
+## 14 Nov 2026 (thirteenth entry)
+
+**Why:** Re-measure the held-out five-document library `test` split (`GreekLabourLibrary`, 12 questions) once after E15–E18 and bring the `README.md` Results table up to date with dates across E14–E19 (`Docs/Thesis/plans/readme-results-update.md`, `EXPERIMENTS.md` E19).
+
+**What:**
+
+- Ran `GreekLabourLibrary` `test` split once (`firiki-library-test2-e19.txt`) and recorded it in `Docs/Thesis/experiments/runs/INDEX.md`, `Docs/Thesis/EXPERIMENTS.md` (E19), and `Docs/Thesis/METHODS_SUMMARY.md`.
+- `README.md`: updated the Results table's `Nov re-run` column and notes with dated 13–14 Nov 2026 figures for the five-document library (`dev 14–15 of 24 / test 5 of 12`, right docs `9 of 11`), contract template routing (`44 of 44 / 20 of 22`), statute summaries (`5 of 6, 3 of 3 / 4 of 5`), and legal opinions (`dev 7 cases: 12 of 14 citations, 15 of 22 key facts`; `test 4 cases: 4 of 8 citations, 8 of 10 key facts`).
+
+**Verification:**
+
+- `TEST_RUNNER_OI_GREEK_EVAL=1 TEST_RUNNER_OI_GREEK_EVAL_SET=GreekLabourLibrary TEST_RUNNER_OI_GREEK_EVAL_SPLIT=test OI_TEST_TIMEOUT_SECONDS=5400 ./scripts/thesis_run_tests.sh /private/tmp/oi-e19-logs/firiki-library-test2-e19.log -only-testing:FirikiTests/GreekConstitutionEvaluationTests`:
+  - `** TEST BUILD SUCCEEDED **`
+  - `✔ Test run with 1 test in 1 suite passed after 333.466 seconds.`
+  - `[GreekEval] answer pass 4 of 11; retrieval hit 7 of 11; false abstentions 3; abstention correct 1 of 1`
+  - `[GreekEval] right documents retrieved 9 of 11`
+  - `[GreekEval] summary set=GreekLabourLibrary corpus=library split=test: passed 5 of 12`

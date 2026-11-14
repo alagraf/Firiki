@@ -219,6 +219,7 @@ Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with
 | 2026-11-14 | Same build: summary dev / test; opinion dev / test (citations, key facts, refused) | 5 of 6 / 4 of 5; 10 of 12, 11 of 20, 0 / 5 of 8, 7 of 10, 0 (test citations 3 of 8 before) |
 | 2026-11-14 | Short daily overtime opinion (E17): opinion dev (7 cases incl. Q11) / library dev (shared retrieval & query normalization) | 12 of 14 citations, 15 of 22 key facts, Q11 conclusion now permits 4 h/day under Law 5239 art. 7 (was "not allowed" under art. 192); library dev 14 of 24 |
 | 2026-11-14 | Summary dev after TOC-stub filtering, 2-article group cap, and heading-marker cleanup (E18: provisions, articles cited) | 5 of 6, **3 of 3** (2 of 3 before; Article 3 citation and Article 8 full after-effect restored; 15 groups) |
+| 2026-11-14 | Five-document library test split, once (12 held-out questions, E19) | **5 of 12** (answer pass 4 of 11; retrieval hit 7 of 11; right documents 9 of 11 vs 6 of 11 on 30 Oct; 1 question within run variation) |
 | 2026-11-13 | Lecture notes with a wrong-letter Greek font, before / after the PaddleOCR text-layer check: passages about overtime | 0 / 38 of 713; a correct Labour Code excerpt kept its text layer |
 
 Import of the full 260-page Labour Code in the Simulator: about 29 minutes (4,218 passages), 15
@@ -285,6 +286,7 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-14 (library test re-run & README table, E19): re-measured the held-out five-document library test split once (`5 of 12`; right documents retrieved `9 of 11` vs `6 of 11` on 30 Oct) and updated the public results table with 13–14 Nov figures (E14–E19).
 - 2026-11-14 (summary article extraction and group cap, E18): statute summarization filters TOC blocks by line-start headings, drops leading TOC stubs ahead of Article 1, caps article map groups at two articles (while keeping part groups uncapped), strips echoed titled marker lines, and asks for exact scope words per distinct rule/stage. Summary dev restores `3 of 3` cited articles (Article 3 restored) and Article 8's rule that all normative terms continue after the three-month period (`5 of 6` provisions, `0` dropped).
 - 2026-11-14 (short overtime, E17): scoped opinion search uses both English and Greek query stems, strips opinion-request framing, normalizes standalone «Επιτρέπεται;» (`"Is that allowed?"`), prunes weak third documents (`relativeScore = 0.68`), places later statutes ahead of `PD:62/2025`, expands only the highest-scoring amending article per source, and guides the conclusion not to override general limits with special-case arrangements. Opinion dev (with Q11) holds `12 of 14` citations and `15 of 22` key facts while flipping Q11's conclusion from "not allowed" (Art. 192) to permitted (up to 4 h/day under Law 5239 Art. 7); library Q&A dev holds `14 of 24`.
 - 2026-11-14 (late night): each model call of a summary or opinion is retried shorter when too long,

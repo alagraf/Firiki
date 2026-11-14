@@ -136,10 +136,10 @@ after the rename to Firiki (the Nov column).
 | Greek Constitution, 10 questions | **9 of 10** (right article found 10 of 10); 8 of 10 in later runs | — | 6 of 10 |
 | Labour Code, development set (46 questions) | **38 of 46**; 5 of 5 out-of-scope questions refused | — | 24 of 46 |
 | Labour Code, test set (23 questions, full 260-page Code) | **15 of 23**; 3 of 3 refused | — | 11 of 23 |
-| Five-document library (development 24 / test 12) | **14 of 24 / 6 of 12** | — | 13 of 24 |
-| Contract template choice (development 44 / test 22, half in Greek) | **43 of 44 / 20 of 22** | 44 of 44 / 20 of 22 | keywords alone: 26 of 44 / 8 of 22 |
-| Statute summary, Law 5278/2026 (development) / Decision 8934/2026 (test; no longer held out, it shaped the reading by parts) | **5 of 6** key provisions, 3 of 3 articles cited / 4 of 5 | 5 of 6 / 4 of 5 | 2 of 6, 0 of 3 / 0 of 5 held out |
-| Legal opinion (development 6 / test 4) | citations **10 of 12 / 3 of 8**; key facts **11 of 20 / 7 of 10** | citations 10 of 12 / 5 of 8; key facts 11 of 20 / 7 of 10 | — |
+| Five-document library (development 24 / test 12) | **14 of 24 / 6 of 12** | 14 of 24 (15 after placeholder repair) / 5 of 12 (right docs 9 of 11, 14 Nov) | 13 of 24 |
+| Contract template choice (development 44 / test 22, half in Greek) | **43 of 44 / 20 of 22** | 44 of 44 / 20 of 22 (13 Nov) | keywords alone: 26 of 44 / 8 of 22 |
+| Statute summary, Law 5278/2026 (development) / Decision 8934/2026 (test; no longer held out, it shaped the reading by parts) | **5 of 6** key provisions, 3 of 3 articles cited / 4 of 5 | 5 of 6, 3 of 3 articles (14 Nov) / 4 of 5 (13 Nov) | 2 of 6, 0 of 3 / 0 of 5 held out |
+| Legal opinion (development 6→7 / test 4) | citations **10 of 12 / 3 of 8**; key facts **11 of 20 / 7 of 10** | dev (7 cases w/ short overtime): citations 12 of 14, key facts 15 of 22 (14 Nov); test (4 cases): citations 4 of 8, key facts 8 of 10 (14 Nov; 5 of 8 / 7 of 10 on 13 Nov) | — |
 | Independent EU labour-law set, never tuned on (16 questions × 3 language conditions, graded by hand, two runs) | **38 of 39** answerable right and **9 of 9** unanswerable refused, in each run | — | Original app, all-Greek condition: 0 of 13 answered in Greek, 0 of 3 refused |
 
 How to read these numbers:
@@ -150,11 +150,14 @@ How to read these numbers:
 - A few Labour Code test questions shaped refusal rules during development, so it's a test split
   rather than a clean held-out set. [`Docs/Thesis/EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md)
   lists which.
-- Later refinements (31 October, 9 November 2026: chunking, translation wording, refusals) were
-  checked with unit tests and in the Mac app. The Nov column re-measures the four capabilities and
-  OCR on the current build; the question sets (Constitution, Labour Code, library, EU holdout)
-  weren't re-measured. The Nov differences (one template request, two opinion citations) are
-  within run-to-run variation.
+- Later refinements (31 October, 9–14 November 2026: chunking, whole-article opinion reading,
+  placeholder repair, model error retries/Stop, short daily overtime opinion, summary TOC/group
+  fixes, translation wording, refusals) were checked with unit tests and in the Mac app. The Nov
+  re-run column records the 13–14 November 2026 re-measurements (OCR, templates, summaries,
+  opinions, and the five-document library `dev` and `test` splits in E14–E19); the earlier
+  single-statute sets (Constitution, Labour Code, EU holdout) weren't re-measured. The Nov
+  differences (one template request, one test library question, two test opinion citations, one test
+  opinion key fact) are within run-to-run variation.
 - Nothing has been measured on a physical iPhone yet (speed, memory, answer quality).
 
 Full records: [`EXPERIMENTS.md`](Docs/Thesis/EXPERIMENTS.md),

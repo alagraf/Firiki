@@ -465,3 +465,16 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
     `** TEST BUILD SUCCEEDED **`, `✔ Test run with 24 tests in 3 suites passed after 134.919 seconds.`
   - **Law 5278/2026 (`dev`):** `passages=203 groups=15 notes=25717 chars, 134 s`, `provisions 5 of 6 | articles cited 3 of 3 | dropped 0` (`Άρθρο 3` restored with GSEE rule; `Άρθρο 8` now states both `"για ένα διάστημα 3 μηνών"` and `"εξακολουθούν να ισχύουν όλοι οι κανονιστικοί όροι..."`; echoed `=== Article N: ... ===` headings removed).
 - **Outcome:** kept.
+
+## E19. Five-document library held-out test run and README table update (2026-11-14)
+
+- **Purpose:** re-measure the held-out `GreekLabourLibrary` `test` split (12 questions) once after
+  E15–E18 without inspecting or tuning on `test` cases, and update `README.md` with E14–E19
+  numbers and dates. Plan: `Docs/Thesis/plans/readme-results-update.md`.
+- **Run (`firiki-library-test2-e19`):** `TEST_RUNNER_OI_GREEK_EVAL=1 TEST_RUNNER_OI_GREEK_EVAL_SET=GreekLabourLibrary TEST_RUNNER_OI_GREEK_EVAL_SPLIT=test OI_TEST_TIMEOUT_SECONDS=5400 ./scripts/thesis_run_tests.sh /private/tmp/oi-e19-logs/firiki-library-test2-e19.log -only-testing:FirikiTests/GreekConstitutionEvaluationTests`
+  (`✔ Test run with 1 test in 1 suite passed after 333.466 seconds.`):
+  - **`passed 5 of 12`** (`answer pass 4 of 11; retrieval hit 7 of 11; right documents retrieved 9 of 11; false abstentions 3; abstention correct 1 of 1`).
+  - Compare `librarytest1` (2026-10-30): `6 of 12` (`right documents retrieved 6 of 11`). Document
+    retrieval rose (`6 → 9 of 11`) while the total pass count (`5 vs 6 of 12`) is within the
+    run-to-run variation.
+- **Outcome:** measured once and recorded in `README.md`, `METHODS_SUMMARY.md`, and `FORK_CHANGES.md`.
