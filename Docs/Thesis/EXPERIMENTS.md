@@ -343,3 +343,35 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
 - **Outcome:** kept. Dev key facts 11 → 15 of 20, citations unchanged (10 of 12), nothing dropped;
   opinions take 5–15 s longer. The test split was not run. Not solved: the Code's sixth-day
   articles retrieved for a short overtime question.
+
+## E15. Translation placeholders repaired; the opinion test split (2026-11-14)
+
+- **Hypothesis:** placeholders the translator mangled (`__LEX_005___`, `LEX_004___`,
+  `__EX_ENT_003_`, …) stay in 7% of the stored English passages, reach the model's drafts and show
+  in Greek answers («__ΕΧΝ.»). Recognising the mangled forms, removing what is left, and repairing
+  stored passages when read removes them without a re-import. Plan:
+  `Docs/Thesis/plans/placeholder-leftovers.md`.
+- **Leftovers** (Simulator, all libraries, 8,022 English passages; the app's patterns ported to
+  Python): 450 with a placeholder or debris before the repair, 0 after. All affected passages store
+  their entity list.
+- **Runs** (build with E14 and this change):
+
+| Run | Before | After |
+|---|---|---|
+| Opinion dev (`firiki-opinion-dev5-placeholders`, rerun `-dev6-…` identical) | 10 of 12 citations, 15 of 20 facts (dev4) | 10 of 12, **13 of 20**, refused 0, dropped 0 |
+| Library Q&A dev (`firiki-library-dev8-placeholders`) | 13 of 24 (`library7`; 14 in the README) | **15 of 24**; expected article retrieved 17 of 21 (14) |
+| Opinion test, once (`firiki-opinion-test3`) | 5 of 8 citations, 7 of 10 facts (`firiki-opinion-test2`, before E14) | 4 of 8, **8 of 10**, refused 0 |
+
+- **Opinion dev per case:** unchanged except case 3 (3 of 3 → 2 of 3: no longer says «**όλοι** οι
+  κανονιστικοί όροι») and case 4 (3 of 3 → 2 of 3: no longer says «μεταγενέστερη»). The rerun was
+  identical (greedy decoding), so this is the repaired text changing the drafts' wording, not run
+  variation. Case 1 stays 4 of 4.
+- **Opinion test per case** (against test2): case 7 1 → 0 citations; case 9 2 → 3 facts; case 10
+  2 sentences dropped (1 before); the test split measures E14 and E15 together and was not used to
+  change anything.
+- **Mac app** (7 documents): the overtime opinion with the evaluation's wording has no placeholder
+  and no "186 hours"; its conclusion: overtime beyond 45 hours a week, up to 4 hours a day and 150 a
+  year, at plus 40%, and the employee may refuse.
+- **Outcome:** kept. The leftovers were shown to readers and hid the text the model needed; library
+  Q&A improved by 2, opinion dev lost 2 key-fact phrasings, opinion test gained 1 fact and lost 1
+  citation.

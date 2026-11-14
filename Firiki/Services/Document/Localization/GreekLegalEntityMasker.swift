@@ -497,10 +497,57 @@ nonisolated enum GreekLegalEntityMasker {
         Set(extractEntities(from: text).map(\.canonicalKey))
     }
 
-    /// Placeholders as a translator may return them: case changed, underscores dropped or spaced.
+    /// Placeholders as a translator may return them: case changed, underscores dropped, doubled or
+    /// spaced, and the words cut. 441 of 6,336 English passages of the five-document library kept
+    /// forms the old pattern (`LEX` and `ENT` both required) missed: `__LEX_005___`, `LEX_004___`,
+    /// `ENT_005___`, `__EX_ENT_003_`, `LEX__007`, `__L_ENT_00_` (14 Nov 2026). One of the words
+    /// LEX / EX / ENT must stand before an underscore and the number, so "Article 7" or "EX 5"
+    /// can't match; before a word that isn't preceded by an underscore, no letter may come
+    /// directly before it.
     nonisolated(unsafe) private static let placeholderPattern = NSRegularExpression.unsafe(
-        #"(?:_+\s*)?LEX\s*_?\s*ENT\s*_?\s*(\d{1,3})(?:\s*_+)?"#, options: [.caseInsensitive]
+        #"(?:_+\s*|(?<![\p{L}\p{N}]))(?:(?:L_?E|E)X(?:\s*_+\s*ENT)*|(?:L\s*_+\s*)?ENT(?:\s*_+\s*ENT)*)\s*_+\s*0*(\d{1,3})(?:\s*_+)?"#,
+        options: [.caseInsensitive]
     )
+    /// What is left of a placeholder without a number ("__LEX_.", "_ENT_ENT_"), or repeated
+    /// letter debris where the translator looped ("L_L_L_L_L_LEX0").
+    nonisolated(unsafe) private static let placeholderWordPattern = NSRegularExpression.unsafe(
+        #"_+\s*(?:LEX|ENT|EX)(?:_+(?:LEX|ENT|EX))*_*(?![\p{L}\p{N}])|(?:L_){2,}L?EX\d*"#
+    )
+    /// Runs of underscores the translator looped on, with the digits of placeholders among them
+    /// ("___0____0__0_______0_0___", "of the first______…"): any run holding five underscores in a row.
+    nonisolated(unsafe) private static let underscoreRunPattern = NSRegularExpression.unsafe(#"[_\d]*_{5,}[_\d]*"#)
+
+    /// The text without placeholder debris: a placeholder no entity was given for, what is left of
+    /// one without its number, and looping underscore runs. Run after unmasking, on text that must
+    /// never show a placeholder (stored passages, translations shown to the reader).
+    static func removingPlaceholderDebris(_ text: String) -> String {
+        guard text.contains("_") else { return text }
+        var result = text
+        for pattern in [placeholderPattern, placeholderWordPattern, underscoreRunPattern] {
+            result = pattern.stringByReplacingMatches(
+                in: result, range: NSRange(location: 0, length: (result as NSString).length), withTemplate: "")
+        }
+        return result
+    }
+
+    /// Whether a text still holds a placeholder or its debris.
+    static func hasPlaceholderDebris(_ text: String) -> Bool {
+        guard text.contains("_") else { return false }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return [placeholderPattern, placeholderWordPattern, underscoreRunPattern].contains { $0.firstMatch(in: text, range: range) != nil }
+    }
+
+    /// A stored passage whose English text kept placeholders the translator mangled, with its
+    /// identifiers put back from its own entity list (as at import: "Article 7 [Άρθρο 7]") and the
+    /// debris removed. Passages imported before 14 Nov 2026 are repaired when read, without a
+    /// re-import; their embeddings stay those of the text as stored. Unchanged when it has none.
+    static func repairingLeftovers(_ chunk: DocumentChunk) -> DocumentChunk {
+        guard hasPlaceholderDebris(chunk.content) else { return chunk }
+        var repaired = chunk
+        repaired.content = removingPlaceholderDebris(
+            unmaskEntities(in: chunk.content, entities: chunk.legal?.legalEntities ?? [], mode: .bilingualAnchor))
+        return repaired
+    }
 
     /// Puts the identifiers back in place of their placeholders.
     static func unmaskEntities(in translatedText: String, entities: [LegalEntityRecord], mode: UnmaskMode) -> String {

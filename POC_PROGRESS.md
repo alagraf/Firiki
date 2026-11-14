@@ -299,3 +299,9 @@ short README prompt still concludes "not allowed" (the Code's sixth-day Article 
 For the demo, use the longer wording. Its Greek still has a leftover placeholder («__ΕΧΝ.») and one
 wrong figure ("186 hours", from "Articles 169 to 186").
 README's opinion example changed to the longer wording (same day).
+
+**Placeholders repaired (E15, same day):** stored passages are repaired when read (450 of 8,022 →
+0 in the Simulator), no re-import needed. The overtime opinion in the Mac app has no «__ΕΧΝ.» or
+"186 hours" any more. Library Q&A dev 15 of 24; opinion dev 13 of 20 key facts; opinion test
+(once) 4 of 8 citations, 8 of 10 key facts. Still open: the short overtime question (sixth-day
+Articles 191–192); the demo uses the longer wording.

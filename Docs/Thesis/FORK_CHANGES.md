@@ -2397,3 +2397,38 @@ prompt, and the check dropped it; the owner approved removing the numbers.
   overtime question («Ο εργοδότης ζητά από υπάλληλο πενθήμερης εργασίας … Θέλω γνωμοδότηση.»), which
   gets the right conclusion in the Mac app; the short form («Θέλω γνωμοδότηση: … Επιτρέπεται;») still
   does not. Documentation only.
+
+## 14 Nov 2026 (sixth entry): translation placeholders repaired
+
+**Why:** POC_PROGRESS open item; plan `Docs/Thesis/plans/placeholder-leftovers.md` (the owner said
+to continue without approvals). 441 of 6,336 English passages of the five-document library kept
+placeholders the translator had mangled, which the unmask pattern (LEX and ENT both required)
+missed; the model copied them, and a Greek opinion showed «__ΕΧΝ.».
+
+**What:**
+- `GreekLegalEntityMasker.swift`:
+  - `placeholderPattern` accepts the mangled forms (LEX or EX without ENT, ENT without LEX, doubled
+    ENT, underscores and spaces, leading zeros); one of the words must stand before an underscore
+    and the number;
+  - new `removingPlaceholderDebris(_:)`, `hasPlaceholderDebris(_:)` (a placeholder without an
+    entity, a word left without its number, looping runs of five or more underscores);
+  - new `repairingLeftovers(_:)` unmasks a stored passage with its own entity list (bilingual
+    anchors) and removes the debris.
+- `LocalNeuralTranslator.swift`: debris removed after the Greek→English unmask at import, from the
+  model's English before English→Greek translation, and from the Greek result.
+- `BNNSVectorDatabase.swift`: every passage read (`decodePassage`, and the whole-file fallback) is
+  repaired; the file and embeddings are unchanged until the next save or re-import.
+- `GreekLegalPipelineTests` (masker suite): the seven forms found, debris removal with ordinary
+  text, blanks, template fields and file names kept, and a stored Labour Code passage repaired.
+
+**Verification:**
+- `thesis_run_tests.sh` with GreekLegalEntityMaskerTests, GreekLegalOpinionTests,
+  GreekTranslationRetrievalTests: `** TEST BUILD SUCCEEDED **`; "Test run with 36 tests in 3 suites
+  passed".
+- Leftovers in the Simulator's stored passages: 450 of 8,022 before, 0 after (EXPERIMENTS E15).
+- Opinion dev 10 of 12 / 13 of 20; library Q&A dev 15 of 24; opinion test 4 of 8 / 8 of 10
+  (EXPERIMENTS E15).
+- macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
+  `** BUILD SUCCEEDED **`. Mac app: the overtime opinion has no placeholder.
+- Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 149
+  tests in 28 suites passed" (146 before).

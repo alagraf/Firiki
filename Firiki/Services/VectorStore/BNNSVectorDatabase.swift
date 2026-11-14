@@ -338,7 +338,7 @@ actor BNNSVectorDatabase: VectorDatabase {
             // Not a file the walk can follow. Decode it whole, as before, and hold the passages
             // in memory. The next save writes them in a form the walk can follow. A file that
             // is not a passage array throws here, which is what a load did before.
-            let decoded = try JSONDecoder().decode([DocumentChunk].self, from: meta)
+            let decoded = try JSONDecoder().decode([DocumentChunk].self, from: meta).map(GreekLegalEntityMasker.repairingLeftovers)
             Log.warning(
                 "[BNNS] Metadata file could not be indexed; decoded whole (\(decoded.count) chunks)",
                 category: .vectorDB)
@@ -677,7 +677,9 @@ actor BNNSVectorDatabase: VectorDatabase {
         guard let chunk = try? decoder.decode(DocumentChunk.self, from: meta[start..<(start + slot.length)]),
             chunk.id == slot.id
         else { return nil }
-        return chunk
+        // Thesis fork: a passage stored with translation placeholders the translator mangled gets
+        // its identifiers back as it is read (GreekLegalEntityMasker.repairingLeftovers).
+        return GreekLegalEntityMasker.repairingLeftovers(chunk)
     }
 
     /// The passage at a position, decoded if it has to be.

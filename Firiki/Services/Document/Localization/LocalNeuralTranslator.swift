@@ -687,7 +687,8 @@ actor LocalNeuralTranslator {
     func translateGreekToEnglishPreservingLegalEntities(_ textEl: String) async throws -> (textEn: String, entities: [LegalEntityRecord]) {
         let input = Self.greekInput(textEl)
         let translated = try await translate(input.text, direction: .greekToEnglish)
-        var restored = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: input.keptMasked, mode: .bilingualAnchor)
+        var restored = GreekLegalEntityMasker.removingPlaceholderDebris(
+            GreekLegalEntityMasker.unmaskEntities(in: translated, entities: input.keptMasked, mode: .bilingualAnchor))
         if !input.appendedNames.isEmpty {
             restored += "\n(" + input.appendedNames.prefix(5).map(\.bilingualAnchor).joined(separator: "; ") + ")"
         }
@@ -770,7 +771,7 @@ actor LocalNeuralTranslator {
         // the answer goes as plain text: the translator returned "**δώδεκα (12)** μήνες",
         // "8 (****) εβδομάδες" and "# #" headings from the draft's markdown (labour run 1).
         let collapsed = Self.legalEnglishPreEdited(SpelledNumber.digitsForEnglishNumberWords(
-            Self.withoutMarkdown(GreekLegalEntityMasker.collapseBilingualAnchors(textEn))))
+            Self.withoutMarkdown(GreekLegalEntityMasker.removingPlaceholderDebris(GreekLegalEntityMasker.collapseBilingualAnchors(textEn)))))
         // File names stay as written: "passage 3-2.txt" came back «διόδου 3-2.txt».
         let (withoutNames, names) = GreekLegalEntityMasker.maskDocumentNames(in: collapsed, names: documentNames)
         let (maskedWithTerms, allFound) = GreekLegalEntityMasker.maskEntities(in: withoutNames)
@@ -793,7 +794,10 @@ actor LocalNeuralTranslator {
         let translated = try await translate(masked, direction: .englishToGreek)
         let greek = GreekLegalEntityMasker.unmaskEntities(in: translated, entities: resolved, mode: .greekVerbatim)
         let withTerms = await restoringGlossaryGreek(greek, terms: terms)
-        let result = GreekLegalEntityMasker.unmaskEntities(in: withTerms, entities: names, mode: .verbatim)
+        // A placeholder the translator mangled beyond recognition is removed, not shown («__ΕΧΝ.»
+        // came from a draft that copied a stored passage's leftover, 14 Nov 2026).
+        let result = GreekLegalEntityMasker.removingPlaceholderDebris(
+            GreekLegalEntityMasker.unmaskEntities(in: withTerms, entities: names, mode: .verbatim))
         // Answers, summaries and opinions are translated once each, so this line is at info.
         Log.info("[Opus-MT] en→el answer: \(textEn.count) → \(result.count) chars, \(found.count) identifier(s) and \(terms.count) glossary term(s) kept, \(names.count) file name(s) masked: '\(Self.logPreview(result))'", category: .llm)
         return result

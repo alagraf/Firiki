@@ -106,6 +106,59 @@ struct GreekLegalEntityMaskerTests {
         #expect(restored == "Article Article 66 [Άρθρο 66] of Law 4808/2021 [Ν. 4808/2021] applies.")
     }
 
+    /// The forms the translator left in 441 of 6,336 stored passages of the five-document library,
+    /// which the old pattern (both LEX and ENT required) missed (14 Nov 2026).
+    @Test(arguments: [
+        ("of __LEX_002___, as well", "of Law 4808/2021 [Ν. 4808/2021], as well"),
+        ("[παρ. 11]LEX_002___ (A' 85)", "[παρ. 11]Law 4808/2021 [Ν. 4808/2021] (A' 85)"),
+        ("EEC__EX_ENT_001_/ next", "EECArticle 66 [Άρθρο 66]/ next"),
+        ("of __LEX_002___ENT_001___ (A' 10)", "of Law 4808/2021 [Ν. 4808/2021]Article 66 [Άρθρο 66] (A' 10)"),
+        ("[παρ. 2]LEX__001_______ and", "[παρ. 2]Article 66 [Άρθρο 66] and"),
+        ("the words \"of_LEX_002_ and 2\"", "the words \"ofLaw 4808/2021 [Ν. 4808/2021] and 2\""),
+        ("added with __LEX_ENT_ENT_002_ here", "added with Law 4808/2021 [Ν. 4808/2021] here"),
+    ])
+    func mangledPlaceholdersOfStoredPassagesAreRestored(translated: String, expected: String) {
+        let (_, entities) = GreekLegalEntityMasker.maskEntities(in: "Άρθρο 66 του Ν. 4808/2021")
+        #expect(GreekLegalEntityMasker.removingPlaceholderDebris(
+            GreekLegalEntityMasker.unmaskEntities(in: translated, entities: entities, mode: .bilingualAnchor)) == expected)
+    }
+
+    /// A placeholder without an entity, what is left of one, and the translator's looping runs are
+    /// removed; ordinary text, blanks of dots and template fields stay.
+    @Test func placeholderDebrisIsRemovedAndOrdinaryTextKept() {
+        #expect(GreekLegalEntityMasker.removingPlaceholderDebris("and __LEX_.") == "and .")
+        #expect(GreekLegalEntityMasker.removingPlaceholderDebris("of __LEX_009__ (A' 1)") == "of  (A' 1)")
+        #expect(GreekLegalEntityMasker.removingPlaceholderDebris("x ___0____0__0_______0_0___ y") == "x  y")
+        #expect(GreekLegalEntityMasker.removingPlaceholderDebris("of the first_______________") == "of the first")
+        #expect(GreekLegalEntityMasker.removingPlaceholderDebris("Article 16 [Άρθρο 16]L_L_L_L_L_LEX0\n(") == "Article 16 [Άρθρο 16]\n(")
+        for kept in ["Article 7 of Law 5239/2025", "EX 5 and ENT 3", "Στ………", "{{employee_name}}", "report_2024.pdf",
+                     "ya_8934_2026_fek_b1759.pdf", "an index_entry_2", "lex specialis 3"] {
+            #expect(GreekLegalEntityMasker.removingPlaceholderDebris(kept) == kept, "\(kept)")
+            #expect(!GreekLegalEntityMasker.hasPlaceholderDebris(kept), "\(kept)")
+        }
+    }
+
+    /// A stored passage of the Labour Code (Article 54, chunk of the five-document library) gets its
+    /// identifiers back from its own entity list when read; a clean passage is the same value.
+    @Test func storedPassagesAreRepairedWhenRead() {
+        let entities = [
+            LegalEntityRecord(id: "__LEX_ENT_003__", type: .euDirective, verbatimEl: "Οδηγίας 92/85/ΕΟΚ",
+                              canonicalEn: "Directive 92/85", canonicalEl: "Οδηγία 92/85", canonicalKey: "EU_DIR:92/85"),
+            LegalEntityRecord(id: "__LEX_ENT_004__", type: .article, verbatimEl: "άρθρα 236",
+                              canonicalEn: "Article 236", canonicalEl: "Άρθρο 236", canonicalKey: "ART:236"),
+        ]
+        let content = "within the scope of Directive 92/85 [Οδηγία 92/85]/ EEC__EX_ENT_003_/ LEX_004__, 291 and 293 to 301, as well as"
+        let chunk = DocumentChunk(
+            documentId: UUID(), content: content, embedding: [], metadata: ChunkMetadata(chunkIndex: 1),
+            legal: LegalChunkMetadata(sourceTextEl: "…", sourceLanguage: "el", legalEntities: entities, documentStatuteKey: "PD:62/2025"))
+        let repaired = GreekLegalEntityMasker.repairingLeftovers(chunk)
+        #expect(repaired.content == "within the scope of Directive 92/85 [Οδηγία 92/85]/ EECDirective 92/85 [Οδηγία 92/85]/ Article 236 [Άρθρο 236], 291 and 293 to 301, as well as")
+        #expect(repaired.id == chunk.id && repaired.legal == chunk.legal)
+        #expect(!GreekLegalEntityMasker.hasPlaceholderDebris(repaired.content))
+        let clean = DocumentChunk(documentId: UUID(), content: "Article 7 [Άρθρο 7] Working time.", embedding: [], metadata: ChunkMetadata(chunkIndex: 2))
+        #expect(GreekLegalEntityMasker.repairingLeftovers(clean).content == clean.content)
+    }
+
     @Test(arguments: [
         ("Π.Δ. 80/2022", "PD:80/2022"),
         ("ΠΔ 62/2025", "PD:62/2025"),
