@@ -2624,3 +2624,23 @@ command.
   - `MarkdownRendererNumberedListTests`: `Executed 4 tests, with 0 failures (0 unexpected) in 0.005 (0.007) seconds`
   - `GreekLegalSummaryTests`: `✔ Test run with 8 tests in 1 suite passed after 0.031 seconds.`
 - `xcodebuild build -scheme Firiki -destination 'platform=macOS' -derivedDataPath /private/tmp/oi-mac CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""`: `** BUILD SUCCEEDED **`.
+
+## 14 Nov 2026 (twelfth entry)
+
+**Why:** Since E15 (`firiki-summary-dev3`), the Law 5278/2026 summary (`dev`) cited `2 of 3` articles (`Article 3` missing; its notes merged under an early TOC chunk for `Article 5`), skipped 19 article chunks containing inline cross-references because `components(separatedBy: "Article ")` counted body references as TOC headings, packed `Article 6 + Article 7 + Article 8` into one map group (`Article 8` lost its rule that all normative terms continue after three months), and left echoed `=== Article N: Title ===` lines in notes (`Docs/Thesis/plans/summary-dev-article8.md`, `EXPERIMENTS.md` E18).
+
+**What:**
+
+- `Firiki/Services/Legal/GreekLegalDocumentSummarizer.swift`:
+  - Updated `articles(from:)` to count line-starting `Article` headings when filtering table-of-contents passages and drop any leading TOC entries before `Article 1` when `Article 1` is present.
+  - Updated `groups(of:limit:maxArticles:)` to cap map groups at `maxArticles = 2` for articles (`nil` when summarizing part-chunked ministerial decisions).
+  - Updated `mapInstructions(lines:parts:)` to ask for exact scope words and each distinct rule/time stage on its own line, and extended `markerLine` to strip echoed `=== Article N: Title ===` headers.
+- `FirikiTests/Services/GreekLegal/GreekLegalSummaryTests.swift`: extended `articlesAreBuiltFromPassagesWithoutContentsOrTitlePage()` and `notesKeepTheGroupsArticles()`.
+
+**Verification:**
+
+- `TEST_RUNNER_OI_GREEK_SUMMARY=1 TEST_RUNNER_OI_GREEK_SUMMARY_SPLIT=dev ./scripts/thesis_run_tests.sh /private/tmp/oi-e18-logs/firiki-summary-dev4-e18.log -only-testing:FirikiTests/GreekLegalSummaryTests -only-testing:FirikiTests/GreekLegalSummaryEvaluation -only-testing:FirikiTests/GreekLegalOpinionTests`:
+  - `** TEST BUILD SUCCEEDED **`
+  - `✔ Test run with 24 tests in 3 suites passed after 134.919 seconds.`
+  - `[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=15 notes=25717 chars, 134 s`
+  - `[GreekSummary] | 1 | dev | provisions 5 of 6 | articles cited 3 of 3 | dropped 0 | missing: ["extension threshold 40% of the sector's employees (art. 9)"] |` (`Άρθρο 3` and both parts of `Άρθρο 8` restored cleanly).

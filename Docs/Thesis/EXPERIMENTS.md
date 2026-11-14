@@ -435,3 +435,33 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   - **Translation & keyword unit suites**: `GreekKeywordArmTests` + `GreekTranslationRetrievalTests`
     (`15 tests in 2 suites passed in 3.169 s`).
 - **Outcome:** kept.
+
+## E18. Restore Article 3 citation and Article 8 full after-effect in statute summaries (2026-11-14)
+
+- **Observation (`firiki-summary-dev3`, reproduced in `summary-dev-base.log`):** since E15, the
+  Law 5278/2026 (`dev`) summary cited `2 of 3` expected articles (`Article 3` missing; its GSEE
+  rule was attached under `Article 5`, which appeared first) and `5 of 6` provisions, missing
+  `"after-effect: all normative terms continue after the three months (art. 8)"` (`12` groups).
+- **Causes found on `n_5278_2026_fek_a22.pdf` (`dev`):**
+  1. Table-of-contents chunk 4 (`"Article 5 [Άρθρο 5] ..."`) had >= 12 words and 1 `"Article"` match,
+     placing `Article 5` before `Article 1` at the start of Group 1 and absorbing unlabelled /
+     amended notes from Group 1 (`Article 3`).
+  2. `passage.components(separatedBy: "Article ").count - 1` counted inline cross-references
+     (`Article 404`, `Article 399`, `Article 396`), skipping 19 valid body chunks (Articles 4, 5, 6,
+     5 chunks of Article 9, 10, 11, 12, and all of Article 15).
+  3. After E15 removed placeholder strings (~150 chars), `Article 6 + Article 7 + Article 8` fell
+     below the `7,372`-char limit and merged into one group, leaving `Article 8` with a single note
+     line that omitted `"all normative terms continue after the three months"`.
+  4. `markerLine` only stripped exact `=== Article N ===`, letting echoed headings like
+     `=== Article 404: Accession and Application Extension ===` consume note lines.
+- **Change (`Docs/Thesis/plans/summary-dev-article8.md`):**
+  - Count line-start `Article` headings when filtering TOC blocks and drop leading entries before
+    `Article 1` when present (`articles(from:)`).
+  - Cap article groups at `maxArticles = 2` (`unlimited` when summarizing by parts).
+  - Expand `markerLine` to strip `=== Article N: Title ===` headings and update `mapInstructions`
+    to preserve exact scope words and state each distinct rule/time stage on its own line.
+- **Verification (`firiki-summary-dev4-e18`):**
+  - `GreekLegalSummaryTests`, `GreekLegalOpinionTests`, and `GreekLegalSummaryEvaluation` (`dev`):
+    `** TEST BUILD SUCCEEDED **`, `✔ Test run with 24 tests in 3 suites passed after 134.919 seconds.`
+  - **Law 5278/2026 (`dev`):** `passages=203 groups=15 notes=25717 chars, 134 s`, `provisions 5 of 6 | articles cited 3 of 3 | dropped 0` (`Άρθρο 3` restored with GSEE rule; `Άρθρο 8` now states both `"για ένα διάστημα 3 μηνών"` and `"εξακολουθούν να ισχύουν όλοι οι κανονιστικοί όροι..."`; echoed `=== Article N: ... ===` headings removed).
+- **Outcome:** kept.

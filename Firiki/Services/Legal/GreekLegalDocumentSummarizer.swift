@@ -54,7 +54,12 @@ nonisolated enum GreekLegalDocumentSummarizer {
             guard let match = articleHeading?.firstMatch(in: passage, range: NSRange(location: 0, length: ns.length)) else { continue }
             let heading = "Article " + ns.substring(with: match.range(at: 1))
             let body = ns.substring(from: match.range.location + match.range.length).trimmingCharacters(in: .whitespacesAndNewlines)
-            let headings = passage.components(separatedBy: "Article ").count - 1
+            // Count line-starting "Article N" headings rather than inline cross-references ("of Article 404"),
+            // so table-of-contents blocks are filtered without skipping body chunks that cite other articles.
+            let headings = passage.components(separatedBy: "\n").filter { line in
+                let lineNS = line as NSString
+                return Self.articleHeading?.firstMatch(in: line, range: NSRange(location: 0, length: lineNS.length)) != nil
+            }.count
             let words = body.split(whereSeparator: \.isWhitespace).count
             guard words >= 12, headings < 3 || words / (headings + 1) >= 15 else { continue }
             if let last = result.last, last.heading == heading {
@@ -62,6 +67,11 @@ nonisolated enum GreekLegalDocumentSummarizer {
             } else {
                 result.append(ArticleText(heading: heading, text: body))
             }
+        }
+        // Drop table-of-contents stubs (e.g. a lone "Article 5" heading line with >= 12 title words)
+        // that precede the body's Article 1 when Article 1 is present.
+        if let firstBody = result.lastIndex(where: { $0.heading == "Article 1" }), firstBody > 0 {
+            result.removeFirst(firstBody)
         }
         return result
     }
@@ -111,17 +121,22 @@ nonisolated enum GreekLegalDocumentSummarizer {
         "=== \(heading)\(continued ? " (continued)" : "") ==="
     }
 
-    /// Consecutive articles grouped so each group's text stays within `limit` characters; an
-    /// article longer than that is cut at a line or sentence end, each piece under its heading.
-    static func groups(of articles: [ArticleText], limit: Int = groupCharacters) -> [String] {
+    /// Consecutive articles grouped so each group's text stays within `limit` characters and at
+    /// most `maxArticles` articles (nil for unlimited, used by part-chunked decisions); an article
+    /// longer than `limit` is cut at a line or sentence end, each piece under its heading.
+    static func groups(of articles: [ArticleText], limit: Int = groupCharacters, maxArticles: Int? = 2) -> [String] {
         var groups: [String] = []
         var current = ""
+        var currentArticles = 0
         func add(_ block: String) {
-            if !current.isEmpty, current.count + block.count + 2 > limit {
+            let tooManyArticles = maxArticles.map { currentArticles >= $0 } ?? false
+            if !current.isEmpty, current.count + block.count + 2 > limit || tooManyArticles {
                 groups.append(current)
                 current = ""
+                currentArticles = 0
             }
             current += (current.isEmpty ? "" : "\n\n") + block
+            currentArticles += 1
         }
         for article in articles {
             let block = marker(article.heading) + "\n" + article.text
@@ -157,7 +172,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
             """
         }
         return """
-        You take notes on articles of a Greek law for a lawyer. Use only the text given. Each article starts with a line like "=== Article 8 ===". Write at most \(lines) lines, the most important rules first, each under 35 words: "Article N: " with N from the === line, then the rule, with its figures, time limits and who it applies to. When an article amends or replaces an article of another law, still use N from the === line and say what the rule now provides. Leave out articles that only state the purpose or repeal provisions.
+        You take notes on articles of a Greek law for a lawyer. Use only the text given. Each article starts with a line like "=== Article 8 ===". Write at most \(lines) lines, the most important rules first, each under 35 words: "Article N: " with N from the === line, then the rule, keeping exact scope words (such as all, total, solely, at least) when stated, figures, time limits and who it applies to. State each distinct rule or time stage of an article on its own line. When an article amends or replaces an article of another law, still use N from the === line and say what the rule now provides. Leave out articles that only state the purpose, repeal provisions, or entry-into-force date.
         """
     }
 
@@ -204,7 +219,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
     }
 
     private static let noteArticle = try? NSRegularExpression(pattern: #"^(?:[-•*]\s*)?(?:\*\*)?(?:Article|Part)\s+(\d{1,4}[A-Za-zΑ-Ωα-ω]?)\b(?:\*\*)?\s*[:.\-–]?\s*(?:\*\*)?\s*"#)
-    private static let markerLine = try? NSRegularExpression(pattern: #"^=+\s*(?:Article|Part)\s+(\d{1,4}[A-Za-zΑ-Ωα-ω]?)(?:\s*\(continued\))?\s*=+\s*:?\s*"#)
+    private static let markerLine = try? NSRegularExpression(pattern: #"^=+\s*(?:Article|Part)\s+(\d{1,4}[A-Za-zΑ-Ωα-ω]?)(?:\s*\(continued\))?(?:\s*:[^=\n]*?)?\s*=+\s*[:.]?\s*"#)
 
     /// A group's notes as lines about the group's articles, at most `lines` of at most
     /// `noteLineCharacters` characters (cut after a clause). A line labelled with another article
@@ -355,7 +370,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
         let articles = articles(from: passages)
         // A document without articles is summarized by parts; its own articles are then none.
         let byParts = articles.isEmpty
-        let groups = groups(of: byParts ? parts(from: passages) : articles)
+        let groups = groups(of: byParts ? parts(from: passages) : articles, maxArticles: byParts ? nil : 2)
         var notes: [Note] = []
         var noteCharacters = 0
         for (index, group) in groups.enumerated() {

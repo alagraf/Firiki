@@ -35,6 +35,16 @@ struct GreekLegalSummaryTests {
         let article8 = articles[0].text
         #expect(article8.components(separatedBy: "After-effect of collective agreements").count == 2, "\(article8)")
         #expect(article8.contains("three (3) months") && article8.contains("all normative terms continue"))
+
+        // Leading TOC stubs before Article 1 are dropped, while body chunks with inline article
+        // cross-references are preserved.
+        let withStubAndRefs = [
+            "Article 5 [Άρθρο 5]\nRestriction of registration details in the General Register of Trade Unions of Workers.",
+            "Article 1 [Άρθρο 1]\nThe purpose of this law is to strengthen collective labour agreements and industrial relations across all sectors.",
+            "Article 9 [Άρθρο 9]\nAmendment of Article 404 [Άρθρο 404], Article 399 [Άρθρο 399] and Article 396 [Άρθρο 396] regarding sector coverage.",
+        ]
+        let parsed = GreekLegalDocumentSummarizer.articles(from: withStubAndRefs)
+        #expect(parsed.map(\.heading) == ["Article 1", "Article 9"])
     }
 
     @Test func groupsFitTheLimitAndKeepTheOrder() {
@@ -57,6 +67,7 @@ struct GreekLegalSummaryTests {
         // labelled the rule "Article 404". Dev summary 2: it echoed the === lines.
         let notes = """
             === Article 8 ===
+            === Article 402: Time of validity ===
             The normative terms continue for three (3) months after expiry.
             - Article 404: after the three months all normative terms continue until a new agreement.
             **Article 9:** extension needs employers employing more than forty per cent (40%) of the sector's employees, which is certified by the competent department of the Ministry, after a consultation of the parties before the Supreme Labour Council on competitiveness, employment and prices.
