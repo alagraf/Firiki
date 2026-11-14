@@ -2603,3 +2603,24 @@ command.
   - `✔ Test run with 1 test in 1 suite passed after 1155.432 seconds.`, `[GreekEval] summary set=GreekLabourLibrary corpus=library split=dev: passed 14 of 24` (`right documents retrieved 21 of 21`)
 - `./scripts/thesis_run_tests.sh /private/tmp/task3-pipeline.log -only-testing:FirikiTests/GreekKeywordArmTests -only-testing:FirikiTests/GreekTranslationRetrievalTests`:
   - `✔ Test run with 15 tests in 2 suites passed after 3.169 seconds.`
+
+## 14 Nov 2026 (eleventh entry)
+
+**Why:** Numbered statute paragraphs (such as `"4. …"`) and statutory references (`"… παρ. 4. …"`) in Greek legal summaries and answers were split onto standalone lines by `MarkdownParser.normalizeInlineMarkdown` (`(?<=[.!?:]) +(\d+[.)]\s)`) and parsed as `.numberedList`, rendering an isolated paragraph as a lone Markdown numbered-list circle badge (`4`, e.g. under Article 8 of Law 5278/2026) (`Docs/Thesis/plans/summary-numbered-list.md`).
+
+**What:**
+
+- `Firiki/Core/Extensions/MarkdownRenderer.swift`:
+  - Restricted mid-line numbered-list splitting in `normalizeInlineMarkdown(_:)` to lines carrying a genuine inline ordered sequence (`1. … 2. …`, or `1. …` continued on the next line by `2. `), leaving inline references such as `"παρ. 4. …"` and mid-paragraph numbered sentences inside the same paragraph.
+  - Added `startsNumberedList(at:in:)` to `MarkdownParser`: a `N. ` / `N) ` line starts `.numberedList` only if `N == 1` or it is followed in the same list block by `N + 1`, so an isolated statute paragraph (`"4. …"`) stays a `.paragraph` and does not split `.bulletList` continuations.
+  - Extended `MarkdownParserTesting` (`#if DEBUG`) with `parseBlockKinds(_:)`.
+- `FirikiTests/Core/Extensions/MarkdownRendererNumberedListTests.swift` (new): 4 unit tests covering isolated `"4. …"` paragraphs, inline `"παρ. 4. …"` references, inline `"1. **…** 2. **…**"`, multi-line `1./2./3.`, and sequential `4./5.` continuation lists.
+
+**Verification:**
+
+- `./scripts/thesis_run_tests.sh /private/tmp/task4-markdown.log -only-testing:FirikiTests/MarkdownRendererNumberedListTests -only-testing:FirikiTests/MarkdownRendererHorizontalRuleTests -only-testing:FirikiTests/GreekLegalSummaryTests`:
+  - `** TEST BUILD SUCCEEDED **`
+  - `MarkdownRendererHorizontalRuleTests`: `Executed 15 tests, with 0 failures (0 unexpected) in 0.020 (0.044) seconds`
+  - `MarkdownRendererNumberedListTests`: `Executed 4 tests, with 0 failures (0 unexpected) in 0.005 (0.007) seconds`
+  - `GreekLegalSummaryTests`: `✔ Test run with 8 tests in 1 suite passed after 0.031 seconds.`
+- `xcodebuild build -scheme Firiki -destination 'platform=macOS' -derivedDataPath /private/tmp/oi-mac CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""`: `** BUILD SUCCEEDED **`.

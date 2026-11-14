@@ -52,10 +52,30 @@ private enum MarkdownTableAlignment {
 
 #if DEBUG
 /// Test seam: the parser type is file-private, so hosted unit tests reach
-/// horizontal-rule detection through this wrapper. Compiled out of Release.
+/// horizontal-rule detection and parsed block shapes through this wrapper. Compiled out of Release.
 enum MarkdownParserTesting {
+    enum ParsedBlockKind: Equatable {
+        case heading(Int, String)
+        case paragraph(String)
+        case bulletList([String])
+        case numberedList([Int], [String])
+        case other
+    }
+
     static func isHorizontalRule(_ line: String) -> Bool {
         MarkdownParser.isHorizontalRule(line)
+    }
+
+    static func parseBlockKinds(_ text: String) -> [ParsedBlockKind] {
+        MarkdownParser.parse(text).map { block in
+            switch block {
+            case .heading(let level, let text): return .heading(level, text)
+            case .paragraph(let text): return .paragraph(text)
+            case .bulletList(let items): return .bulletList(items)
+            case .numberedList(let items): return .numberedList(items.map(\.number), items.map(\.text))
+            default: return .other
+            }
+        }
     }
 }
 #endif
@@ -94,20 +114,29 @@ private struct MarkdownParser {
             options: .regularExpression
         )
 
-        // Insert newline before numbered list items that appear mid-line
-        // Match: text followed by ` 1. ` or ` 2) ` etc.
-        result = result.replacingOccurrences(
-            of: #"(?<=[.!?:]) +(\d+[.)]\s)"#,
-            with: "\n$1",
-            options: .regularExpression
-        )
-
-        // Insert newline before numbered items with bold (` 1. **text**`)
-        result = result.replacingOccurrences(
-            of: #"(?<=\S) +(\d+[.)]\s+\*\*)"#,
-            with: "\n$1",
-            options: .regularExpression
-        )
+        // Insert newline before numbered list items that appear mid-line only when the line
+        // actually begins an inline ordered list (`1. ... 2. ...`, or `1. ...` followed by `2. `
+        // on the next line). Unconditional splitting broke legal citations/paragraphs such as
+        // `... παρ. 4. ...` or `**Article 8:** ... 4. ...` into standalone `4.` list badges.
+        let sourceLines = result.components(separatedBy: "\n")
+        result = sourceLines.enumerated().map { idx, line in
+            let hasInlineSequence = line.range(of: #"(?:^|\s)1[.)]\s+.*\s2[.)]\s"#, options: .regularExpression) != nil
+            let continuesNextLine = idx + 1 < sourceLines.count
+                && line.range(of: #"(?:^|\s)1[.)]\s"#, options: .regularExpression) != nil
+                && sourceLines[idx + 1].trimmingCharacters(in: .whitespaces).range(of: #"^2[.)]\s"#, options: .regularExpression) != nil
+            guard hasInlineSequence || continuesNextLine else { return line }
+            var updated = line.replacingOccurrences(
+                of: #"(?<=[.!?:]) +(\d+[.)]\s)"#,
+                with: "\n$1",
+                options: .regularExpression
+            )
+            updated = updated.replacingOccurrences(
+                of: #"(?<=\S) +(\d+[.)]\s+\*\*)"#,
+                with: "\n$1",
+                options: .regularExpression
+            )
+            return updated
+        }.joined(separator: "\n")
 
         // Insert newline before block quotes that appear mid-line
         result = result.replacingOccurrences(
@@ -285,7 +314,7 @@ private struct MarkdownParser {
                         // Allow one blank line between list items
                         i += 1
                         continue
-                    } else if !bl.isEmpty && !items.isEmpty && !bl.hasPrefix("#") && !isNumberedLine(bl) {
+                    } else if !bl.isEmpty && !items.isEmpty && !bl.hasPrefix("#") && !startsNumberedList(at: i, in: lines) {
                         // Continuation line for multi-line list item
                         if !items.isEmpty {
                             items[items.count - 1] += " " + bl
@@ -302,7 +331,7 @@ private struct MarkdownParser {
             }
 
             // Numbered list (1. item, 1) item)
-            if isNumberedLine(trimmed) {
+            if startsNumberedList(at: i, in: lines) {
                 var items: [(number: Int, text: String)] = []
                 while i < lines.count {
                     let nl = lines[i].trimmingCharacters(in: .whitespaces)
@@ -334,7 +363,7 @@ private struct MarkdownParser {
             while i < lines.count {
                 let pl = lines[i].trimmingCharacters(in: .whitespaces)
                 if pl.isEmpty || pl.hasPrefix("#") || pl.hasPrefix("```") || pl.hasPrefix("~~~") ||
-                    pl.hasPrefix("> ") || isBulletLine(pl) || isNumberedLine(pl) ||
+                    pl.hasPrefix("> ") || isBulletLine(pl) || startsNumberedList(at: i, in: lines) ||
                     isHorizontalRule(pl) ||
                     (i + 1 < lines.count && isTableRow(pl) && isTableSeparator(lines[i + 1].trimmingCharacters(in: .whitespaces))) {
                     break
@@ -363,6 +392,30 @@ private struct MarkdownParser {
 
     private static func isNumberedLine(_ line: String) -> Bool {
         line.range(of: #"^\d+[.)]\s+"#, options: .regularExpression) != nil
+    }
+
+    /// True only when a `N. ` / `N) ` line begins a genuine ordered list: either it starts at `1`,
+    /// or the next item in the block continues sequentially (`N + 1`). Prevents an isolated
+    /// statute paragraph such as `"4. Μετά τη λήξη..."` from rendering as a circle list badge.
+    private static func startsNumberedList(at index: Int, in lines: [String]) -> Bool {
+        let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+        guard let (firstNumber, _) = parseNumberedLine(trimmed) else { return false }
+        if firstNumber == 1 { return true }
+        var j = index + 1
+        while j < lines.count {
+            let nl = lines[j].trimmingCharacters(in: .whitespaces)
+            if let (nextNumber, _) = parseNumberedLine(nl) {
+                return nextNumber == firstNumber + 1
+            } else if nl.isEmpty && j + 1 < lines.count
+                && isNumberedLine(lines[j + 1].trimmingCharacters(in: .whitespaces)) {
+                j += 1
+            } else if !nl.isEmpty && !nl.hasPrefix("#") && !isBulletLine(nl) {
+                j += 1
+            } else {
+                break
+            }
+        }
+        return false
     }
 
     private static func parseNumberedLine(_ line: String) -> (Int, String)? {
