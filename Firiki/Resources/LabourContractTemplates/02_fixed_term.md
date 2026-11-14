@@ -44,6 +44,6 @@ description_en: "A hire for a set period of weeks or months, or for a task, that
 
 ## Υπογραφές
 
-| Ο εργοδότης | Ο/Η εργαζόμενος/η |
-|---|---|
-| {{employer_representative}} | {{employee_name}} |
+**Ο εργοδότης:** {{employer_representative}}
+
+**Ο/Η εργαζόμενος/η:** {{employee_name}}

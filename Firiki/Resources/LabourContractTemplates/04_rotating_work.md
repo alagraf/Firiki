@@ -43,6 +43,6 @@ description_en: "Full working days at the normal daily hours but on fewer days a
 
 ## Υπογραφές
 
-| Ο εργοδότης | Ο/Η εργαζόμενος/η |
-|---|---|
-| {{employer_representative}} | {{employee_name}} |
+**Ο εργοδότης:** {{employer_representative}}
+
+**Ο/Η εργαζόμενος/η:** {{employee_name}}

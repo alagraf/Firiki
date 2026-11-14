@@ -42,6 +42,6 @@ description_en: "A work placement for a student as part of a study programme, wi
 
 ## Υπογραφές
 
-| Ο εργοδότης | Ο/Η εργαζόμενος/η |
-|---|---|
-| {{employer_representative}} | {{employee_name}} |
+**Ο εργοδότης:** {{employer_representative}}
+
+**Ο/Η εργαζόμενος/η:** {{employee_name}}

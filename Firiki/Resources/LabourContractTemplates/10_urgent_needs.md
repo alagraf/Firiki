@@ -44,6 +44,6 @@ description_en: "A very short hire of up to two days a week, often from the next
 
 ## Υπογραφές
 
-| Ο εργοδότης | Ο/Η εργαζόμενος/η |
-|---|---|
-| {{employer_representative}} | {{employee_name}} |
+**Ο εργοδότης:** {{employer_representative}}
+
+**Ο/Η εργαζόμενος/η:** {{employee_name}}

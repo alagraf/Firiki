@@ -44,6 +44,6 @@ description_en: "Work with a variable, unpredictable schedule where the employer
 
 ## Υπογραφές
 
-| Ο εργοδότης | Ο/Η εργαζόμενος/η |
-|---|---|
-| {{employer_representative}} | {{employee_name}} |
+**Ο εργοδότης:** {{employer_representative}}
+
+**Ο/Η εργαζόμενος/η:** {{employee_name}}

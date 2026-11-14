@@ -82,7 +82,7 @@ struct GreekLegalChatRouterTests {
 
     @Test func detectStatuteSummaryIntentInGreekAndEnglish() {
         let greekQueries = [
-            "Σύνοψε το ν. 5278/2026",
+            "Συνόψισε το ν. 5278/2026",
             "Κάνε μια σύνοψη του εγγράφου",
             "Περίληψη του Π.Δ. 62/2025",
             "Συνοψίστε τις βασικές διατάξεις του νόμου"
@@ -145,7 +145,7 @@ struct GreekLegalChatRouterTests {
         ("συνοψη του ν. 5278/2026", "5278/2026"),
         ("ΣΥΝΟΨΗ ΤΟΥ Ν. 5278/2026", "5278/2026"),
         ("περιληψη του π.δ. 62/2025", "62/2025"),
-        ("Σύνοψε το ν. 5239", "5239"),
+        ("Συνόψισε το ν. 5239", "5239"),
     ])
     func unaccentedSummaryRequests(_ query: String, _ target: String) {
         #expect(GreekLegalChatRouter.detectIntent(query) == .statuteSummary(documentQuery: target))
@@ -253,11 +253,11 @@ struct GreekLegalChatRouterTests {
     // MARK: - Document Target Extraction
 
     @Test func extractDocumentTargetFromPrompt() {
-        #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Σύνοψε το ν. 5278/2026") == "5278/2026")
+        #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Συνόψισε το ν. 5278/2026") == "5278/2026")
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Σύνοψη του Π.Δ. 62/2025") == "62/2025")
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Περίληψη του νόμου 4808/2021") == "4808/2021")
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Summarize law 5278/2026") == "5278/2026")
-        #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Σύνοψε το έγγραφο") == nil)
+        #expect(GreekLegalChatRouter.extractDocumentTarget(from: "Συνόψισε το έγγραφο") == nil)
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "σύνοψη του ν. 62/2025") == "62/2025")
         #expect(GreekLegalChatRouter.extractDocumentTarget(from: "σύνοψη του νόμου 5239") == "5239")
     }
@@ -340,13 +340,30 @@ struct GreekLegalChatRouterTests {
             == .notInLibrary(key: "LAW:9999/2026", number: "9999/2026"))
     }
 
+    /// An excerpt imported before the whole law names the same statute: the whole law is summarised
+    /// (Mac app, 14 Nov 2026: the excerpt's two articles were).
+    @Test func theFullestDocumentOfAStatuteWins() {
+        let excerpt = Document(filename: "n_5278_2026_excerpt.pdf", fileURL: URL(fileURLWithPath: "/tmp/e.pdf"), contentType: .pdf, totalChunks: 25)
+        let full = Document(filename: "n_5278_2026_fek_a22.pdf", fileURL: URL(fileURLWithPath: "/tmp/f.pdf"), contentType: .pdf, totalChunks: 202)
+        let keys = [excerpt.id: "LAW:5278/2026", full.id: "LAW:5278/2026"]
+        for request in ["Συνόψισε το ν. 5278/2026", "σύνοψη του νόμου 5278"] {
+            let target = GreekLegalChatRouter.matchDocument(
+                query: request, target: GreekLegalChatRouter.extractDocumentTarget(from: request),
+                in: [excerpt, full], statuteKeys: keys)
+            #expect(target == .document(full), "\(request)")
+        }
+        let noKeys = GreekLegalChatRouter.matchDocument(
+            query: "σύνοψη του ν. 5278/2026", target: "5278/2026", in: [excerpt, full], statuteKeys: [:])
+        #expect(noKeys == .document(full), "by filename too")
+    }
+
     @Test func theConstitutionIsFoundByItsKey() {
         let files = Self.demoFiles + [("syntagma.pdf", "CONST")]
         #expect(Self.matchedFile("Σύνοψη του Συντάγματος", files) == "syntagma.pdf")
     }
 
     @Test func aRequestNamingNoStatuteIsUnnamed() {
-        #expect(Self.summaryTarget("Σύνοψε το έγγραφο", Self.demoFiles) == .unnamed)
+        #expect(Self.summaryTarget("Συνόψισε το έγγραφο", Self.demoFiles) == .unnamed)
     }
 
     @Test func statutesAreNamedTheWayReadersWriteThem() {

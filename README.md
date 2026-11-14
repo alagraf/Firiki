@@ -38,7 +38,7 @@ open-source [OpenIntelligence](https://github.com/Gunnarguy/OpenIntelligence) on
 | Capability | Example request | Result |
 |---|---|---|
 | **Questions over a legal library** | «Πόσες ημέρες άδεια πατρότητας δικαιούται ο εργαζόμενος;» | A Greek answer citing article and paragraph, searched across several statutes at once (Labour Code π.δ. 62/2025, Laws 5239/2025, 5278/2026, 5316/2026, Ministerial Decision 8934/2026). A question that names a law is searched in that law. |
-| **Statute summary** | «Σύνοψε το ν. 5278/2026» | An article-by-article summary of one imported law: purpose, key provisions, deadlines and amounts, each with its article. |
+| **Statute summary** | «Συνόψισε το ν. 5278/2026» | An article-by-article summary of one imported law: purpose, key provisions, deadlines and amounts, each with its article. |
 | **Legal opinion** | «Θέλω γνωμοδότηση: ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;» | A structured opinion over several documents (question, applicable law, what each text provides, how they combine, conclusion), with amendments to the Labour Code detected automatically, and a not-legal-advice note. |
 | **Contract template** | «Ποιο υπόδειγμα σύμβασης ταιριάζει για τηλεργασία;» | The best of 10 bundled Greek employment-contract templates (indefinite, fixed-term, part-time, telework, apprenticeship…), with the reason and the relevant Labour Code articles, or "none fits". |
 

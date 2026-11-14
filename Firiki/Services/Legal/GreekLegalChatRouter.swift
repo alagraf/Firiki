@@ -149,7 +149,7 @@ enum GreekLegalChatRouter {
             #"(?:\bυ\.?\s*α\.?|\bαποφασ(?:η|ησ))\s*(\d{1,5}(?:/\d{4})?)\b"#,
             #"\b(?:law|decree|decision)\s*(\d{1,5}(?:/\d{4})?)\b"#,
             #"\b(\d{4}/\d{4})\b"#,
-            #"\b(?:συνοψη|συνοψε|περιληψη|summarize|summary)\s+(?:του\s+|τησ\s+|το\s+|the\s+)?(?:ν\.\s*|νομου\s+)?(\d{4,5})\b"#,
+            #"\b(?:συνοψ\w*|περιληψη|summarize|summary)\s+(?:του\s+|τησ\s+|το\s+|the\s+)?(?:ν\.\s*|νομου\s+)?(\d{4,5})\b"#,
         ]
         let ns = text as NSString
         for pattern in patterns {
@@ -179,6 +179,7 @@ enum GreekLegalChatRouter {
     ///    («νόμου 5239», or «ν. 62/2025» for the Labour Code, which is a decree);
     /// 3. for documents without a statute (imported before it was recorded), the number and year as
     ///    whole numbers in the filename.
+    /// When several documents match at a step, the one with the most passages is taken.
     static func matchDocument(
         query: String,
         target: String?,
@@ -186,7 +187,7 @@ enum GreekLegalChatRouter {
         statuteKeys: [UUID: String]
     ) -> SummaryTarget {
         let requested = GreekLegalAnswerFinalizer.requestedStatutes(query)
-        if let named = documents.first(where: { document in
+        if let named = fullest(documents.filter { document in
             guard let key = statuteKeys[document.id] else { return false }
             return requested.contains { LegalVerificationPolicy.sameStatute(key, $0) }
         }) {
@@ -197,7 +198,7 @@ enum GreekLegalChatRouter {
         let number = parts.first.flatMap { Int($0) }.map(String.init)
         let year = parts.count > 1 ? parts[1] : nil
         if let number {
-            if let byKey = documents.first(where: { document in
+            if let byKey = fullest(documents.filter { document in
                 guard let key = statuteKeys[document.id] else { return false }
                 let keyParts = key.split(separator: ":", maxSplits: 1).last?.split(separator: "/").map(String.init) ?? []
                 guard keyParts.first.flatMap({ Int($0) }).map(String.init) == number else { return false }
@@ -205,7 +206,7 @@ enum GreekLegalChatRouter {
             }) {
                 return .document(byKey)
             }
-            if let byName = documents.first(where: { document in
+            if let byName = fullest(documents.filter { document in
                 guard statuteKeys[document.id] == nil else { return false }
                 let numbers = document.filename.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.map(String.init)
                 return numbers.contains(number) && (year.map(numbers.contains) ?? true)
@@ -218,6 +219,15 @@ enum GreekLegalChatRouter {
             return .notInLibrary(key: requested.sorted().first, number: target)
         }
         return .unnamed
+    }
+
+    /// The document with the most passages, the first of them on a tie: an excerpt of a law
+    /// imported before the whole law names the same statute on its title page, and «Συνόψισε το
+    /// ν. 5278/2026» summarised the excerpt's two articles (Mac app, 14 Nov 2026).
+    private static func fullest(_ documents: [Document]) -> Document? {
+        documents.enumerated().max { a, b in
+            a.element.totalChunks != b.element.totalChunks ? a.element.totalChunks < b.element.totalChunks : a.offset > b.offset
+        }?.element
     }
 
     /// A statute key as a Greek reader writes it: «ν. 5278/2026», «π.δ. 62/2025», «Υ.Α. 8934»,

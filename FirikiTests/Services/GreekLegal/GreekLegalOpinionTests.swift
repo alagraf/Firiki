@@ -137,7 +137,7 @@ struct GreekLegalOpinionTests {
                 if prompt.contains("Law 5316/2026") { return "Not addressed." }
                 return "Overtime is allowed up to four (4) hours a day and 150 hours a year (Article 7 of Law 5239/2025). It is paid at plus 40%. Night work pays 75% more (Article 99 of Law 1234/2020)."
             },
-            translate: { "EL " + $0 })
+            translate: { text, _ in "EL " + text })
         let prompts = await calls.prompts
         #expect(prompts.count == 3, "two sections and the conclusion")
         #expect(prompts[0].1.contains("Statute: Law 5239/2025") && prompts[0].1.contains("[1] Article 7"))
@@ -193,7 +193,7 @@ struct GreekLegalOpinionTests {
                 }
                 return "(Article 1 of Ministerial Decision 8934) sets the minimum wage for employees at nine hundred and twenty euros (920,00 €)."
             },
-            translate: { $0 })
+            translate: { text, _ in text })
         #expect(opinion.refusal == nil)
         #expect(opinion.dropped.isEmpty, "\(opinion.dropped)")
         #expect(opinion.english.contains("Ministerial Decision 8934 sets the minimum wage for employees at nine hundred and twenty euros (920,00 €)."))
@@ -288,9 +288,39 @@ struct GreekLegalOpinionTests {
         let sources = [GreekLegalOpinionWriter.Source(document: "other.pdf", statuteKey: "LAW:5316/2026", passages: [Self.unrelated])]
         let opinion = try await GreekLegalOpinionWriter.write(
             question: "Ποιο είναι το ποσοστό της εισφοράς;", questionEn: "What is the contribution rate?", sources: sources, links: [],
-            respond: { _, _ in "Not addressed." }, translate: { $0 })
+            respond: { _, _ in "Not addressed." }, translate: { text, _ in text })
         #expect(opinion.refusal == "no document of the library addresses the question" && opinion.greek.isEmpty)
     }
+
+    /// The translator gets the sources' file names, so a name with spaces is kept whole: without
+    /// them «ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf» came back «ΔΙΚΑΙΟ.pdf» in the Mac app (14 Nov 2026).
+    @Test func theTranslatorGetsTheSourcesFileNames() async throws {
+        let sources = [
+            GreekLegalOpinionWriter.Source(document: "ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf", statuteKey: "LAW:5239/2025", passages: [Self.overtime]),
+        ]
+        let received = NamesSeen()
+        _ = try await GreekLegalOpinionWriter.write(
+            question: "Επιτρέπονται τέσσερις ώρες υπερωρία;", questionEn: "Are four hours of overtime allowed?",
+            sources: sources, links: [],
+            respond: { _, _ in "Overtime is allowed up to four (4) hours a day (Article 7 of Law 5239/2025)." },
+            translate: { text, names in
+                await received.add(names)
+                return text
+            })
+        let seen = await received.names
+        #expect(!seen.isEmpty && seen.allSatisfy { $0 == ["ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf"] }, "\(seen)")
+
+        let masked = GreekLegalEntityMasker.maskDocumentNames(
+            in: "According to ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf, overtime is paid.", names: ["ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf"])
+        #expect(masked.entities.map(\.verbatimEl) == ["ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf"])
+        #expect(!masked.maskedText.contains("ΑΤΟΜΙΚΟ"))
+    }
+}
+
+/// The document names each translation call received.
+private actor NamesSeen {
+    var names: [[String]] = []
+    func add(_ value: [String]) { names.append(value) }
 }
 
 /// One request of the opinion set.

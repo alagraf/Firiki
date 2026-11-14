@@ -105,7 +105,7 @@ to the 'Documents' tab in English.
 
 1. **Router:** fold accents and case before matching; drop the bare patterns `ποια σύμβαση`,
    `σύμβαση (εργασίας) για`, `labour contract` and a bare `opinion`; require a request word
-   (υπόδειγμα/πρότυπο, γνωμοδότηση/legal opinion, σύνοψε/περίληψη + a statute).
+   (υπόδειγμα/πρότυπο, γνωμοδότηση/legal opinion, συνόψισε/περίληψη + a statute).
 2. **Friendly errors:** map errors to fixed Greek/English messages; technical detail goes to the
    log only.
 3. **Progress:** set the generating stage before running a capability.
@@ -202,3 +202,52 @@ The plan is in `Docs/Thesis/plans/demo-quick-wins.md`. Tick items here as they l
 - [ ] 4. Latency of a summary and an opinion measured on the Mac
 - [ ] 5. Optional demo mode
 - [x] 6. `try!` patterns: already built by the existing masker and title-page tests; no change
+
+## Mac rehearsal, 14 Nov 2026 (driven by Claude Code, M3 MacBook Pro, Apple Intelligence)
+
+Library at the time: Labour Code (`A-121.pdf`, π.δ. 62/2025), lecture notes
+(`ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf`), and an excerpt of Law 5278/2026
+(`demo/poc_pdfs/n_5278_2026_excerpt.pdf`, 25 passages). Laws 5239/2025, 5316/2026 and decision
+8934/2026 were not imported. App built from `bbbaed29`.
+
+| Prompt | Time | Result |
+|---|---|---|
+| «Πόσες ημέρες άδεια πατρότητας δικαιούται ο εργαζόμενος;» | 26.2 s (details) | 14 working days, paid; Verified |
+| «Θέλω γνωμοδότηση: ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;» | under 45 s | **Wrong conclusion**: "4 hours a day not allowed". The expected answer (opinion set case 1) comes from Law 5239/2025 art. 7, not in the library |
+| «Ποιο υπόδειγμα σύμβασης ταιριάζει για τηλεργασία;» | under 20 s | Telework template, reason, π.δ. 62/2025 art. 73, 130–134 |
+| «Σύνοψε το ν. 5278/2026» | under 30 s | Heading «Σύνοψη: ν. 5278/2026»; only Articles 7 and 8, because only the excerpt is imported |
+
+The earlier request «σύνοψη του ν. 5278/2026», made before the excerpt was imported, got "not in the library" with the list of
+documents, as designed.
+
+Issues seen:
+1. The demo library is incomplete: import the five documents of `Benchmarks/GreekLabourLibrary/`
+   (full Law 5278, not the excerpt) before the demo; the opinion prompt depends on Law 5239/2025.
+2. The opinion body cuts a file name with spaces: «ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf» shows as
+   «ΔΙΚΑΙΟ.pdf».
+3. The template's signature block shows raw Markdown table pipes (`| Ο εργοδότης |`, `|---|`).
+4. While a capability runs, the status bar keeps the previous answer's "Confidence: high · 73%
+   P(correct)", and the header keeps the previous answer's time (26.2 s).
+
+### After importing the library and fixing the display bugs (same day)
+
+The four documents of `Benchmarks/GreekLabourLibrary/` were imported in about 16 minutes (Law
+5239: 1,381 passages; Law 5278: 202; Law 5316: 510; decision 8934: 36). Library: 7 documents
+(the excerpt and the lecture notes stay). App rebuilt with the display fixes (FORK_CHANGES 14 Nov
+2026, fourth entry).
+
+| Prompt | Result |
+|---|---|
+| Overtime opinion | 1–1.5 min. Now uses Law 5239/2025 art. 7 and says it amended art. 194; the notes' file name is whole. **The conclusion is still wrong**: its Law 5239 section speaks of the 45/48-hour weekly thresholds, not the 4-hour daily limit, and the lecture notes add more statements about limits. In the evaluation (five documents, no notes, the longer wording of case 1) the same case had 3 of 4 key facts |
+| Telework template | 2.5 s; the signatures are two plain lines |
+| «Συνόψισε το ν. 5278/2026» | Still Articles 7 and 8 only: the excerpt also names Law 5278/2026 on its title page and was imported first, so the lookup picks it |
+
+Display bugs 1–3: fixed and seen fixed in the app.
+
+Open for the demo:
+1. ~~The summary picks the excerpt~~: fixed the same day, the document with more passages is
+   taken. «Συνόψισε το ν. 5278/2026» now summarises Articles 3–13 of the whole law in 1 min 23 s.
+   Cosmetic: an article's numbered paragraphs show as list badges (a lone "4" under Article 8).
+2. The overtime opinion's conclusion: rehearse with the library of the evaluation (the five
+   documents only) and the evaluation's wording of case 1, or pick a demo opinion that the
+   evaluation got right.

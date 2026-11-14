@@ -28,6 +28,17 @@ struct LabourContractTemplateTests {
         }
     }
 
+    /// The chat doesn't render Markdown tables: the signature table showed as «| Ο εργοδότης |»
+    /// and «|---|» in the Mac app (14 Nov 2026). The signatures are two lines, with both fields.
+    @Test func templatesHaveNoTablesAndBothSignatures() {
+        for template in LabourContractTemplateRouter.bundledTemplates() {
+            let tableLines = template.body.split(separator: "\n").filter { $0.hasPrefix("|") }
+            #expect(tableLines.isEmpty, "\(template.id): \(tableLines)")
+            #expect(template.body.contains("**Ο εργοδότης:** {{employer_representative}}"), "\(template.id)")
+            #expect(template.body.contains("**Ο/Η εργαζόμενος/η:** {{employee_name}}"), "\(template.id)")
+        }
+    }
+
     /// A Greek answer shows a Greek reason built from the template, and the place of signing as a
     /// visible blank (9 Nov 2026: the model's English reason and «Στ{{place_of_signing}}»).
     @Test func greekAnswerHasAGreekReasonAndABlankPlace() throws {

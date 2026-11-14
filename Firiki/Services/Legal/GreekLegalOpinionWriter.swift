@@ -462,8 +462,13 @@ nonisolated enum GreekLegalOpinionWriter {
         sources: [Source],
         links: [CodeLink],
         respond: (_ instructions: String, _ prompt: String) async throws -> String = { try await GreekLegalDocumentSummarizer.onDeviceResponse(instructions: $0, prompt: $1) },
-        translate: (String) async throws -> String = { try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations($0) }
+        translate: (_ text: String, _ documentNames: [String]) async throws -> String = {
+            try await LocalNeuralTranslator.shared.translateEnglishToGreekPreservingCitations($0, documentNames: $1)
+        }
     ) async throws -> Opinion {
+        // The sources' file names are kept as written through translation: without them only a
+        // name without spaces is recognised, and «ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf» came back «ΔΙΚΑΙΟ.pdf».
+        let documentNames = sources.map(\.document)
         let passages = sources.flatMap { $0.passages.map(\.chunk.content) }
         let statuteKeys = sources.compactMap(\.statuteKey) + [labourCodeKey]
         let combined = combination(links)
@@ -538,7 +543,7 @@ nonisolated enum GreekLegalOpinionWriter {
             switch part.title {
             case "Applicable law": text = law.greek
             case "How they combine": text = combinationGreek(usedLinks).joined(separator: " ")
-            default: text = repairedGreek((try? await translate(part.text)) ?? part.text)
+            default: text = repairedGreek((try? await translate(part.text, documentNames)) ?? part.text)
             }
             greekParts.append((greekTitles[part.title] ?? part.title) + "\n" + text)
         }

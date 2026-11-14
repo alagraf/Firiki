@@ -2318,3 +2318,45 @@ Every document already records its own statute at import (`documentStatuteKey`, 
 - macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
   `** BUILD SUCCEEDED **`.
 - **Not checked:** a summary in the Mac app with Apple Intelligence and the imported library.
+
+## 14 Nov 2026 (fourth entry): three display bugs from the Mac rehearsal; «Συνόψισε»
+
+**Why:** the owner asked Claude Code to rehearse the demo in the Mac app (`POC_PROGRESS.md`, "Mac
+rehearsal") and then to fix the three display bugs it found. The owner also corrected the summary
+example: the imperative is «Συνόψισε», not «Σύνοψε».
+
+**What:**
+- `GreekLegalOpinionWriter.swift`: the translation step takes the sources' file names
+  (`translate(text, documentNames)`), and the default passes them to
+  `translateEnglishToGreekPreservingCitations(_:documentNames:)`, as Q&A does. Without them only a
+  name without spaces was masked: «ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf» came back «ΔΙΚΑΙΟ.pdf».
+- `Firiki/Resources/LabourContractTemplates/*.md` (all 10): the signature table, which the chat
+  shows as raw `| … |` and `|---|`, is two lines, «**Ο εργοδότης:** {{employer_representative}}»
+  and «**Ο/Η εργαζόμενος/η:** {{employee_name}}».
+- `ChatScreen.swift`: when a capability starts, the previous answer's reasoning steps and final
+  time are cleared (the bar showed "Confidence: high · 73% P(correct)" and 26.2 s during an
+  opinion); when it ends, the bar shows its own duration.
+- «Σύνοψε» → «Συνόψισε» in `README.md` and the router tests; the summary-target pattern accepts
+  any «συνοψ…» word (the summary rule already did).
+- Tests: `theTranslatorGetsTheSourcesFileNames` (GreekLegalOpinionTests),
+  `templatesHaveNoTablesAndBothSignatures` (LabourContractTemplateTests); the three opinion tests
+  that inject a translator take the new parameter.
+
+**Verification:**
+- `thesis_run_tests.sh` with GreekLegalOpinionTests, LabourContractTemplateTests and
+  GreekLegalChatRouterTests: `** TEST BUILD SUCCEEDED **`; "Test run with 39 tests in 3 suites
+  passed"; both new tests logged as passed.
+- macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
+  `** BUILD SUCCEEDED **`.
+- Mac app (new build, library of 7 documents): the opinion shows «ΑΤΟΜΙΚΟ ΕΡΓΑΤΙΚΟ ΔΙΚΑΙΟ.pdf»
+  whole; the template's signatures are two lines; the bar shows a live timer instead of the
+  previous answer's confidence and time, and the template's own time (2.5 s) after it.
+- Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 144
+  tests in 28 suites passed" (142 before).
+- Also in this entry (owner's choice after the rehearsal): when several documents match a summary
+  request at the same step, `matchDocument` takes the one with the most passages (`fullest`). An
+  excerpt of Law 5278/2026 imported before the whole law names the same statute on its title page,
+  and «Συνόψισε το ν. 5278/2026» summarised the excerpt's Articles 7 and 8. Test
+  `theFullestDocumentOfAStatuteWins` (by key and by filename); GreekLegalChatRouterTests "Test run
+  with 21 tests in 1 suite passed"; macOS build `** BUILD SUCCEEDED **`. Mac app: the summary now
+  covers Articles 3–13 of the whole law, in 1 min 23 s.

@@ -3264,6 +3264,10 @@ struct ChatScreen: View {
                         self.stage = .generating
                         self.generationStart = Date()
                         self.generatingStartTS = self.generationStart
+                        // The previous answer's steps and time no longer apply: the bar showed its
+                        // "Confidence: high · 73% P(correct)" and "26.2 s" while an opinion ran.
+                        self.thinkingEvents = []
+                        self.generatingElapsedFinal = nil
                         self.continuedQueryCoordinator.markGenerating()
                     }
                 }
@@ -3281,6 +3285,8 @@ struct ChatScreen: View {
                         self.currentRetrievedChunks = directCapability.retrievedChunks ?? []
                         self.currentMetadata = directCapability.metadata
                         self.currentStructuredAnswer = directCapability.structuredAnswer
+                        self.generatingElapsedFinal = directCapability.metadata?.totalGenerationTime
+                            ?? self.generationStart.map { Date().timeIntervalSince($0) }
                         self.isStreamFinished = true
 
                         var assistant = ChatMessage(
