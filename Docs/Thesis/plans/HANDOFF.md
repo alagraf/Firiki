@@ -15,7 +15,13 @@ E20–E21). Next candidates, in order:
 2. **«6 work days per week»** stays untranslated in a Greek opinion (the short overtime question).
 3. **Summary time:** about 2.3 minutes for Law 5278 since it reads every article.
 
-Next experiment number: E22.
+Next experiment number: E22. *(Later on 15 Nov: E22–E24 were done by Antigravity and verified by
+Claude Code in E25. Next experiment number: E26. Open:*
+1. *The README paternity question is refused in the Simulator's five-document evaluation library
+   (the Mac app's seven documents answer it). Add it to the library dev split, then investigate.*
+2. *Q&A drafts still vary a little after E22: 6 library rows differed between two runs.*
+3. *The UI smoke test runs only in the Simulator; making it run on "My Mac" needs macOS added to
+   the UI-test target in project.pbxproj, which needs the owner's approval.)*
 
 ## Read first, in this order
 

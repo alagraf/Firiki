@@ -173,7 +173,7 @@ to the 'Documents' tab in English.
 5. **Template routing and summary matching:** keyword fallback over `routing_v1.jsonl`; summary
    lookup by statute key once deeper fix 2 is in.
 
-[x] **Plus a manual-trigger smoke test:** (`DemoSmokeUITests` in `FirikiUITests` + `scripts/demo_check.sh`; pass `DEMO_SMOKE=1` on `"My Mac"` with the library pre-imported; not yet executed live on Mac, compile-checked for `platform=macOS`). On `"My Mac"` with the library pre-imported, an XCUITest asks
+[x] **Plus a manual-trigger smoke test:** (`DemoSmokeUITests` in `FirikiUITests` + `scripts/demo_check.sh`; pass `DEMO_SMOKE=1`; it runs in the iPhone Simulator only, as the UI-test target has no macOS platform. First real run 15 Nov (E25): fails on prompt 1, the app refusing the paternity question in the Simulator's five-document library)
 the 4 demo prompts and checks that each answer appears within a time limit, contains no
 "Σφάλμα"/"Error" text, and has a citation. Run it the morning of the demo.
 
@@ -330,3 +330,15 @@ See FORK_CHANGES 15 Nov 2026, EXPERIMENTS E20–E22, and `Docs/Thesis/plans/anti
 **Untranslated «6 work days per week» fix (`Docs/Thesis/plans/translate-work-days-per-week.md`, E23):** `LocalNeuralTranslator.legalEnglishPreEdited(_:)` now rewrites `"a work system of <N> work(ing) days per week"` → `"a <N>-day work week"`, with defense-in-depth Greek repairs in `GreekLegalOpinionWriter.repairedGreek(_:)`. Across `GreekLegalOpinionEvaluation` (`split=dev`) + live `Opus-MT` & unit tests (`29 tests in 3 suites passed`, `235.7 s`), all 7 dev opinions contain zero leaked English phrases (both Q1 and Q11 now read `"6ήμερη εβδομάδα εργασίας"`) while holding `12 of 14` citations and `15 of 22` key facts.
 
 **Statute summary speed optimization (`Docs/Thesis/plans/faster-statute-summary.md`, E24):** `GreekLegalDocumentSummarizer` now sets per-call `maximumResponseTokens` (`mapMaximumResponseTokens(lines:)` and `reduceMaximumResponseTokens = 140`) and filters closing `"Entry into force"` / `"Repealed provisions"` boilerplate articles (`isBoilerplateClosingArticle`). Law 5278/2026 `dev` (`GreekLegalSummaryTests` + `GreekLegalSummaryEvaluation`) cut generated note chars `25,011 → 16,148` and dropped summary time from `139 s → 93 s` (`94.046 s` total suite, `-33%`) while keeping `6 of 6` provisions, `3 of 3` cited articles, and `0` dropped sentences.
+
+## Verification of E22–E24 (15 Nov 2026)
+
+Claude Code verified Antigravity's E22–E24 and README commits:
+- **Tests:** full suite passes, macOS build succeeds.
+- **Mac app:** summary under 2 minutes, «6ήμερη εβδομάδα εργασίας» translated, short overtime
+  opinion correct, paternity question answered.
+
+Fixed the UI smoke test: it never ran before, can't run on "My Mac", and couldn't see answers. It
+now runs in the Simulator and fails on prompt 1, because the paternity question is refused in the
+Simulator's five-document library (the Mac app's seven documents answer it). E22's reruns still
+differ on 6 library rows. Details: EXPERIMENTS E25.

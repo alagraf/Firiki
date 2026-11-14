@@ -1,0 +1,4 @@
+# firiki-ui-smoke-e25: result lines of firiki-ui-smoke-e25.log (log last written 2026-11-15 00:46)
+	 Executed 1 test, with 1 failure (0 unexpected) in 37.756 (37.761) seconds
+	 Executed 1 test, with 1 failure (0 unexpected) in 37.756 (37.765) seconds
+	 Executed 1 test, with 1 failure (0 unexpected) in 37.756 (37.767) seconds

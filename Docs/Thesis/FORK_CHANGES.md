@@ -2783,3 +2783,26 @@ The owner asked to fix them without approvals. Plan: `Docs/Thesis/plans/antigrav
 
 **Verification:**
 - `thesis_run_tests.sh` (`GreekLegalSummaryTests` + `GreekLegalSummaryEvaluation`, `split=dev`, `firiki-summary-dev-e24`): `** TEST BUILD SUCCEEDED **`; `✔ Test run with 10 tests in 2 suites passed after 94.046 seconds.` (`[GreekSummary] document n_5278_2026_fek_a22.pdf statute=LAW:5278/2026 passages=203 groups=14 notes=16148 chars, 93 s`; `provisions 6 of 6`, `articles cited 3 of 3`, `dropped 0`, `missing: []`, down from `139.736 s` / `25,011` note chars in `firiki-summary-dev-baseline`).
+
+## 15 Nov 2026 (later): verification of E22–E24; UI smoke test fixed
+
+**Why:** the owner asked Claude Code to verify Antigravity's commits `314d637d` (E22),
+`b155ea01` (E23), `78c148f4` (E24) and `39d3322d` (README), with permission to fix anything.
+
+**What:**
+- `FirikiUITests/DemoSmokeUITests.swift`:
+  - it waits for the Stop button to appear and go away, instead of only for Send;
+  - it reads every element's label and value, since the answer isn't a static text;
+  - its hints for the summary and template prompts are words only an answer contains;
+  - the header says it runs in the iPhone Simulator: the UI-test target has no macOS platform,
+    and adding one needs `project.pbxproj`, which was left unchanged.
+- `scripts/demo_check.sh`: the smoke step runs in the Simulator
+  (`FIRIKI_SIMULATOR_DESTINATION`).
+
+**Verification** (EXPERIMENTS E25):
+- full suite "Executed 1296 tests, with 8 tests skipped and 0 failures"; "Test run with 171
+  tests in 32 suites passed";
+- macOS build `** BUILD SUCCEEDED **`;
+- Mac app: summary, short overtime opinion and paternity question as expected;
+- the smoke test runs and fails on prompt 1, because the app refuses the paternity question in the
+  Simulator's five-document library.

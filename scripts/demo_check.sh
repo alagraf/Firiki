@@ -1,5 +1,6 @@
 #!/bin/bash
-# Runs the thesis unit suite (iOS Simulator) and, when DEMO_SMOKE=1, the macOS README smoke UI test.
+# Runs the thesis unit suite (iOS Simulator) and, when DEMO_SMOKE=1, the README smoke UI test in the
+# iPhone Simulator (the UI-test target doesn't build for macOS).
 # Usage:
 #   scripts/demo_check.sh
 #   DEMO_SMOKE=1 scripts/demo_check.sh
@@ -19,15 +20,14 @@ fi
 
 if [ "${DEMO_SMOKE:-0}" = "1" ]; then
   SMOKE_LOG="${DEMO_CHECK_SMOKE_LOG:-/private/tmp/firiki-demo-smoke.log}"
-  echo "== Running DemoSmokeUITests on My Mac =="
+  echo "== Running DemoSmokeUITests in the iPhone Simulator =="
   TEST_RUNNER_OI_DEMO_SMOKE=1 xcodebuild test \
     -scheme FirikiUITests \
-    -destination 'platform=macOS' \
-    -derivedDataPath "${FIRIKI_MAC_DERIVED_DATA:-/private/tmp/oi-mac-build}" \
-    -allowProvisioningUpdates \
+    -destination "${FIRIKI_SIMULATOR_DESTINATION:-platform=iOS Simulator,name=iPhone 18 Pro}" \
+    -derivedDataPath "${FIRIKI_UI_DERIVED_DATA:-/private/tmp/oi-ui-sim}" \
     -only-testing:FirikiUITests/DemoSmokeUITests \
     > "$SMOKE_LOG" 2>&1
   grep -E "Test Case|Executed [0-9]+ tests|TEST " "$SMOKE_LOG" | tail -n 20
 else
-  echo "== Skipping DemoSmokeUITests on My Mac (pass DEMO_SMOKE=1 with pre-imported library) =="
+  echo "== Skipping DemoSmokeUITests (pass DEMO_SMOKE=1 with the library imported in the Simulator) =="
 fi

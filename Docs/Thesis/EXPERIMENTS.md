@@ -591,3 +591,35 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
 | After (`firiki-summary-dev-e24`) | `14` | `16,148` (`-35%`) | **`93 s`** (`94.046 s`, **`-33%`**) | **`6 of 6`** | **`3 of 3`** | **`0`** |
 
 - **Outcome:** kept. Summary time drops by a third (`139 s → 93 s`) while keeping all 6 provisions, all 3 cited articles, and 0 dropped sentences (`10 tests in 2 suites passed`).
+
+## E25. Verification of E22–E24 and the UI smoke test (2026-11-15)
+
+- **Unit suite and build** on `39d3322d`: "Executed 1296 tests, with 8 tests skipped and 0
+  failures"; "Test run with 171 tests in 32 suites passed after 58.083 seconds"; macOS build
+  `** BUILD SUCCEEDED **`.
+- **Mac app** (7 documents, E24 build):
+  - «Συνόψισε το ν. 5278/2026»: Articles 2–14 within 2 minutes; the opening is two whole sentences
+    (the 140-token cap did not cut it);
+  - the short overtime opinion: «με 6ήμερη εβδομάδα εργασίας» in Greek (E23), the notes' name
+    whole, the conclusion right (4 hours a day, 150 a year, 40%);
+  - the README paternity-leave question: 14 working days, Verified.
+- **E22's repeatability, per case:** the two library dev runs (`firiki-library-dev-e22`,
+  `-rerun`) both pass 13 of 24 but differ on 6 rows:
+  - 1, 2, 7 and 23 change pass/fail;
+  - 11 and 16 change only between refusing and answering.
+
+  E22 named 4. Greedy route planning removed the route flips, but the drafts still vary a little.
+- **UI smoke test (`DemoSmokeUITests`):**
+  - **On "My Mac" it cannot run:** the UI-test target supports only `iphoneos iphonesimulator`.
+    `xcodebuild` built it for iOS and failed with "The bundle identifier for Firiki.app couldn't be
+    read". It had only been compiled before, never run.
+  - **First Simulator run:** it read only `staticTexts` (the answer wasn't among them), and three of
+    its hints («5278/2026», «τηλεργασ», «Σύμβαση») appear in the prompts themselves.
+  - **Fix:** it now waits for Stop to appear and disappear, reads every element's label and value,
+    and uses hints only the answer can contain. `demo_check.sh` runs it in the Simulator.
+  - **Result** (`firiki-ui-smoke-e25`): it fails on prompt 1. In the Simulator's five-document
+    evaluation library the app refuses the paternity question («…δεν βρέθηκαν επαρκή και
+    επαληθευμένα στοιχεία στα έγγραφα της βιβλιοθήκης»), while the Mac app's seven-document
+    library answers it. The question is in no question set; not investigated further here.
+- **Outcome:** E22–E24 verified in the suite and the Mac app. The smoke test now works and is
+  honest, and it found the refusal above.
