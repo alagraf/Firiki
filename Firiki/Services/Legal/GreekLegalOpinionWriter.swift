@@ -202,6 +202,54 @@ nonisolated enum GreekLegalOpinionWriter {
         }
     }
 
+    /// Characters of passages a section may read when it holds a whole amending article: the
+    /// summarizer's group size, about 45% of the phone's 4,096-token window.
+    static var sectionCharacters: Int { GreekLegalDocumentSummarizer.groupCharacters }
+
+    /// A source whose passages include an article that amends or adds a Labour Code article reads
+    /// that whole article, in order, then its other passages, within `sectionCharacters`. The
+    /// amending article restates the amended paragraphs in full («… διαμορφώνονται ως εξής»); its
+    /// three best passages did not include them. The overtime opinion in the Mac app read Article 7
+    /// of Law 5239/2025 as only "«three (3)» is replaced by «four (4)»" and the new weekly limits,
+    /// not «έως τέσσερις (4) ώρες ημερησίως», and concluded four hours a day were not allowed
+    /// (14 Nov 2026). Other sources are unchanged. `documents` holds every document's passages by
+    /// file name.
+    static func withWholeAmendingArticles(_ sources: [Source], links: [CodeLink], documents: [String: [DocumentChunk]]) -> [Source] {
+        let changes = links.filter { $0.kind != .appliesUnder && $0.article != nil }
+        guard !changes.isEmpty else { return sources }
+        return sources.map { source in
+            guard let chunks = documents[source.document] else { return source }
+            let articleOf = enclosingArticles(chunks)
+            let amending = changes.compactMap { link -> String? in
+                guard link.statuteKey == source.statuteKey, let article = link.article,
+                      source.passages.contains(where: { articleOf[$0.chunk.id].map { sameArticle($0, article) } ?? false })
+                else { return nil }
+                return article
+            }
+            guard !amending.isEmpty else { return source }
+            let score = source.bestScore
+            let ordered = chunks.sorted { $0.metadata.chunkIndex < $1.metadata.chunkIndex }
+            var passages: [RetrievedChunk] = []
+            for article in amending {
+                for chunk in ordered where (articleOf[chunk.id].map { sameArticle($0, article) } ?? false)
+                    && !passages.contains(where: { $0.chunk.id == chunk.id }) {
+                    passages.append(RetrievedChunk(
+                        chunk: chunk, similarityScore: score, rank: passages.count + 1,
+                        sourceDocument: source.document, pageNumber: chunk.metadata.pageNumber))
+                }
+            }
+            passages += source.passages.filter { passage in !passages.contains { $0.chunk.id == passage.chunk.id } }
+            var kept: [RetrievedChunk] = []
+            var characters = 0
+            for passage in passages {
+                characters += passage.chunk.content.count
+                if !kept.isEmpty && characters > sectionCharacters { break }
+                kept.append(passage)
+            }
+            return Source(document: source.document, statuteKey: source.statuteKey, passages: kept)
+        }
+    }
+
     /// The "how they combine" sentences, written from the links (no model call).
     static func combination(_ links: [CodeLink]) -> [String] {
         links.map { link in
@@ -449,8 +497,11 @@ nonisolated enum GreekLegalOpinionWriter {
         You write the conclusion of a Greek legal opinion. Use only the sections given. In two or three complete sentences, answer the question directly, citing the articles the sections cite. Where a later law amended an article of the Labour Code, apply the amended rule. Do not add advice or anything the sections don't say.
         """
 
+    /// The passages are separated by a line, not numbered: numbered "[6]", the sixth passage of
+    /// Article 7 of Law 5239/2025 was cited as "Article 6", and the article check dropped its four
+    /// hours a day (EXPERIMENTS E14). Each passage starts with its own "Article N" heading.
     static func sectionPrompt(question: String, source: Source) -> String {
-        let passages = source.passages.enumerated().map { "[\($0 + 1)] \($1.chunk.content)" }.joined(separator: "\n\n")
+        let passages = source.passages.map(\.chunk.content).joined(separator: "\n\n---\n\n")
         return "Question: \(question)\nStatute: \(source.name)\n\nPassages:\n\(passages)"
     }
 
@@ -584,7 +635,7 @@ extension RAGService {
         // The Code's passages are cut to its best before the amended ones are replaced.
         candidates = candidates.map { .init(document: $0.document, statuteKey: $0.statuteKey, passages: Array($0.passages.prefix(Writer.passagesPerSource))) }
         candidates = Writer.replacingAmendedCodePassages(candidates, links: links, documents: allPassages)
-        let sources = Writer.selectSources(candidates, links: links)
+        let sources = Writer.withWholeAmendingArticles(Writer.selectSources(candidates, links: links), links: links, documents: allPassages)
         let keptLinks = links.filter { link in
             sources.contains { source in
                 source.statuteKey == link.statuteKey && (link.article == nil || source.passages.contains { passage in

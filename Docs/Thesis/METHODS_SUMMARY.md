@@ -148,6 +148,10 @@ fix that stage in a general way; run again and compare.
 - Which later law amends or adds which Labour Code article is read from the amending articles'
   headings, not asked of the model; an amended article is read from the amending law, since the
   Code's own text is the old version.
+- When the question reaches an article that amends or adds a Labour Code article, the model reads
+  that whole article in order (within the summarizer's passage budget), not only its best three
+  passages: amending articles restate the amended paragraphs at their end. The passages are
+  separated by a line, not numbered, since the model took a passage number for an article number.
 - The model drafts one section a document and then a conclusion, each within the phone's window;
   every sentence is checked as for summaries, and the opinion is refused when its conclusion has
   no supported sentence. The Greek opinion has the parts question, applicable law, what each text
@@ -208,6 +212,7 @@ Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with
 | 2026-10-30 | Labour Code, test (23), full 260-page Code, once | 15 of 23 (12 before); 3 of 3 refused, including the question about the Constitution's Article 16; 1 wrong refusal |
 | 2026-11-13 | Re-measured after the rename to Firiki, billing removal and the Greek text-layer check: contract templates dev / test | 44 of 44 / 20 of 22 (43 of 44 / 20 of 22 before) |
 | 2026-11-13 | Same build: OCR, share of words found, clean / scan / photo; whole scanned PDF | 95% / 95% / 95%; 97% (same OCR text as 29 Oct; the word scoring rejoins hyphenated line ends since 31 Oct) |
+| 2026-11-14 | Opinion dev after the whole amending article and unnumbered passages (citations, key facts, refused) | 10 of 12, 15 of 20, 0 (11 of 20 before; test split not run) |
 | 2026-11-14 | Same build: summary dev / test; opinion dev / test (citations, key facts, refused) | 5 of 6 / 4 of 5; 10 of 12, 11 of 20, 0 / 5 of 8, 7 of 10, 0 (test citations 3 of 8 before) |
 | 2026-11-13 | Lecture notes with a wrong-letter Greek font, before / after the PaddleOCR text-layer check: passages about overtime | 0 / 38 of 713; a correct Labour Code excerpt kept its text layer |
 
@@ -275,6 +280,9 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-14 (evening): an opinion reads the whole amending article, and its passages are not
+  numbered; opinion dev key facts 11 → 15 of 20, citations unchanged. The overtime opinion is right
+  with the evaluation's wording, not yet with the demo's short question.
 - 2026-11-14 (latest): a chat summary request finds its document by the statute each document's
   title page names, not by its filename, and a statute the library doesn't hold is never replaced
   by another document. No question set goes through this path; nothing re-measured.

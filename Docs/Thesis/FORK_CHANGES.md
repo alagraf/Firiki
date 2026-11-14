@@ -2360,3 +2360,36 @@ example: the imperative is «Συνόψισε», not «Σύνοψε».
   `theFullestDocumentOfAStatuteWins` (by key and by filename); GreekLegalChatRouterTests "Test run
   with 21 tests in 1 suite passed"; macOS build `** BUILD SUCCEEDED **`. Mac app: the summary now
   covers Articles 3–13 of the whole law, in 1 min 23 s.
+
+## 14 Nov 2026 (fifth entry): an opinion reads the whole amending article; passages not numbered
+
+**Why:** the demo's overtime opinion concluded "four hours a day not allowed". Diagnosis
+(`POC_PROGRESS.md`): the three passages kept for Law 5239/2025 left out the end of its Article 7,
+which restates Article 194 par. 3 («έως τέσσερις (4) ώρες ημερησίως … 150 … 40%»). Plan
+`Docs/Thesis/plans/opinion-whole-amending-article.md`, approved by the owner. With the whole
+article the model wrote the rule but cited it as "Article 6", the passage's `[6]` number in the
+prompt, and the check dropped it; the owner approved removing the numbers.
+
+**What:**
+- `GreekLegalOpinionWriter.swift`:
+  - `withWholeAmendingArticles(_:links:documents:)`: a source whose passages include an article
+    that amends or adds a Code article reads that whole article in chunk order, then its other
+    passages, within `sectionCharacters` (the summarizer's `groupCharacters`, 7,372 characters).
+    Other sources are unchanged;
+  - `RAGService.greekLegalOpinion` applies it after `selectSources`;
+  - `sectionPrompt` separates passages with a `---` line instead of numbering them.
+- `GreekLegalOpinionTests`: `aSourceReadsTheWholeAmendingArticle` (order, Article 8 not added,
+  the Code and an unlinked source unchanged, the budget cut); the section test checks that no
+  `[n]` numbers remain and that passages are separated.
+
+**Verification:**
+- `thesis_run_tests.sh -only-testing:FirikiTests/GreekLegalOpinionTests`: `** TEST BUILD
+  SUCCEEDED **`; "Test run with 14 tests in 1 suite passed".
+- Opinion dev split (EXPERIMENTS E14): citations 10 of 12, key facts 15 of 20, refused 0 of 6
+  (11 of 20 before); nothing dropped by the article check.
+- macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
+  `** BUILD SUCCEEDED **`.
+- Mac app: case 1's wording gets a correct conclusion; the demo's short question still does not
+  (the Code's sixth-day Article 191 is retrieved).
+- Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 146
+  tests in 28 suites passed" (144 before).

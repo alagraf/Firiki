@@ -251,3 +251,50 @@ Open for the demo:
 2. The overtime opinion's conclusion: rehearse with the library of the evaluation (the five
    documents only) and the evaluation's wording of case 1, or pick a demo opinion that the
    evaluation got right.
+
+### Why the overtime opinion concludes "not allowed" (diagnosis, 14 Nov 2026)
+
+Run in the Mac app (7-document library, build `7e7713c6`) with the app's log saved
+(`[LegalOpinion] Sources` / `Passage` lines). Translated question: "I want an opinion: the
+employer requests four hours of overtime per day. May I?"
+
+Sources kept (3 passages each):
+- Labour Code: Articles **192 and 191** (work on the sixth day: "may not exceed eight hours; on
+  this day overwork and overtime are not allowed"), score 0.57. Article 194 (overtime) is not
+  retrieved.
+- Law 5239/2025: Article 7, passages #108 (heading; the quoted new text is lost as unrestored
+  placeholders `_LEX_007__`, `_LEX_008___…`), #109 (the change only: "three (3)" replaced by
+  "four (4)") and #110 (new par. 2: over 45 hours a week, 48 in a six-day system; right to refuse).
+- Lecture notes: weekly overwork limits (41st–48th hour), overwork paid without a surcharge.
+
+The deciding text is the new par. 3 of Article 194 at the end of Law 5239 Article 7: «έως τέσσερις
+(4) ώρες ημερησίως και μέχρι … εκατόν πενήντα (150) ωρών ετησίως … σαράντα τοις εκατό (40%)». It
+is not among the law's 3 passages, and the Code's own Article 194 isn't either, so the "three →
+four" change has no text to apply to. The model reads only "no overtime on the sixth day" and the
+weekly thresholds, and concludes "not allowed".
+
+Causes, in order of effect:
+1. Only the best 3 passages of the amending law are kept; the amending article's last paragraph,
+   which states the amended text in full, is left out.
+2. The Code's passages are about a different rule (sixth-day work) that says "no overtime".
+3. The lecture notes add more limits.
+4. "Επιτρέπεται;" is translated "May I?".
+5. Separate import defect: Law 5239 passage #108 keeps translation placeholders in its English
+   text.
+
+The evaluation's case 1 (dev) asks the longer question («…υπάλληλο πενθήμερης εργασίας… πώς
+αμείβεται και μπορεί ο εργαζόμενος να αρνηθεί;») over the five laws only, and got 3 of 4 key facts
+on 30 Oct (run `opinion6`).
+
+**Whole amending article (EXPERIMENTS E14, same day):** implemented and measured on the dev set
+(key facts 11 → 13 of 20, citations 10 → 9 of 12). In case 1 and in the Mac app the model now
+writes the four-hours-a-day sentence but cites it as "Article 6" (the passage's `[6]` number in the
+prompt), so the article check drops it and the conclusion is still "not allowed". Not committed.
+
+**Passages not numbered (E14, same day):** dev key facts 15 of 20 (11 before), citations 10 of 12,
+nothing dropped. In the Mac app the evaluation's wording of the overtime question («Ο εργοδότης
+ζητά από υπάλληλο πενθήμερης εργασίας να κάνει τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται, πώς
+αμείβεται και μπορεί ο εργαζόμενος να αρνηθεί; Θέλω γνωμοδότηση.») gets the right conclusion; the
+short README prompt still concludes "not allowed" (the Code's sixth-day Article 191 is retrieved).
+For the demo, use the longer wording. Its Greek still has a leftover placeholder («__ΕΧΝ.») and one
+wrong figure ("186 hours", from "Articles 169 to 186").

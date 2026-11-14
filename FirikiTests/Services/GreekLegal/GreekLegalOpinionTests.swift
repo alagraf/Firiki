@@ -77,6 +77,47 @@ struct GreekLegalOpinionTests {
         #expect(GreekLegalOpinionWriter.selectSources(sources, links: []).map(\.document) == ["law.pdf"])
     }
 
+    /// The overtime opinion in the Mac app read only part of Article 7 of Law 5239/2025 and missed
+    /// its last paragraph, «έως τέσσερις (4) ώρες ημερησίως» (14 Nov 2026): the whole amending
+    /// article is read, in order, then the source's other passages.
+    @Test func aSourceReadsTheWholeAmendingArticle() {
+        func chunk(_ index: Int, _ greek: String, _ english: String) -> DocumentChunk {
+            DocumentChunk(documentId: Self.law, content: english, embedding: [], metadata: ChunkMetadata(chunkIndex: index),
+                          legal: LegalChunkMetadata(sourceTextEl: greek, sourceLanguage: "el", documentStatuteKey: "LAW:5239/2025"))
+        }
+        let art6 = chunk(7, "Άρθρο 6\nΆλλη ρύθμιση", "Article 6 [Άρθρο 6]\nAnother rule.")
+        let art7 = Self.overtime.chunk  // index 8, the heading of Article 7
+        let art7b = chunk(9, "β) στην παρ. 3, οι λέξεις «τρεις (3)» αντικαθίστανται", "b) in par. 3, the words \"three (3)\" are replaced by \"four (4)\".")
+        let art7c = chunk(10, "«2. Η πέραν των σαράντα πέντε (45) ωρών", "2. Work over forty-five (45) hours a week is overtime.")
+        let art7d = chunk(11, "3. … έως τέσσερις (4) ώρες ημερησίως", "3. Up to four (4) hours a day and one hundred and fifty (150) hours a year, at plus forty percent (40%).")
+        let art8 = chunk(12, "Άρθρο 8\nΔιευθέτηση χρόνου εργασίας - Τροποποίηση άρθρου 202 Κώδικα Εργατικού Δικαίου",
+                         "Article 8 [Άρθρο 8]\nArrangement of working time - Amendment of Article 202 of the Labour Code")
+        let lawChunks = [art6, art7, art7b, art7c, art7d, art8]
+        let links = GreekLegalOpinionWriter.codeLinks(statuteKey: "LAW:5239/2025", passages: lawChunks)
+        let documents = ["law.pdf": lawChunks, "code.pdf": [Self.codeArticle.chunk], "other.pdf": [Self.unrelated.chunk]]
+        let sources = [
+            GreekLegalOpinionWriter.Source(document: "law.pdf", statuteKey: "LAW:5239/2025", passages: [
+                RetrievedChunk(chunk: art7c, similarityScore: 0.6, rank: 1), RetrievedChunk(chunk: art6, similarityScore: 0.5, rank: 2)]),
+            GreekLegalOpinionWriter.Source(document: "code.pdf", statuteKey: "PD:62/2025", passages: [Self.codeArticle]),
+            GreekLegalOpinionWriter.Source(document: "other.pdf", statuteKey: "LAW:5316/2026", passages: [Self.unrelated]),
+        ]
+        let whole = GreekLegalOpinionWriter.withWholeAmendingArticles(sources, links: links, documents: documents)
+        // Article 7 in order, then the other retrieved passage; Article 8 (not retrieved) stays out.
+        #expect(whole[0].passages.map(\.chunk.id) == [art7.id, art7b.id, art7c.id, art7d.id, art6.id])
+        #expect(whole[0].bestScore == 0.6)
+        #expect(whole[1].passages.map(\.chunk.id) == [Self.codeArticle.chunk.id], "the Code is unchanged")
+        #expect(whole[2].passages.map(\.chunk.id) == [Self.unrelated.chunk.id], "a source without a link is unchanged")
+
+        // A long article is cut at the section budget, from its start.
+        let long = String(repeating: "Overtime is paid at plus forty percent. ", count: 75)  // 3,000 characters
+        let longChunks = [art7] + (9...11).map { chunk($0, "συνέχεια", long) }
+        let cut = GreekLegalOpinionWriter.withWholeAmendingArticles(
+            [GreekLegalOpinionWriter.Source(document: "law.pdf", statuteKey: "LAW:5239/2025", passages: [RetrievedChunk(chunk: longChunks[2], similarityScore: 0.6, rank: 1)])],
+            links: links, documents: ["law.pdf": longChunks])
+        #expect(cut[0].passages.map(\.chunk.id) == Array(longChunks.prefix(3)).map(\.id))
+        #expect(cut[0].passages.map(\.chunk.content.count).reduce(0, +) <= GreekLegalOpinionWriter.sectionCharacters)
+    }
+
     @Test func anAmendedCodeArticleIsReadFromTheAmendingLaw() {
         func chunk(_ document: UUID, _ index: Int, _ greek: String, _ english: String, _ statute: String) -> DocumentChunk {
             DocumentChunk(documentId: document, content: english, embedding: [], metadata: ChunkMetadata(chunkIndex: index),
@@ -140,7 +181,12 @@ struct GreekLegalOpinionTests {
             translate: { text, _ in "EL " + text })
         let prompts = await calls.prompts
         #expect(prompts.count == 3, "two sections and the conclusion")
-        #expect(prompts[0].1.contains("Statute: Law 5239/2025") && prompts[0].1.contains("[1] Article 7"))
+        #expect(prompts[0].1.contains("Statute: Law 5239/2025") && prompts[0].1.contains("Passages:\nArticle 7"))
+        // No passage numbers the model could take for article numbers (EXPERIMENTS E14: "[6]" became "Article 6").
+        #expect(prompts[0].1.range(of: #"\[\d+\]"#, options: .regularExpression) == nil)
+        let twoPassages = GreekLegalOpinionWriter.sectionPrompt(
+            question: "Q", source: .init(document: "law.pdf", statuteKey: "LAW:5239/2025", passages: [Self.overtime, Self.hiring]))
+        #expect(twoPassages.contains("\n\n---\n\nArticle 21"), "the passages are separated by a line")
         #expect(prompts[2].1.contains("How they combine:\nArticle 7 of Law 5239/2025 amended Article 194"))
         #expect(opinion.refusal == nil)
         #expect(opinion.dropped == ["Night work pays 75% more (Article 99 of Law 1234/2020)."], "\(opinion.dropped)")

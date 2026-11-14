@@ -285,3 +285,61 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
   rule was found that would catch it without tuning to that question.
 - Library dev 8 («τρίμηνο» → "a quarter"): see E5.
 - Labour Code dev 41 and 68: not fixed by the owner's decision (2026-10-30).
+
+## E14. An opinion reads the whole amending article; passages not numbered (2026-11-14, dev once each)
+
+- **Hypothesis:** the demo's overtime opinion concludes "four hours a day not allowed" because the
+  three passages kept for Law 5239/2025 leave out the end of its Article 7, which restates Article
+  194 par. 3 («έως τέσσερις (4) ώρες ημερησίως … 150 … 40%»). Giving the model the whole amending
+  article, in order, within 7,372 characters, lets it state the amended rule. Plan:
+  `Docs/Thesis/plans/opinion-whole-amending-article.md`; diagnosis in `POC_PROGRESS.md`.
+- **Runs:** opinion dev split (`firiki-opinion-dev3-wholearticle`) against `firiki-opinion-dev2`
+  (14 Nov, same library and build otherwise); the demo prompt in the Mac app (7 documents,
+  log saved).
+
+| Case | Baseline citations / facts | Whole article citations / facts | Seconds |
+|---|---|---|---|
+| 1 overtime | 2 of 2 / 3 of 4 | 2 of 2 / 3 of 4 (1 dropped) | 34 → 41 |
+| 2 | 2 of 2 / 3 of 4 | 2 of 2 / 3 of 4 (2 dropped) | 22 → 35 |
+| 3 expired agreement | 2 of 2 / 2 of 3 | **1 of 2** / 2 of 3 (1 dropped) | 21 → 37 |
+| 4 | 2 of 2 / 1 of 3 | 2 of 2 / **3 of 3** | 21 → 30 |
+| 5 | 0 of 2 / 0 of 4 | 0 of 2 / 0 of 4 (1 dropped) | 24 → 31 |
+| 6 | 2 of 2 / 2 of 2 | 2 of 2 / 2 of 2 | 20 → 26 |
+| Total | 10 of 12 / 11 of 20 | 9 of 12 / 13 of 20 | |
+
+- **What happened in case 1 and in the Mac app:** the law's source now holds Article 7's seven
+  passages (#108–#114), and the model writes "workers are entitled … up to four (4) hours daily
+  and up to … one hundred and fifty (150) hours per year … increased by forty percent (40%)", but
+  cites it as "Article **6** of Law 5239/2025". The article check drops the sentence, and the
+  conclusion again rests on the Code's Article 191 (sixth-day work, "overtime not allowed"). The
+  sentence is the sixth passage of the prompt (`[6]`), so the model most likely took the passage
+  number for the article number; it happened in both runs.
+- **Case 3:** the lost citation is in Law 5278/2026, whose source this change does not alter (no
+  link of its kept passages); the model cited "Article 5" instead of 8, and the sentence was
+  dropped. Most likely run-to-run variation; not confirmed.
+- **Second change (owner's approval):** the section prompt separates passages with a line
+  instead of numbering them `[1]`, `[2]`… (`sectionPrompt`). Dev run
+  `firiki-opinion-dev4-nonumbers`:
+
+| Case | Baseline (dev2) | Whole article (dev3) | Whole article, no numbers (dev4) | Seconds (dev4) |
+|---|---|---|---|---|
+| 1 overtime | 2 of 2 / 3 of 4 | 2 of 2 / 3 of 4 | 2 of 2 / **4 of 4** | 46 |
+| 2 | 2 of 2 / 3 of 4 | 2 of 2 / 3 of 4 | 2 of 2 / 3 of 4 | 35 |
+| 3 expired agreement | 2 of 2 / 2 of 3 | 1 of 2 / 2 of 3 | 2 of 2 / **3 of 3** | 34 |
+| 4 | 2 of 2 / 1 of 3 | 2 of 2 / 3 of 3 | 2 of 2 / **3 of 3** | 30 |
+| 5 | 0 of 2 / 0 of 4 | 0 of 2 / 0 of 4 | 0 of 2 / 0 of 4 | 37 |
+| 6 | 2 of 2 / 2 of 2 | 2 of 2 / 2 of 2 | 2 of 2 / 2 of 2 | 31 |
+| Total | 10 of 12 / 11 of 20 | 9 of 12 / 13 of 20 | **10 of 12 / 15 of 20** | |
+
+  Sentences dropped by the article check: 0 (6 in dev3). Refused 0 of 6 in all three.
+- **Mac app (7 documents, dev4 build):**
+  - the demo's short prompt («…τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;») now has a correct
+    Law 5239 section (4 hours a day, 150 a year, 40%), but its conclusion still says the request is
+    not allowed, mixing in the Code's sixth-day Article 191 (42 s);
+  - case 1's wording («…υπάλληλο πενθήμερης εργασίας… πώς αμείβεται και μπορεί ο εργαζόμενος να
+    αρνηθεί;») gets a correct conclusion (up to 4 hours a day and 150 a year, 40%, may refuse,
+    Article 12 of Law 5239/2025). Its Greek still has a leftover placeholder («__ΕΧΝ.»), a garbled
+    clause on dismissal, and "payment deadline … 186 hours a year", taken from "Articles 169 to 186".
+- **Outcome:** kept. Dev key facts 11 → 15 of 20, citations unchanged (10 of 12), nothing dropped;
+  opinions take 5–15 s longer. The test split was not run. Not solved: the Code's sixth-day
+  articles retrieved for a short overtime question.
