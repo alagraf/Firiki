@@ -125,6 +125,7 @@ struct ChatComposerV2: View {
                         .focused($isInputFocused)
                         .disabled(isProcessing && !isCheckingAnswer)
                         .writingToolsBehavior(.complete)
+                        .accessibilityIdentifier("chatComposerField")
                         .padding(.vertical, DSSpacing.md)
                         .padding(.leading, DSSpacing.lg)
 
@@ -202,6 +203,8 @@ struct ChatComposerV2: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend && !isProcessing)
+                .accessibilityIdentifier(showsStop ? "stopGenerationButton" : "sendMessageButton")
+                .accessibilityLabel(showsStop ? "Stop generating" : "Send message")
                 .scaleEffect(canSend || isProcessing ? 1.0 : 0.9)
                 .animation(DSAnimations.snappySpring, value: canSend)
                 .animation(DSAnimations.snappySpring, value: isProcessing)

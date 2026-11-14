@@ -164,16 +164,16 @@ to the 'Documents' tab in English.
 2. **Capability error paths** (fake model): model unavailable, context overflow and guardrail
    errors give a fixed Greek message, never raw error text; an empty library gives the import hint;
    a missing document gives the document list.
-3. **Greek Q&A end to end** with a fake model over a small fixture library: a Greek question gets
-   a Greek answer with an article citation; a question about a law not in the library gets the
-   fixed Greek refusal; a number not in the passages is removed by gate C.
-4. **Import of the demo documents** (real ONNX, no model): for each of the 5 library PDFs, the
+3. [x] **Greek Q&A end to end** with a fake model over a small fixture library (`GreekLegalEndToEndFakeTests`): a Greek question gets
+   a Greek answer with an article citation; a question about a law not in the library or a wrong statute gets the
+   fixed Greek refusal; an unsupported number triggers Gate C and abstains in Greek.
+4. [x] **Import of the demo documents** (real ONNX, no model — `GreekDemoPDFImportTests`): for each of the 5 library PDFs, the
    statute key is found, the article count is above a minimum, Greek and English text are both
-   present; plus a check that the OCR and translation models are in the bundle.
+   present (`RAGService.ingestDocuments` also runs end-to-end on `n_5278` + `ya_8934`, full 5-PDF DB ingestion behind `OI_FULL_PDF_IMPORT=1`); plus a check that the OCR and translation models are in the bundle.
 5. **Template routing and summary matching:** keyword fallback over `routing_v1.jsonl`; summary
    lookup by statute key once deeper fix 2 is in.
 
-**Plus a manual-trigger smoke test:** on "My Mac" with the library pre-imported, an XCUITest asks
+[x] **Plus a manual-trigger smoke test:** (`DemoSmokeUITests` in `FirikiUITests` + `scripts/demo_check.sh`; pass `DEMO_SMOKE=1` on `"My Mac"` with the library pre-imported; not yet executed live on Mac, compile-checked for `platform=macOS`). On `"My Mac"` with the library pre-imported, an XCUITest asks
 the 4 demo prompts and checks that each answer appears within a time limit, contains no
 "Σφάλμα"/"Error" text, and has a citation. Run it the morning of the demo.
 

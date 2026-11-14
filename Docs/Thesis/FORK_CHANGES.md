@@ -2519,3 +2519,54 @@ reaching or risking exposure during the legal-assistant demo:
 - macOS build: `xcodebuild build -scheme Firiki -destination 'platform=macOS' -derivedDataPath /private/tmp/oi-mac` → `** BUILD SUCCEEDED **`.
 - Full unit suite: `./scripts/thesis_run_tests.sh /private/tmp/demo-mode-full.log` → `** TEST BUILD SUCCEEDED **`, `Executed 1292 tests, with 8 tests skipped and 0 failures (0 unexpected)`, `Test run with 157 tests in 29 suites passed`.
 - UI tests: `xcodebuild test -scheme FirikiUITests -destination "platform=iOS Simulator,name=iPhone 18 Pro" -derivedDataPath /private/tmp/oi-build -only-testing:FirikiUITests/AccessibilityAuditTests` → `Executed 2 tests, with 0 failures (0 unexpected) in 89.741 (89.752) seconds`, `** TEST SUCCEEDED **`.
+
+---
+
+## 14 Nov 2026 (ninth entry): Phase 2b end-to-end Q&A, 5-PDF import tests, Mac smoke test and demo check
+
+**Why (`POC_PROGRESS.md`, Phase 2b flows 3–4 + manual smoke test):** Phase 2b already covered
+intent routing, capability errors, and template/summary routing, leaving end-to-end Greek Q&A over
+a stand-in model, real-ONNX verification of all five demo PDFs and bundled ONNX models, an opt-in
+`"My Mac"` smoke XCUITest over the four README prompts, and a single `scripts/demo_check.sh`
+command.
+
+**What changed:**
+
+- Plan saved in `Docs/Thesis/plans/phase-2b-tests.md`.
+- `Firiki/Features/Chat/Conversation/ChatComposerV2.swift`: added accessibility identifiers
+  (`chatComposerField`, `sendMessageButton` / `stopGenerationButton`) and button accessibility
+  labels (`"Send message"` / `"Stop generating"`).
+- `FirikiTests/Services/GreekLegal/GreekLegalEndToEndFakeTests.swift` (new): 4 end-to-end tests
+  using `GreekFakeLLMService` (real Opus-MT ingestion + query translation, hybrid retrieval, gates
+  A–I, Greek back-translation, explicit async library cleanup):
+  - `greekQuestionReturnsGreekAnswerWithArticleCitation()`
+  - `questionAboutMissingLawReturnsFixedGreekRefusal()`
+  - `questionWithUnsupportedNumberAbstainsInGreek()` (verifies Gate C `Numeric Sanity` in `gatingDecision` and fixed Greek refusal)
+  - `answerCitingWrongStatuteAbstainsInGreek()` (verifies Gate F / Gate I failure in `gatingDecision` and fixed Greek refusal)
+- `FirikiTests/Services/GreekLegal/GreekDemoPDFImportTests.swift` (new):
+  - `bundledOCRAndTranslationModelsExist()`: checks bundled Opus-MT `el→en` / `en→el` and PaddleOCR `PP-OCRv5_mobile_det.onnx`, `el_PP-OCRv5_mobile_rec.onnx`, `el_dict.txt`.
+  - `demoPDFExtractsStatuteArticlesAndBilingualText(_:)` (parameterized over all 5 demo PDFs: `PD:62/2025`, `LAW:5239/2025`, `LAW:5278/2026`, `LAW:5316/2026`, `MD:8934`): checks minimum chunk count, statute key detection, distinct article counts, Greek source preservation, and real Opus-MT translation of sampled Greek chunks.
+  - `ragServiceIngestsCompactDemoPDFsWithBilingualPersistence()`: runs full `RAGService.ingestDocuments` + SQLite/BNNS persistence + cleanup on `n_5278_2026_fek_a22.pdf` and `ya_8934_2026_fek_b1759.pdf`.
+  - Opt-in `fullFivePDFEndToEndImport()` gated on `OI_FULL_PDF_IMPORT=1`.
+- `FirikiUITests/DemoSmokeUITests.swift` (new): opt-in (`OI_DEMO_SMOKE=1` /
+  `TEST_RUNNER_OI_DEMO_SMOKE=1`, `#if os(macOS)` / iOS compatible) UI smoke test asking the four
+  README prompts and checking for grounded Greek responses without error banners.
+- `scripts/demo_check.sh` (new executable): runs `./scripts/thesis_run_tests.sh` across `FirikiTests`,
+  and when `DEMO_SMOKE=1` runs `DemoSmokeUITests` on `platform=macOS`.
+- `POC_PROGRESS.md`: ticked Phase 2b flows 3 and 4 and the manual smoke test.
+
+**Verification:**
+
+- `./scripts/demo_check.sh` (`FIRIKI_TESTS`):
+  - `** TEST BUILD SUCCEEDED **`
+  - `Executed 1292 tests, with 9 tests skipped and 0 failures (0 unexpected) in 296.626 (297.004) seconds`
+  - `✔ Test greekQuestionReturnsGreekAnswerWithArticleCitation() passed after 39.719 seconds.`
+  - `✔ Test questionAboutMissingLawReturnsFixedGreekRefusal() passed after 68.248 seconds.`
+  - `✔ Test questionWithUnsupportedNumberAbstainsInGreek() passed after 16.388 seconds.`
+  - `✔ Test answerCitingWrongStatuteAbstainsInGreek() passed after 9.754 seconds.`
+  - `✔ Test bundledOCRAndTranslationModelsExist() passed after 0.124 seconds.`
+  - `✔ Test demoPDFExtractsStatuteArticlesAndBilingualText(_:) with 5 test cases passed after 540.292 seconds.`
+  - `✔ Test ragServiceIngestsCompactDemoPDFsWithBilingualPersistence() passed after 82.490 seconds.`
+  - `✔ Test run with 165 tests in 31 suites passed after 623.051 seconds.`
+- macOS UI test compile check: `xcodebuild build-for-testing -scheme FirikiUITests -destination 'platform=macOS' -derivedDataPath /private/tmp/oi-mac-build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""` → `** TEST BUILD SUCCEEDED **` (`DEMO_SMOKE=1` live run on `"My Mac"` deferred to owner with pre-imported library and provisioning profile).
+- UI tests (iPhone 18 Pro Simulator): `xcodebuild test -scheme FirikiUITests -destination "platform=iOS Simulator,name=iPhone 18 Pro" -derivedDataPath /private/tmp/oi-build -only-testing:FirikiUITests/AccessibilityAuditTests -only-testing:FirikiUITests/DemoSmokeUITests` → `Executed 3 tests, with 1 test skipped and 0 failures (0 unexpected) in 83.779 (83.787) seconds`, `** TEST SUCCEEDED **` (`AccessibilityAuditTests`: `2` passed; `DemoSmokeUITests`: `1` skipped without `TEST_RUNNER_OI_DEMO_SMOKE=1`).
