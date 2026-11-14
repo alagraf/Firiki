@@ -2662,3 +2662,20 @@ command.
   - `[GreekEval] answer pass 4 of 11; retrieval hit 7 of 11; false abstentions 3; abstention correct 1 of 1`
   - `[GreekEval] right documents retrieved 9 of 11`
   - `[GreekEval] summary set=GreekLabourLibrary corpus=library split=test: passed 5 of 12`
+
+## 14 Nov 2026 (fourteenth entry)
+
+**Why:** Close out the low-priority `«Επιτρέπεται;»` item (`"May I?"` Opus-MT translation on impersonal standalone questions) across all Greek query translation paths (Q&A retrieval/generation and legal opinions), including comma/dash-joined forms such as `", επιτρέπεται;"` (`Docs/Thesis/plans/epitrepetai-translation.md`).
+
+**What:**
+
+- `Firiki/Services/RAG/Orchestration/RAGService.swift`: widened `normalizedGreekQuery(_:)`'s preceding delimiter class from `[.!?;:\n]` to `[.!?;:,\n—–-]`, rewriting both sentence-final and comma/dash-separated standalone `Επιτρέπεται;`/`?` to `Επιτρέπεται αυτό` across every caller of `greekQueryTranslation(_:)`.
+- `FirikiTests/Services/GreekLegal/GreekLegalPipelineTests.swift`: added live Opus-MT `standaloneEpitrepetaiTranslatesAsAllowedNotMayI()` in `GreekTranslationRetrievalTests`, testing both `. Επιτρέπεται;` and `, επιτρέπεται;` through `RAGService.greekQueryTranslation(_:)`.
+
+**Verification:**
+
+- `./scripts/thesis_run_tests.sh /private/tmp/task7-epitrepetai.log -only-testing:FirikiTests/GreekTranslationRetrievalTests -only-testing:FirikiTests/GreekKeywordArmTests -only-testing:FirikiTests/GreekLegalOpinionTests -only-testing:FirikiTests/GreekLegalSummaryTests -only-testing:FirikiTests/MarkdownRendererNumberedListTests -only-testing:FirikiTests/MarkdownRendererHorizontalRuleTests`:
+  - `** TEST BUILD SUCCEEDED **`
+  - `MarkdownRendererHorizontalRuleTests`: `Executed 15 tests, with 0 failures`
+  - `MarkdownRendererNumberedListTests`: `Executed 4 tests, with 0 failures`
+  - `GreekTranslationRetrievalTests` + `GreekKeywordArmTests` + `GreekLegalOpinionTests` + `GreekLegalSummaryTests`: `✔ Test run with 39 tests in 4 suites passed after 4.199 seconds.` (`standaloneEpitrepetaiTranslatesAsAllowedNotMayI()` translated to `'The employer requests four hours of overtime per day. Is that allowed?'` and `'The employer requests four hours of overtime per day, is that allowed?'` in `3.059 s`).

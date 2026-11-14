@@ -6108,7 +6108,7 @@ class RAGService: ObservableObject {
         // guesses 1st-person "May I?". Supplying "αυτό" preserves the impersonal meaning ("Is
         // this allowed?") without distorting clauses like "Επιτρέπεται η ...;".
         query.replacingOccurrences(
-            of: #"(^|(?<=[.!?;:\n]\s))[Εε]πιτρέπεται\s*([?;]|$)"#,
+            of: #"(^|(?<=[.!?;:,\n—–-]\s))[Εε]πιτρέπεται\s*([?;]|$)"#,
             with: "$1Επιτρέπεται αυτό$2",
             options: .regularExpression
         )

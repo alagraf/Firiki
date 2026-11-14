@@ -606,6 +606,19 @@ struct GreekTranslationRetrievalTests {
         #expect(results.count == 330 && results[0].text == "An English line 0." && results[1].text.hasPrefix("Translated: "))
     }
 
+    @Test func standaloneEpitrepetaiTranslatesAsAllowedNotMayI() async throws {
+        try #require(LocalNeuralTranslator.isAvailable(.greekToEnglish))
+        for query in [
+            "Ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα. Επιτρέπεται;",
+            "Ο εργοδότης ζητά τέσσερις ώρες υπερωρία την ημέρα, επιτρέπεται;",
+        ] {
+            let english = try #require(await RAGService.greekQueryTranslation(query))
+            let lower = english.lowercased()
+            #expect(!lower.contains("may i"), "\(english)")
+            #expect(lower.contains("allowed") || lower.contains("permitted"), "\(english)")
+        }
+    }
+
     @Test func articleReferencesResolveToTheArticle() {
         let document = UUID()
         func chunk(_ index: Int, _ text: String) -> DocumentChunk {
