@@ -2432,3 +2432,45 @@ missed; the model copied them, and a Greek opinion showed «__ΕΧΝ.».
   `** BUILD SUCCEEDED **`. Mac app: the overtime opinion has no placeholder.
 - Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 149
   tests in 28 suites passed" (146 before).
+
+## 14 Nov 2026 (seventh entry): summaries and opinions survive model errors; Stop between passes
+
+**Why:** deeper fixes 1 and 3 of `POC_PROGRESS.md`; plan `Docs/Thesis/plans/model-errors-and-stop.md`
+(the owner asked to continue without approvals). Any model error in one pass ended the whole
+summary or opinion, and Stop took effect only after every pass. The OS 27 SDK also deprecates
+`LanguageModelSession.GenerationError` for `LanguageModelError`, `SystemLanguageModel.Error` and
+`LanguageModelSession.Error`, which `failureReason` did not map.
+
+**What:**
+- New `Firiki/Services/Legal/GreekLegalModelCall.swift`:
+  - `failure(of:)` classifies both error families;
+  - `respond(...)` runs one pass: it checks cancellation, retries with the prompt body cut to 60%
+    then 35% (`shortened`, header kept) when too long, retries once after 1 s when busy, and
+    throws `Declined` when the model refuses.
+- `GreekLegalDocumentSummarizer.summarize`:
+  - map and opening calls go through it;
+  - a declined group is skipped, and a declined opening leaves the list of provisions;
+  - nothing left throws `Declined`;
+  - cancellation is checked before translation;
+  - new `declinedAsNil(_:)`.
+- `GreekLegalOpinionWriter.write`:
+  - section and conclusion calls go through it;
+  - a declined section is skipped;
+  - a declined conclusion refuses with "the model declined to write the conclusion" (and its
+    Greek);
+  - cancellation is checked before each translation and before each document's search.
+- `GreekLegalChatRouter.failureReason`: maps through `GreekLegalModelCall.failure`, so OS 27 errors
+  and `Declined` get their specific messages.
+- New `FirikiTests/Services/GreekLegal/GreekLegalModelCallTests.swift` (8 tests).
+
+**Verification:**
+- `thesis_run_tests.sh` with GreekLegalModelCallTests, GreekLegalOpinionTests,
+  GreekLegalSummaryTests, GreekLegalChatRouterTests: `** TEST BUILD SUCCEEDED **`; "Test run with
+  51 tests in 4 suites passed".
+- Opinion and summary dev sets (EXPERIMENTS E16): no retry or decline logged; opinion dev
+  identical to E15.
+- macOS build (`xcodebuild build -scheme Firiki -destination 'platform=macOS'`):
+  `** BUILD SUCCEEDED **`.
+- Mac app: Stop during an opinion goes idle in about 0.3 s, and the log shows no pass after it.
+- Full unit suite: "Executed 1291 tests, with 8 tests skipped and 0 failures"; "Test run with 157
+  tests in 29 suites passed" (149 in 28 before).

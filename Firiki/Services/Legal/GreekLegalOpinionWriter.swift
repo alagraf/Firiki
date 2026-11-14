@@ -62,6 +62,8 @@ nonisolated enum GreekLegalOpinionWriter {
                 return "κανένα έγγραφο της βιβλιοθήκης δεν αφορά το ερώτημα"
             case "the conclusion had no supported sentence":
                 return "το συμπέρασμα δεν στηρίζεται σε καμία πρόταση των πηγών"
+            case "the model declined to write the conclusion":
+                return "το μοντέλο της συσκευής αρνήθηκε να γράψει το συμπέρασμα"
             default:
                 return "οι πηγές της βιβλιοθήκης δεν επαρκούν για τεκμηριωμένη απάντηση"
             }
@@ -534,7 +536,12 @@ nonisolated enum GreekLegalOpinionWriter {
         var sections: [(source: Source, text: String)] = []
         for source in sources {
             let articles = hasArticles(source)
-            let draft = try await respond(sectionInstructions(statute: source.name, hasArticles: articles), sectionPrompt(question: questionEn, source: source))
+            // A section the model declines is skipped, like a source that doesn't address the question.
+            guard let draft = try await GreekLegalDocumentSummarizer.declinedAsNil({
+                try await GreekLegalModelCall.respond(
+                    instructions: sectionInstructions(statute: source.name, hasArticles: articles),
+                    prompt: sectionPrompt(question: questionEn, source: source), label: "opinion section \(source.document)", respond: respond)
+            }) else { continue }
             let trimmed = articles ? cleanedSection(draft) : withoutInventedArticles(cleanedSection(draft), statute: source.name)
             guard !trimmed.isEmpty else { continue }
             let result = checked(trimmed)
@@ -555,7 +562,14 @@ nonisolated enum GreekLegalOpinionWriter {
         var conclusion = ""
         if !sections.isEmpty {
             let prompt = "Question: \(questionEn)\n\n" + sectionText + (usedCombination.isEmpty ? "" : "\n\nHow they combine:\n" + usedCombination.joined(separator: "\n"))
-            let draft = sections.map(\.source).filter { !hasArticles($0) }.reduce(cleanedConclusion(try await respond(conclusionInstructions, prompt))) {
+            // A declined conclusion refuses the opinion with its own reason.
+            guard let written = try await GreekLegalDocumentSummarizer.declinedAsNil({
+                try await GreekLegalModelCall.respond(instructions: conclusionInstructions, prompt: prompt, label: "opinion conclusion", respond: respond)
+            }) else {
+                return Opinion(greek: "", english: "", sources: sources, links: links, dropped: dropped,
+                               refusal: "the model declined to write the conclusion")
+            }
+            let draft = sections.map(\.source).filter { !hasArticles($0) }.reduce(cleanedConclusion(written)) {
                 withoutInventedArticles($0, statute: $1.name)
             }
             let result = checked(withoutRestatedLinks(draft, links: usedLinks))
@@ -594,7 +608,9 @@ nonisolated enum GreekLegalOpinionWriter {
             switch part.title {
             case "Applicable law": text = law.greek
             case "How they combine": text = combinationGreek(usedLinks).joined(separator: " ")
-            default: text = repairedGreek((try? await translate(part.text, documentNames)) ?? part.text)
+            default:
+                try Task.checkCancellation()
+                text = repairedGreek((try? await translate(part.text, documentNames)) ?? part.text)
             }
             greekParts.append((greekTitles[part.title] ?? part.title) + "\n" + text)
         }
@@ -621,6 +637,7 @@ extension RAGService {
         var links: [Writer.CodeLink] = []
         var candidates: [Writer.Source] = []
         for document in documents {
+            try Task.checkCancellation()
             let chunks = try await database.chunks(forDocument: document.id).sorted { $0.metadata.chunkIndex < $1.metadata.chunkIndex }
             let statuteKey = chunks.lazy.compactMap { $0.legal?.documentStatuteKey }.first
             allPassages[document.filename] = chunks

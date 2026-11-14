@@ -277,6 +277,11 @@ nonisolated enum GreekLegalDocumentSummarizer {
     /// Characters of notes the opening is written from: the first note of each article.
     static var openingNotesCharacters: Int { groupCharacters }
 
+    /// The call's result, or nil when the model declined; cancellation and other errors are thrown.
+    static func declinedAsNil(_ call: () async throws -> String) async throws -> String? {
+        do { return try await call() } catch is GreekLegalModelCall.Declined { return nil }
+    }
+
     /// The permissive guardrails: a summary transforms the user's own document (Article 120 of the
     /// Constitution, "by force", was refused under the default ones; see `greekLegalAwareOnDeviceModel`).
     static func onDeviceResponse(instructions: String, prompt: String) async throws -> String {
@@ -356,7 +361,15 @@ nonisolated enum GreekLegalDocumentSummarizer {
         for (index, group) in groups.enumerated() {
             let headings = headings(inGroup: group)
             let lines = linesPerGroup(articles: headings.count)
-            let note = try await respond(mapInstructions(lines: lines, parts: byParts), "Statute: \(statute)\n\n\(group)")
+            // A group the model declines is skipped; the summary keeps the others (deeper fix 1).
+            let note: String
+            do {
+                note = try await GreekLegalModelCall.respond(
+                    instructions: mapInstructions(lines: lines, parts: byParts), prompt: "Statute: \(statute)\n\n\(group)",
+                    label: "summary group \(index + 1) of \(groups.count)", respond: respond)
+            } catch is GreekLegalModelCall.Declined {
+                continue
+            }
             let cleaned = cleanedNotes(note, headings: headings, lines: lines)
             Log.info("[LegalSummary] Notes for group \(index + 1) of \(groups.count): \(note.count) characters, \(cleaned.count) line(s) kept", category: .llm)
             noteCharacters += note.count
@@ -369,7 +382,13 @@ nonisolated enum GreekLegalDocumentSummarizer {
         for line in firstNotes where openingNotes.count + line.count + 1 <= openingNotesCharacters {
             openingNotes += line + "\n"
         }
-        let opening = try await respond(reduceInstructions, "Statute: \(statute)\n\nNotes:\n\(openingNotes)")
+        // A declined opening leaves the list of provisions; nothing at all is a refusal.
+        let opening = try await declinedAsNil {
+            try await GreekLegalModelCall.respond(
+                instructions: reduceInstructions, prompt: "Statute: \(statute)\n\nNotes:\n\(openingNotes)",
+                label: "summary opening", respond: respond)
+        } ?? ""
+        if opening.isEmpty && bullets.isEmpty { throw GreekLegalModelCall.Declined() }
         // The opening's first two sentences, without any list the model added.
         let openingText = LocalNeuralTranslator.segments(
             opening.components(separatedBy: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
@@ -382,6 +401,7 @@ nonisolated enum GreekLegalDocumentSummarizer {
         // The English is logged so a wrong Greek word can be traced to its source sentence (the
         // summary has no Response Details card).
         Log.info("[LegalSummary] English summary (\(english.count) chars): \(english.prefix(1_500))", category: .llm)
+        try Task.checkCancellation()
         let greek = (try? await translate(english)).map(GreekLegalOpinionWriter.repairedGreek) ?? english
         return Summary(greek: greek, english: english, dropped: dropped, groups: groups.count,
                        noteCharacters: noteCharacters)

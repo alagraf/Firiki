@@ -289,30 +289,31 @@ enum GreekLegalChatRouter {
                 return greek ? "Η μετάφραση απέτυχε. Δοκιμάστε ξανά." : "Translation failed. Please try again."
             }
         }
-        if let generationError = error as? LanguageModelSession.GenerationError {
-            switch generationError {
-            case .exceededContextWindowSize:
+        // Both error families (OS 26 GenerationError, OS 27 LanguageModelError and friends) and a
+        // pass the model declined (`GreekLegalModelCall.failure`).
+        let failure: GreekLegalModelCall.Failure? = error is GreekLegalModelCall.Declined ? .declined : GreekLegalModelCall.failure(of: error)
+        if let failure {
+            switch failure {
+            case .contextTooLong:
                 return greek
                     ? "Το κείμενο είναι πολύ μεγάλο για το μοντέλο της συσκευής. Δοκιμάστε ένα πιο συγκεκριμένο αίτημα ή ένα μικρότερο έγγραφο."
                     : "The text is too long for the on-device model. Try a narrower request or a shorter document."
-            case .guardrailViolation, .refusal:
+            case .declined:
                 return greek
                     ? "Το μοντέλο της συσκευής δεν απάντησε σε αυτό το αίτημα. Δοκιμάστε να το διατυπώσετε διαφορετικά."
                     : "The on-device model declined this request. Try wording it differently."
-            case .assetsUnavailable:
+            case .unavailable:
                 return greek
                     ? "Το μοντέλο του Apple Intelligence δεν είναι ακόμη έτοιμο σε αυτή τη συσκευή. Δοκιμάστε ξανά σε λίγο."
                     : "The Apple Intelligence model isn't ready on this device yet. Please try again shortly."
-            case .rateLimited, .concurrentRequests:
+            case .busy:
                 return greek
                     ? "Το μοντέλο της συσκευής είναι απασχολημένο. Δοκιμάστε ξανά σε λίγο."
                     : "The on-device model is busy. Please try again shortly."
-            case .unsupportedLanguageOrLocale:
+            case .unsupportedLanguage:
                 return greek
                     ? "Η γλώσσα της συσκευής δεν υποστηρίζεται από το Apple Intelligence. Ορίστε τα Αγγλικά ως γλώσσα της συσκευής."
                     : "The device language isn't supported by Apple Intelligence. Set the device language to English."
-            default:
-                break
             }
         }
         return greek ? "Δοκιμάστε ξανά." : "Please try again."

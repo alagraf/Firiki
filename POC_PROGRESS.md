@@ -192,14 +192,14 @@ The plan is in `Docs/Thesis/plans/demo-quick-wins.md`. Tick items here as they l
 - [x] 5. Language consistency of capability answers
 - [x] 6. Locale-independent `AnswerUsageTallyTests`
 - [ ] 7. Demo setup checklist done on the demo Mac
-- [ ] Check items 1–5 in the Mac app with Apple Intelligence (the simulator can't run the model)
+- [x] Check items 1–5 in the Mac app with Apple Intelligence (14 Nov rehearsal; the friendly error messages were not triggered)
 
 ## Status of the deeper fixes
 
-- [ ] 1. Summary and opinion error handling (retry on context overflow, guardrail fallback)
+- [x] 1. Summary and opinion error handling (retry on context overflow, guardrail fallback) — E16
 - [x] 2. Summary target by statute key (`Docs/Thesis/plans/summary-by-statute-key.md`)
-- [ ] 3. Cancellation between the summary's and opinion's passes
-- [ ] 4. Latency of a summary and an opinion measured on the Mac
+- [x] 3. Cancellation between the summary's and opinion's passes — E16 (Stop idle in 0.3 s on the Mac)
+- [x] 4. Latency of a summary and an opinion measured on the Mac — Q&A 26 s, template 2.5–20 s, summary of the whole Law 5278 83 s, opinion about 40–90 s (14 Nov rehearsal); iPhone not measured
 - [ ] 5. Optional demo mode
 - [x] 6. `try!` patterns: already built by the existing masker and title-page tests; no change
 

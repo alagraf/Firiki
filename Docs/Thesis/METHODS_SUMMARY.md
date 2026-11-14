@@ -212,6 +212,7 @@ Measured in the iOS 27 Simulator (`iPhone 18 Pro`) on an M3 Pro Mac (18 GB) with
 | 2026-10-30 | Labour Code, test (23), full 260-page Code, once | 15 of 23 (12 before); 3 of 3 refused, including the question about the Constitution's Article 16; 1 wrong refusal |
 | 2026-11-13 | Re-measured after the rename to Firiki, billing removal and the Greek text-layer check: contract templates dev / test | 44 of 44 / 20 of 22 (43 of 44 / 20 of 22 before) |
 | 2026-11-13 | Same build: OCR, share of words found, clean / scan / photo; whole scanned PDF | 95% / 95% / 95%; 97% (same OCR text as 29 Oct; the word scoring rejoins hyphenated line ends since 31 Oct) |
+| 2026-11-14 | Summary dev after the placeholder repair and model-error handling (provisions, articles cited) | 5 of 6, 2 of 3 (3 of 3 before; 12 groups instead of 13) |
 | 2026-11-14 | After repairing translation placeholders: opinion dev / test (citations, key facts, refused); library Q&A dev | 10 of 12, 13 of 20, 0 / 4 of 8, 8 of 10, 0; 15 of 24 (13 before) |
 | 2026-11-14 | Opinion dev after the whole amending article and unnumbered passages (citations, key facts, refused) | 10 of 12, 15 of 20, 0 (11 of 20 before; test split not run) |
 | 2026-11-14 | Same build: summary dev / test; opinion dev / test (citations, key facts, refused) | 5 of 6 / 4 of 5; 10 of 12, 11 of 20, 0 / 5 of 8, 7 of 10, 0 (test citations 3 of 8 before) |
@@ -281,6 +282,9 @@ questions right and refuses 9 of 9 unanswerable each time; the one wrong answer 
 condition in each run, which is within the run-to-run variation.
 
 ## Revision history
+- 2026-11-14 (late night): each model call of a summary or opinion is retried shorter when too long,
+  retried once when the model is busy, and skipped when declined; Stop ends the request before the
+  next call. Results unchanged when nothing fails.
 - 2026-11-14 (night): translation placeholders the translator mangled are put back or removed, and
   stored passages are repaired when read (450 of 8,022 → 0). Library Q&A dev 13 → 15 of 24;
   opinion dev 13 of 20 key facts; opinion test measured once: 4 of 8 citations, 8 of 10 key facts.

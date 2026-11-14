@@ -375,3 +375,28 @@ Request 5 (hiring for urgent needs) is answered from other articles in every run
 - **Outcome:** kept. The leftovers were shown to readers and hid the text the model needed; library
   Q&A improved by 2, opinion dev lost 2 key-fact phrasings, opinion test gained 1 fact and lost 1
   citation.
+
+## E16. Summaries and opinions survive model errors; Stop between passes (2026-11-14)
+
+- **Hypothesis:** a summary or opinion fails as a whole when one model call is too long, declined
+  or meets a busy model, and Stop only takes effect after the last pass. Wrapping each pass
+  (`GreekLegalModelCall`: retry shorter, retry once when busy, skip a declined pass, check
+  cancellation first) fixes both without changing results when nothing fails. Plan:
+  `Docs/Thesis/plans/model-errors-and-stop.md`.
+- **Unit tests** (stand-in model, `GreekLegalModelCallTests`, 8): all pass. They cover the shorter
+  retry keeping the header, one busy retry, declined summary group and opinion section skipped, a
+  declined conclusion refused with a Greek reason, no further model call after Stop, and the OS 27
+  error types getting their messages.
+- **Dev runs, no failure expected** (`firiki-opinion-dev7-modelcalls`, `firiki-summary-dev3`): no
+  `[ModelCall]` retry or decline was logged in either.
+  - Opinion dev: identical to E15 (10 of 12 citations, 13 of 20 key facts, same per case).
+  - Summary dev (Law 5278/2026): 5 of 6 provisions as before, articles cited 2 of 3 (3 of 3 in
+    `firiki-summary-dev2`), 12 groups instead of 13, 78 s. This is the first summary run after
+    E15's placeholder repair, which changed the passages' text and so their grouping; no model
+    call of this change differed. The missing provision is now "all normative terms continue after
+    the three months (art. 8)", instead of "extension threshold 40% (art. 9)".
+- **Mac app, Stop:** Stop pressed about 10 s into the overtime opinion. The bar went idle and
+  "Ask again" appeared about 0.3 s later. The app's log shows the sources and passages, then
+  `[ChatRouter] opinion failed: CancellationError()` and no English opinion: the remaining passes
+  did not run.
+- **Outcome:** kept.
